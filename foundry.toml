@@ -1,0 +1,29 @@
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+
+
+[profile.default]
+auto_detect_solc = false
+src = "src"
+out = "out"
+libs = ["lib"]
+test = "test"
+solc = "0.8.23"
+fs_permissions = [{ access = "read", path = "./out"},{ access = "read", path = "./broadcast"}, { access = "read-write", path = "./deployments"}]
+sparse_mode = true
+evm_version = "london"
+
+[fmt]
+  bracket_spacing = true
+  int_types = "long"
+  line_length = 132
+  multiline_func_header = "all"
+  number_underscore = "preserve"
+  quote_style = "double"
+  tab_width = 4
+  wrap_comments = true
+  
+[rpc_endpoints]
+  mainnet = "${MAINNET_RPC_URL}"
+  linea = "${LINEA_RPC_URL}"
+  sepolia = "${SEPOLIA_RPC_URL}"
+  aztec = "${AZTEC_RPC_URL}"

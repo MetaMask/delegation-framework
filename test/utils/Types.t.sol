@@ -1,0 +1,43 @@
+// SPDX-License-Identifier: MIT AND Apache-2.0
+pragma solidity 0.8.23;
+
+import { IDeleGatorCoreFull } from "../../src/interfaces/IDeleGatorCoreFull.sol";
+
+struct TestUser {
+    string name;
+    address payable addr;
+    uint256 privateKey;
+    IDeleGatorCoreFull deleGator;
+    uint256 x;
+    uint256 y;
+}
+
+struct TestUsers {
+    TestUser bundler;
+    TestUser alice;
+    TestUser bob;
+    TestUser carol;
+    TestUser dave;
+    TestUser eve;
+    TestUser frank;
+}
+
+/**
+ * @title Implementation Enum
+ * @dev This enum represents the different types of Delegator implementations.
+ */
+enum Implementation {
+    MultiSig, // MultiSigDeleGator is a DeleGator that is owned by a set of EOA addresses.
+    Hybrid // HybridDeleGator is a DeleGator that is owned by a set of P256 Keys and EOA
+
+}
+
+/**
+ * @title Signature Type
+ * @dev This enum represents the different types of Signatures.
+ */
+enum SignatureType {
+    MultiSig,
+    EOA,
+    RawP256
+}

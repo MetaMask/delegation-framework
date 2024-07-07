@@ -1,0 +1,38 @@
+name: Tests
+
+on: [push, pull_request]
+
+jobs:
+  pre_job:
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    permissions:
+      actions: "read"
+    outputs:
+      should_skip: ${{ steps.skip_check.outputs.should_skip }}
+    steps:
+      - id: skip_check
+        uses: MetaMask/skip-duplicate-actions@v5
+        with:
+          concurrent_skipping: same_content_newer
+
+  tests:
+    needs: pre_job
+    if: needs.pre_job.outputs.should_skip != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install Foundry
+        uses: MetaMask/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Run Forge Install
+        run: forge install
+
+      - name: Check contract sizes
+        run: forge build --sizes --skip test --skip script
+
+      - name: Run tests
+        run: forge test -vvv
