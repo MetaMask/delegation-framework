@@ -52,8 +52,8 @@ Developers can build new Caveat Enforcers for their own use cases, and the possi
 
 There's several touchpoints where developers may be using or extending a DeleGator Smart Account.
 
-- Developers can build custom DeleGator Implementations that use the [DeleGator Core](https://github.com/MetaMask/DeleGator/blob/main/src/DeleGatorCore.sol) to create new ways for end users to control and manage their Smart Accounts.
-- Developers can write any contract that meets the [DeleGator Core Interface](https://github.com/MetaMask/DeleGator/blob/main/src/interfaces/IDeleGatorCore.sol) to create novel ways of delegating functionality.
+- Developers can build custom DeleGator Implementations that use the [DeleGator Core](/src/DeleGatorCore.sol) to create new ways for end users to control and manage their Smart Accounts.
+- Developers can write any contract that meets the [DeleGator Core Interface](/src/interfaces/IDeleGatorCore.sol) to create novel ways of delegating functionality.
 - Developers can create custom Caveat Enforcers to refine the capabilities of a delegation for any use case they imagine.
 - Developers can craft Delegations to then share onchain capabilities entirely offchain.
 
