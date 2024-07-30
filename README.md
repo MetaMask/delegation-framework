@@ -100,7 +100,54 @@ forge script script/DeployEnvironmentSetUp.s.sol --rpc-url <your_rpc_url> --priv
 Read more [here](https://www.notion.so/DeleGator-Developer-Guide-aaa11e5462e8422a85bc8ad70b8d14dc?pvs=4).
 
 ### Notes
+[tool.poetry]
+name = "my-package"
+version = "0.1.0"
+description = "The description of the package"
 
+license = "MIT"
+
+authors = [
+    "Sébastien Eustace <sebastien@eustace.io>"
+]
+
+repository = "https://github.com/python-poetry/poetry"
+homepage = "https://python-poetry.org"
+
+# README file(s) are used as the package description
+readme = ["README.md", "LICENSE"]
+
+# Keywords (translated to tags on the package index)
+keywords = ["packaging", "poetry"]
+
+[tool.poetry.dependencies]
+# Compatible Python versions
+python = ">=3.8"
+# Standard dependency with semver constraints
+aiohttp = "^3.8.1"
+# Dependency with extras
+requests = { version = "^2.28", extras = ["security"] }
+# Version-specific dependencies with prereleases allowed
+tomli = { version = "^2.0.1", python = "<3.11", allow-prereleases = true }
+# Git dependencies
+cleo = { git = "https://github.com/python-poetry/cleo.git", branch = "main" }
+# Optional dependencies (installed by extras)
+pendulum = { version = "^2.1.2", optional = true }
+
+# Dependency groups are supported for organizing your dependencies
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.1.2"
+pytest-cov = "^3.0"
+
+# ...and can be installed only when explicitly requested
+[tool.poetry.group.docs]
+optional = true
+[tool.poetry.group.docs.dependencies]
+Sphinx = "^5.1.1"
+
+# Python-style entrypoints and scripts are easily expressed
+[tool.poetry.scripts]
+my-script = "my_package:main"
 - We're building against solidity version [0.8.23](https://github.com/ethereum/solidity/releases/tag/v0.8.23) for the time being.
 - Format on save using the Forge formatter.
 
