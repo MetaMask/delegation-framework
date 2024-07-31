@@ -42,9 +42,14 @@ library P256FCLVerifierLib {
         }
 
         bytes memory args = abi.encode(message_hash, r, s, x, y);
+
+        // attempt to verify using the RIP-7212 precompiled contract
         (bool success, bytes memory ret) = VERIFIER.staticcall(args);
 
-        if (success) return abi.decode(ret, (bool)) == true;
+        // staticcall returns true when the precompile does not exist but the ret.length is 0.
+        // an invalid signature gets validated twice, simulate this offchain to save gas.
+        bool valid = ret.length > 0;
+        if (success && valid) return abi.decode(ret, (uint256)) == 1;
 
         return FCL_ecdsa.ecdsa_verify(message_hash, r, s, x, y);
     }

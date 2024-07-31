@@ -18,6 +18,9 @@ import { IDeleGatorCore } from "../src/interfaces/IDeleGatorCore.sol";
 import { IERC173 } from "../src/interfaces/IERC173.sol";
 import { IDelegationManager } from "../src/interfaces/IDelegationManager.sol";
 import { EncoderLib } from "../src/libraries/EncoderLib.sol";
+import { FCL_all_wrapper } from "./utils/FCLWrapperLib.sol";
+import { P256FCLVerifierLib } from "../src/libraries/P256FCLVerifierLib.sol";
+import { ERC1271Lib } from "../src/libraries/ERC1271Lib.sol";
 
 contract HybridDeleGator_Test is BaseTest {
     using MessageHashUtils for bytes32;
@@ -723,67 +726,21 @@ contract HybridDeleGator_Test is BaseTest {
         // Alice is the EOA owner
         assertEq(users.alice.addr, aliceDeleGator.owner());
 
-        // Hardcoded values in these tests were generated with WebAuthn
-        // https://github.com/MetaMask/Passkeys-Demo-App
-        string memory webAuthnKeyId_ = "WebAuthnUser";
-        uint256 xWebAuthn_ = 0x5ab7b640f322014c397264bb85cbf404500feb04833ae699f41978495b655163;
-        uint256 yWebAuthn_ = 0x1ee739189ede53846bd7d38bfae016919bf7d88f7ccd60aad8277af4793d1fd7;
-        bytes32 keyIdHash_ = keccak256(abi.encodePacked(webAuthnKeyId_));
-
-        // Adding the key as signer
-        vm.prank(address(entryPoint));
-        aliceDeleGator.addKey(webAuthnKeyId_, xWebAuthn_, yWebAuthn_);
-
-        // Create the action that would be executed
-        bytes memory userOpCallData_ = abi.encodeWithSelector(
-            IDeleGatorCoreFull.execute.selector,
-            Action({
-                to: address(aliceDeleGator),
-                value: 0,
-                data: abi.encodeWithSelector(Ownable.transferOwnership.selector, address(1))
-            })
-        );
-        PackedUserOperation memory userOp_ = createUserOp(address(aliceDeleGator), userOpCallData_);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        bytes32 ethSignedMessageHash_ = userOpHash_.toEthSignedMessageHash();
-        (ethSignedMessageHash_); // This is what is signed with webAuthn
-
-        // WebAuthn Signature values
-        uint256 r_ = 0x83e76b9afa53953f7971d4cdc8e2859f8786ba70423de061d0e15367d41b44fa;
-        uint256 s_ = 0x7c25bacc7ef162d395533639cc164b02592585d0ab382efe3790393a07ee7f56;
-
-        bytes memory authenticatorData_ = hex"49960de5880e8c687434170f6476605b8fe4aeb9a28632c7995cf3ba831d97630500000000";
-        bool requireUserVerification_ = true;
-        string memory clientDataJSONPrefix_ = '{"type":"webauthn.get","challenge":"';
-        string memory clientDataJSONSuffix_ = '","origin":"http://localhost:3000","crossOrigin":false}';
-
-        // Index of the type in clientDataJSON string
-        uint256 responseTypeLocation_ = 1;
-
-        userOp_.signature = abi.encode(
-            keyIdHash_,
-            r_,
-            s_,
-            authenticatorData_,
-            requireUserVerification_,
-            clientDataJSONPrefix_,
-            clientDataJSONSuffix_,
-            responseTypeLocation_
-        );
+        (PackedUserOperation memory signedUserOp_,) = _getExampleWebAuthnSignedUserOp();
 
         // Submit UserOp through Bundler
-        submitUserOp_Bundler(userOp_);
+        submitUserOp_Bundler(signedUserOp_);
 
         // The owner was transferred
         assertEq(aliceDeleGator.owner(), address(1));
     }
 
-    // Tests the flow using a signature created with WebAuthn and an invalid type
+    // Test the flow using a signature created with WebAuthn and an invalid type
     function test_fails_signingWithWebAuthnWithInvalidType() public {
         // Alice is the EOA owner
         assertEq(users.alice.addr, aliceDeleGator.owner());
 
-        // Hardcoded values in these tests were generated with WebAuthn
+        // Hardcoded values in these test were generated with WebAuthn
         // https://github.com/MetaMask/Passkeys-Demo-App
         string memory webAuthnKeyId_ = "WebAuthnUser";
         uint256 xWebAuthn_ = 0x5ab7b640f322014c397264bb85cbf404500feb04833ae699f41978495b655163;
@@ -838,6 +795,38 @@ contract HybridDeleGator_Test is BaseTest {
 
         // The owner was not transferred
         assertEq(aliceDeleGator.owner(), users.alice.addr);
+    }
+
+    // Validates a P256 signature without the precompile contract (using the local library)
+    function test_allow_signatureValidationWithoutPrecompile() public {
+        // Alice is the EOA owner
+        assertEq(users.alice.addr, aliceDeleGator.owner());
+
+        (PackedUserOperation memory signedUserOp_, bytes32 ethSignedMessageHash_) = _getExampleWebAuthnSignedUserOp();
+
+        // Test signature validation without precompile (Using local library)
+        vm.etch(P256FCLVerifierLib.VERIFIER, hex"");
+        assertEq(address(P256FCLVerifierLib.VERIFIER).code.length, 0);
+
+        bytes4 validationDataWithoutPrecompile_ = aliceDeleGator.isValidSignature(ethSignedMessageHash_, signedUserOp_.signature);
+        assertEq(validationDataWithoutPrecompile_, ERC1271Lib.EIP1271_MAGIC_VALUE);
+    }
+
+    // Validates a P256 signature with precompile contract
+    function test_allow_signatureValidationWithPrecompile() public {
+        // Alice is the EOA owner
+        assertEq(users.alice.addr, aliceDeleGator.owner());
+
+        (PackedUserOperation memory signedUserOp_, bytes32 ethSignedMessageHash_) = _getExampleWebAuthnSignedUserOp();
+
+        // Test signature validation without precompile (Using local library)
+        bytes memory flcRuntimeCode_ = type(FCL_all_wrapper).runtimeCode;
+
+        // Test signature validation with precompile
+        vm.etch(P256FCLVerifierLib.VERIFIER, flcRuntimeCode_);
+        assertEq(keccak256(address(P256FCLVerifierLib.VERIFIER).code), keccak256(flcRuntimeCode_));
+        bytes4 validationDataWithPrecompile_ = aliceDeleGator.isValidSignature(ethSignedMessageHash_, signedUserOp_.signature);
+        assertEq(validationDataWithPrecompile_, ERC1271Lib.EIP1271_MAGIC_VALUE);
     }
 
     // A signature should be valid if generated with EOA
@@ -971,5 +960,59 @@ contract HybridDeleGator_Test is BaseTest {
         // Show that signature is valid
         bytes4 resultP256_ = aliceDeleGator.isValidSignature(typedDataHash_, delegation_.signature);
         assertEq(resultP256_, bytes4(0xffffffff));
+    }
+
+    function _getExampleWebAuthnSignedUserOp()
+        internal
+        returns (PackedUserOperation memory userOp, bytes32 ethSignedMessageHash_)
+    {
+        // Hardcoded values in these tests were generated with WebAuthn
+        // https://github.com/MetaMask/Passkeys-Demo-App
+        string memory webAuthnKeyId_ = "WebAuthnUser";
+        uint256 xWebAuthn_ = 0x5ab7b640f322014c397264bb85cbf404500feb04833ae699f41978495b655163;
+        uint256 yWebAuthn_ = 0x1ee739189ede53846bd7d38bfae016919bf7d88f7ccd60aad8277af4793d1fd7;
+        bytes32 keyIdHash_ = keccak256(abi.encodePacked(webAuthnKeyId_));
+
+        // Adding the key as signer
+        vm.prank(address(entryPoint));
+        aliceDeleGator.addKey(webAuthnKeyId_, xWebAuthn_, yWebAuthn_);
+
+        // Create the action that would be executed
+        bytes memory userOpCallData_ = abi.encodeWithSelector(
+            IDeleGatorCoreFull.execute.selector,
+            Action({
+                to: address(aliceDeleGator),
+                value: 0,
+                data: abi.encodeWithSelector(Ownable.transferOwnership.selector, address(1))
+            })
+        );
+        PackedUserOperation memory userOp_ = createUserOp(address(aliceDeleGator), userOpCallData_);
+        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
+        ethSignedMessageHash_ = userOpHash_.toEthSignedMessageHash();
+        (ethSignedMessageHash_); // This is what is signed with webAuthn
+
+        // WebAuthn Signature values
+        uint256 r_ = 0x83e76b9afa53953f7971d4cdc8e2859f8786ba70423de061d0e15367d41b44fa;
+        uint256 s_ = 0x7c25bacc7ef162d395533639cc164b02592585d0ab382efe3790393a07ee7f56;
+
+        bytes memory authenticatorData_ = hex"49960de5880e8c687434170f6476605b8fe4aeb9a28632c7995cf3ba831d97630500000000";
+        bool requireUserVerification_ = true;
+        string memory clientDataJSONPrefix_ = '{"type":"webauthn.get","challenge":"';
+        string memory clientDataJSONSuffix_ = '","origin":"http://localhost:3000","crossOrigin":false}';
+
+        // Index of the type in clientDataJSON string
+        uint256 responseTypeLocation_ = 1;
+
+        userOp_.signature = abi.encode(
+            keyIdHash_,
+            r_,
+            s_,
+            authenticatorData_,
+            requireUserVerification_,
+            clientDataJSONPrefix_,
+            clientDataJSONSuffix_,
+            responseTypeLocation_
+        );
+        return (userOp_, ethSignedMessageHash_);
     }
 }
