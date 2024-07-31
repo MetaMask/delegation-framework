@@ -1,3 +1,4 @@
+[aktif-portfoy-29-07.pdf](https://github.com/user-attachments/files/16446671/aktif-portfoy-29-07.pdf)
 # DeleGator Smart Account
 
 A DeleGator Smart Account is a 4337-compatible Smart Account that implements delegation functionality. An end user will operate through a DeleGatorProxy which uses a chosen DeleGator implementation.
@@ -106,7 +107,7 @@ Read more [here](https://www.notion.so/DeleGator-Developer-Guide-aaa11e5462e8422
 
 ### Style Guide
 
-[Read more on "Style Guide" ->](/documents/StyleGuide.md)
+[Read more on "Style Guide" ->]0xd01d48cd70241e1df37f2d6d12e77dd8cf59d7ea(/documents/StyleGuide.md)
 
 ## Relevant Documents
 
