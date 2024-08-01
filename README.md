@@ -1,3 +1,19 @@
+# Delegation Framework
+
+> [!WARNING]
+> We use tags for audited versions of code releases and the `main` branch is the working development branch. All PRs should be based against `main` branch.
+
+### Getting Started
+
+1. **Fork the repository**:
+    - Click the "Fork" button at the top right of the repository page.
+
+2. **Clone your fork**:
+   ```shell
+   git clone https://github.com/<your-username>/delegation-framework.git
+3. **Create Working Branch**:
+    ```shell
+   git checkout -b feat/example-branch
 # DeleGator Smart Account
 
 A DeleGator Smart Account is a 4337-compatible Smart Account that implements delegation functionality. An end user will operate through a DeleGatorProxy which uses a chosen DeleGator implementation.
@@ -97,16 +113,19 @@ forge script script/DeployEnvironmentSetUp.s.sol --rpc-url <your_rpc_url> --priv
 
 ### Javascript
 
-Read more [here](https://www.notion.so/DeleGator-Developer-Guide-aaa11e5462e8422a85bc8ad70b8d14dc?pvs=4).
+Currently in Gated Alpha phase. Sign up to be an early partner [here](https://gator.metamask.io).
 
 ### Notes
 
-- We're building against solidity version [0.8.23](https://github.com/ethereum/solidity/releases/tag/v0.8.23) for the time being.
+- We're building against Solidity [v0.8.23](https://github.com/ethereum/solidity/releases/tag/v0.8.23) for the time being.
 - Format on save using the Forge formatter.
 
 ### Style Guide
 
 [Read more on "Style Guide" ->](/documents/StyleGuide.md)
+
+### Core Contributors
+[Dan Finlay](https://github.com/danfinlay), [Ryan McPeck](https://github.com/McOso), [Dylan DesRosier](https://github.com/dylandesrosier), [Aditya Sharma](https://github.com/destroyersrt), [Hanzel Anchia Mena](https://github.com/hanzel98), [Idris Bowman](https://github.com/V00D00-child), [Jeff Smale](https://github.com/jeffsmale90), [Kevin Bluer](https://github.com/kevinbluer)
 
 ## Relevant Documents
 
