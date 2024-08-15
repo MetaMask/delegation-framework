@@ -28,7 +28,7 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         delegate = address(users.bob.deleGator);
         dm = address(delegationManager);
         enforcer = new ERC20BalanceGteEnforcer();
-        vm.label(address(enforcer), "Incremental ID Enforcer");
+        vm.label(address(enforcer), "ERC20 BalanceGte Enforcer");
         token = new BasicERC20(delegator, "TEST", "TEST", 0);
         vm.label(address(token), "ERC20 Test Token");
         mintAction = Action({ to: address(token), value: 0, data: abi.encodeWithSelector(token.mint.selector, delegator, 100) });
