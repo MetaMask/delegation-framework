@@ -97,8 +97,8 @@ contract IdEnforcerEnforcerTest is CaveatEnforcerBaseTest {
             salt: 0,
             signature: hex""
         });
-        // Store delegation
-        execute_UserOp(users.alice, abi.encodeWithSelector(IDelegationManager.delegate.selector, delegation));
+
+        delegation = signDelegation(users.alice, delegation);
 
         // Execute Bob's UserOp
         Delegation[] memory delegations_ = new Delegation[](1);

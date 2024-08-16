@@ -54,39 +54,7 @@ contract PasswordEnforcerTest is CaveatEnforcerBaseTest {
 
     //////////////////////  Integration  //////////////////////
 
-    function test_userInputCorrectArgsWorksWithOnchainDelegation() public {
-        uint256 initialValue_ = aliceDeleGatorCounter.count();
-        // Create the action that would be executed
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
-
-        bytes memory inputTerms_ = abi.encode(uint256(12345));
-        bytes memory password_ = abi.encode(uint256(12345));
-
-        Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: password_, enforcer: address(passwordEnforcer), terms: inputTerms_ });
-        Delegation memory delegation = Delegation({
-            delegate: address(users.bob.deleGator),
-            delegator: address(users.alice.deleGator),
-            authority: ROOT_AUTHORITY,
-            caveats: caveats_,
-            salt: 0,
-            signature: hex""
-        });
-        // Store delegation
-        execute_UserOp(users.alice, abi.encodeWithSelector(IDelegationManager.delegate.selector, delegation));
-
-        // Execute Bob's UserOp
-        Delegation[] memory delegations_ = new Delegation[](1);
-        delegations_[0] = delegation;
-
-        // Enforcer allows the delegation
-        invokeDelegation_UserOp(users.bob, delegations_, action_);
-        // Validate that the count has increased by 1
-        assertEq(aliceDeleGatorCounter.count(), initialValue_ + 1);
-    }
-
-    function test_userInputIncorrectArgsWithOnchainDelegation() public {
+    function test_userInputIncorrectArgsWithOffchainDelegation() public {
         uint256 initialValue_ = aliceDeleGatorCounter.count();
         // Create the action that would be executed
         Action memory action_ =
@@ -105,8 +73,8 @@ contract PasswordEnforcerTest is CaveatEnforcerBaseTest {
             salt: 0,
             signature: hex""
         });
-        // Store delegation
-        execute_UserOp(users.alice, abi.encodeWithSelector(IDelegationManager.delegate.selector, delegation));
+
+        delegation = signDelegation(users.alice, delegation);
 
         // Execute Bob's UserOp
         Delegation[] memory delegations_ = new Delegation[](1);

@@ -122,8 +122,7 @@ contract LimitedCallsEnforcerTest is CaveatEnforcerBaseTest {
             signature: hex""
         });
 
-        // Store delegation
-        execute_UserOp(users.alice, abi.encodeWithSelector(IDelegationManager.delegate.selector, delegation_));
+        delegation_ = signDelegation(users.alice, delegation_);
 
         // Get delegation hash
         bytes32 delegationHash_ = EncoderLib._getDelegationHash(delegation_);

@@ -250,15 +250,6 @@ abstract contract DeleGatorCore is Initializable, UUPSUpgradeable, IERC165, IDel
     }
 
     /**
-     * @notice Delegates authority to an address and caches the delegation hash onchain
-     * @dev Forwards a call to the DelegationManager to delegate
-     * @param _delegation The delegation to be stored
-     */
-    function delegate(Delegation calldata _delegation) external onlyEntryPointOrSelf {
-        delegationManager.delegate(_delegation);
-    }
-
-    /**
      * @notice Disables a delegation from being used
      * @param _delegation The delegation to be disabled
      */
@@ -303,15 +294,6 @@ abstract contract DeleGatorCore is Initializable, UUPSUpgradeable, IERC165, IDel
      */
     function isDelegationDisabled(bytes32 _delegationHash) external view returns (bool) {
         return delegationManager.disabledDelegations(_delegationHash);
-    }
-
-    /**
-     * @notice Checks if the delegation hash has been cached onchain
-     * @param _delegationHash the hash of the delegation to check for
-     * @return bool is the delegation stored onchain
-     */
-    function isDelegationOnchain(bytes32 _delegationHash) external view returns (bool) {
-        return delegationManager.onchainDelegations(_delegationHash);
     }
 
     /**

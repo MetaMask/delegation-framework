@@ -19,7 +19,7 @@ import { TestUser, TestUsers, Implementation, SignatureType } from "./Types.t.so
 import { SigningUtilsLib } from "./SigningUtilsLib.t.sol";
 import { StorageUtilsLib } from "./StorageUtilsLib.t.sol";
 import { Action, PackedUserOperation, Delegation } from "../../src/utils/Types.sol";
-import { SimpleFactory } from "./SimpleFactory.sol";
+import { SimpleFactory } from "../../src/utils/SimpleFactory.sol";
 import { DelegationManager } from "../../src/DelegationManager.sol";
 import { IDeleGatorCoreFull } from "../../src/interfaces/IDeleGatorCoreFull.sol";
 import { HybridDeleGator } from "../../src/HybridDeleGator.sol";

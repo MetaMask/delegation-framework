@@ -10,9 +10,6 @@ import { Action, Delegation } from "../utils/Types.sol";
 interface IDelegationManager {
     ////////////////////////////// Events //////////////////////////////
 
-    /// @dev Emitted when a delegation's hash is cached onchain
-    event Delegated(bytes32 indexed delegationHash, address indexed delegator, address indexed delegate, Delegation delegation);
-
     /// @dev Emitted when a delegation is redeemed
     event RedeemedDelegation(address indexed rootDelegator, address indexed redeemer, Delegation delegation);
 
@@ -51,14 +48,11 @@ interface IDelegationManager {
     /// @dev Error thrown when the signature provided is invalid
     error InvalidSignature();
 
-    /// @dev Error thrown when the delegation provided hasn't been approved
-    error InvalidDelegation();
+    /// @dev Error thrown when the signature is empty
+    error EmptySignature();
 
     /// @dev Error thrown when the delegation provided is already disabled
     error AlreadyDisabled();
-
-    /// @dev Error thrown when the delegation provided is already cached
-    error AlreadyExists();
 
     /// @dev Error thrown when the delegation provided is already enabled
     error AlreadyEnabled();
@@ -69,15 +63,11 @@ interface IDelegationManager {
 
     function unpause() external;
 
-    function delegate(Delegation calldata _delegation) external;
-
     function enableDelegation(Delegation calldata _delegation) external;
 
     function disableDelegation(Delegation calldata _delegation) external;
 
     function disabledDelegations(bytes32 _delegationHash) external view returns (bool);
-
-    function onchainDelegations(bytes32 _delegationHash) external view returns (bool);
 
     function getDelegationHash(Delegation calldata _delegation) external pure returns (bytes32);
 

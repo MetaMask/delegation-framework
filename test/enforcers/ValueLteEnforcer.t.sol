@@ -51,7 +51,7 @@ contract ValueLteEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     // Validates that valid values don't revert
-    function test_allow_valueLte() public {
+    function test_allow_valueLte() public view {
         // Equal
         bytes memory terms_ = abi.encodePacked(uint256(1 ether));
         Action memory action_ = Action({

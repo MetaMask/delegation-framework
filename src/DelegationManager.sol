@@ -17,9 +17,8 @@ import { ERC1271Lib } from "./libraries/ERC1271Lib.sol";
 
 /**
  * @title DelegationManager
- * @notice This contract is used to manage delegations. Users can cache hashes of delegations onchain within this contract.
- * Delegations
- * can be validated and executed through this contract.
+ * @notice This contract is used to manage delegations.
+ * Delegations can be validated and executed through this contract.
  */
 contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712 {
     using MessageHashUtils for bytes32;
@@ -40,9 +39,6 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
 
     /// @dev Special delegate value. Allows any delegate to redeem the delegation
     address public constant ANY_DELEGATE = address(0xa11);
-
-    /// @dev A mapping of delegation hashes that have been cached onchain
-    mapping(bytes32 delegationHash => bool isOnchain) public onchainDelegations;
 
     /// @dev A mapping of delegation hashes that have been disabled by the delegator
     mapping(bytes32 delegationHash => bool isDisabled) public disabledDelegations;
@@ -87,23 +83,8 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
     }
 
     /**
-     * @notice This method is used to cache a delegation's hash onchain for future use
-     * @dev This method MUST be called by the delegator
-     * @dev Caching a delegation onchain allows the system to trust that the delegation was already authorized at the time of
-     * redemption
-     * @param _delegation The delegation to be stored
-     */
-    function delegate(Delegation calldata _delegation) external onlyDeleGator(_delegation.delegator) {
-        bytes32 delegationHash_ = getDelegationHash(_delegation);
-        if (onchainDelegations[delegationHash_]) revert AlreadyExists();
-        onchainDelegations[delegationHash_] = true;
-        emit Delegated(delegationHash_, _delegation.delegator, _delegation.delegate, _delegation);
-    }
-
-    /**
      * @notice This method is used to disable a delegation. Disabled delegations will fail upon redemption.
      * @dev This method MUST be called by the delegator
-     * @dev This method supports disabling offchain and onchain delegations
      * @param _delegation The delegation to be disabled
      */
     function disableDelegation(Delegation calldata _delegation) external onlyDeleGator(_delegation.delegator) {
@@ -116,7 +97,6 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
     /**
      * @notice This method is used to enable a delegation
      * @dev This method MUST be called by the delegator
-     * @dev This method supports enabling offchain and onchain delegations
      * @dev This method is only needed when a delegation has previously been disabled
      * @param _delegation The delegation to be disabled
      */
@@ -135,9 +115,7 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
      * changes, disabled delegations or arbitrary caveat
      * restrictions. Be sure to validate offchain before submitting anything onchain.
      * @dev Delegations are ordered from leaf to root. The last delegation in the array must have the root authority.
-     * @dev Delegations can come in the form of offchain or onchain delegations. Offchain delegations are signed by the delegator
-     * and are validated at the time of redemption. Onchain delegations are validated at the time of delegation and are trusted to
-     * be valid at the time of redemption.
+     * @dev Delegations are signed by the delegator and are validated at the time of redemption.
      * @dev Caveats are enforced with the order: `beforeHook` from leaf to root, execute action, `afterHook` from root to leaf
      * @param _data the data used to validate the authority given to execute the action.
      * @param _action the action to be executed
@@ -164,29 +142,24 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
             delegationHashes_[i] = EncoderLib._getDelegationHash(delegation_);
 
             if (delegation_.signature.length == 0) {
-                // Ensure that delegations without signatures have already been validated onchain
-                if (!onchainDelegations[delegationHashes_[i]]) {
-                    revert InvalidDelegation();
-                }
+                // Ensure that delegations without signatures revert
+                revert EmptySignature();
+            }
+            // Check if the delegator is an EOA or a contract
+            address delegator_ = delegation_.delegator;
+
+            if (delegator_.code.length == 0) {
+                // Validate delegation if it's an EOA
+                address result_ =
+                    ECDSA.recover(MessageHashUtils.toTypedDataHash(getDomainHash(), delegationHashes_[i]), delegation_.signature);
+                if (result_ != delegator_) revert InvalidSignature();
             } else {
-                // If the delegation is offchain
-                // Check if the delegator is an EOA or a contract
-                address delegator_ = delegation_.delegator;
+                // Validate delegation if it's a contract
+                bytes32 typedDataHash_ = MessageHashUtils.toTypedDataHash(getDomainHash(), delegationHashes_[i]);
 
-                if (delegator_.code.length == 0) {
-                    // Validate delegation if it's an EOA
-                    address result_ = ECDSA.recover(
-                        MessageHashUtils.toTypedDataHash(getDomainHash(), delegationHashes_[i]), delegation_.signature
-                    );
-                    if (result_ != delegator_) revert InvalidSignature();
-                } else {
-                    // Validate delegation if it's a contract
-                    bytes32 typedDataHash_ = MessageHashUtils.toTypedDataHash(getDomainHash(), delegationHashes_[i]);
-
-                    bytes32 result_ = IERC1271(delegator_).isValidSignature(typedDataHash_, delegation_.signature);
-                    if (result_ != ERC1271Lib.EIP1271_MAGIC_VALUE) {
-                        revert InvalidSignature();
-                    }
+                bytes32 result_ = IERC1271(delegator_).isValidSignature(typedDataHash_, delegation_.signature);
+                if (result_ != ERC1271Lib.EIP1271_MAGIC_VALUE) {
+                    revert InvalidSignature();
                 }
             }
         }
@@ -254,7 +227,7 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
 
     /**
      * @notice Creates a hash of a Delegation
-     * @dev Used in EIP712 signatures and as a key for storing delegations onchain
+     * @dev Used in EIP712 signatures and as a key for enabling and disabling delegations
      * @param _input A Delegation struct
      */
     function getDelegationHash(Delegation calldata _input) public pure returns (bytes32) {

@@ -49,8 +49,6 @@ interface IDeleGatorCoreFull is IDeleGatorCore, IERC165 {
 
     function withdrawDeposit(address payable _withdrawAddress, uint256 _withdrawAmount) external;
 
-    function delegate(Delegation calldata _delegation) external;
-
     function disableDelegation(Delegation calldata _delegation) external;
 
     function enableDelegation(Delegation calldata _delegation) external;
@@ -58,8 +56,6 @@ interface IDeleGatorCoreFull is IDeleGatorCore, IERC165 {
     function upgradeToAndCall(address _newImplementation, bytes memory _data) external payable;
 
     function upgradeToAndCallAndRetainStorage(address _newImplementation, bytes memory _data) external payable;
-
-    function isDelegationOnchain(bytes32 _delegationHash) external view returns (bool);
 
     function isDelegationDisabled(bytes32 _delegationHash) external view returns (bool);
 

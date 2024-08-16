@@ -18,8 +18,7 @@ import { IDelegationManager } from "../src/interfaces/IDelegationManager.sol";
 import { IDeleGatorCoreFull } from "../src/interfaces/IDeleGatorCoreFull.sol";
 import { EncoderLib } from "../src/libraries/EncoderLib.sol";
 import { Counter } from "./utils/Counter.t.sol";
-import { SimpleFactory } from "./utils/SimpleFactory.sol";
-import "forge-std/Test.sol";
+import { SimpleFactory } from "../src/utils/SimpleFactory.sol";
 
 /**
  * @title Multi Signature DeleGator Implementation Test
@@ -145,45 +144,6 @@ contract MultiSigDeleGatorTest is BaseTest {
     }
 
     ////////////////////// Redeeming delegations //////////////////////
-
-    // should allow Dave to redeem a Delegation through a UserOp when there's multiple signers (onchain)
-    function test_allow_invokeOnchainDelegationWithMultipleSigners() public {
-        // Get sharedDeleGator's Counter's initial count
-        uint256 initialValue_ = sharedDeleGatorCounter.count();
-
-        // Create delegation
-        Delegation memory delegation_ = Delegation({
-            delegate: address(users.dave.deleGator),
-            delegator: address(sharedDeleGator),
-            authority: ROOT_AUTHORITY,
-            caveats: new Caveat[](0),
-            salt: 0,
-            signature: hex""
-        });
-
-        // Store delegation
-        PackedUserOperation memory userOp_ =
-            createUserOp(address(sharedDeleGator), abi.encodeWithSelector(IDelegationManager.delegate.selector, delegation_));
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = SigningUtilsLib.signHash_MultiSig(sharedDeleGatorPrivateKeys, userOpHash_.toEthSignedMessageHash());
-        submitUserOp_Bundler(userOp_);
-
-        // Create Dave's action
-        Action memory action_ =
-            Action({ to: address(sharedDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
-
-        // Execute Dave's UserOp
-        Delegation[] memory delegations_ = new Delegation[](1);
-        delegations_[0] = delegation_;
-
-        invokeDelegation_UserOp(users.dave, delegations_, action_);
-
-        // Get final count
-        uint256 finalValue_ = sharedDeleGatorCounter.count();
-
-        // Validate that the count has increased by 1
-        assertEq(finalValue_, initialValue_ + 1);
-    }
 
     // should allow Dave to redeem a Delegation through a UserOp when there are multiple signers (offchain)
     function test_allow_invokeOffchainDelegationWithMultipleSigners() public {

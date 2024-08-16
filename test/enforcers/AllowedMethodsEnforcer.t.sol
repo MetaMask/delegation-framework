@@ -124,8 +124,8 @@ contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
             salt: 0,
             signature: hex""
         });
-        // Store delegation
-        execute_UserOp(users.alice, abi.encodeWithSelector(IDelegationManager.delegate.selector, delegation_));
+
+        delegation_ = signDelegation(users.alice, delegation_);
 
         // Execute Bob's UserOp
         Delegation[] memory delegations_ = new Delegation[](1);
@@ -168,8 +168,8 @@ contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
             salt: 0,
             signature: hex""
         });
-        // Store delegation
-        execute_UserOp(users.alice, abi.encodeWithSelector(IDelegationManager.delegate.selector, delegation_));
+
+        delegation_ = signDelegation(users.alice, delegation_);
 
         // Execute Bob's UserOp
         Delegation[] memory delegations_ = new Delegation[](1);

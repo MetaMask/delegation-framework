@@ -48,7 +48,6 @@ contract HybridDeleGator_Test is BaseTest {
 
     ////////////////////////////// Errors //////////////////////////////
 
-    error AlreadyExists(bytes32 keyIdHash, string keyId);
     error InvalidKey();
     error KeyDoesNotExist(bytes32 keyIdHash);
     error CannotRemoveLastKey();
@@ -618,54 +617,6 @@ contract HybridDeleGator_Test is BaseTest {
 
         // Bob is the EOA owner
         assertEq(users.bob.addr, onlyEoaHybridDeleGator.owner());
-    }
-
-    // A delegate replacing ALL of the existing keys (passkeys and EOA) in a single transaction onchain
-    function test_allow_replaceEOAWithEOAAndP256WithOnchainDelegation() public {
-        // Alice is the EOA owner
-        assertEq(users.alice.addr, aliceDeleGator.owner());
-
-        // Compute Bob's P256 keys
-        string[] memory keyIds_ = new string[](1);
-        uint256[] memory xValues_ = new uint256[](1);
-        uint256[] memory yValues_ = new uint256[](1);
-        keyIds_[0] = users.bob.name;
-        xValues_[0] = users.bob.x;
-        yValues_[0] = users.bob.y;
-
-        // Create the action that would be executed
-        Action memory action_ = Action({
-            to: address(aliceDeleGator),
-            value: 0,
-            data: abi.encodeWithSelector(HybridDeleGator.updateSigners.selector, users.bob.addr, keyIds_, xValues_, yValues_)
-        });
-
-        Caveat[] memory caveats_ = new Caveat[](0);
-        Delegation memory delegation_ = Delegation({
-            delegate: address(bobDeleGator),
-            delegator: address(aliceDeleGator),
-            authority: ROOT_AUTHORITY,
-            caveats: caveats_,
-            salt: 0,
-            signature: hex""
-        });
-
-        // Store delegation
-        execute_UserOp(users.alice, abi.encodeWithSelector(IDelegationManager.delegate.selector, delegation_));
-
-        // Execute Bob's UserOp
-        Delegation[] memory delegations_ = new Delegation[](1);
-        delegations_[0] = delegation_;
-
-        invokeDelegation_UserOp(users.bob, delegations_, action_);
-
-        // Bob is the EOA owner now
-        (uint256 x__, uint256 y__) = aliceDeleGator.getKey(users.bob.name);
-        assertEq(users.bob.x, x__);
-        assertEq(users.bob.y, y__);
-
-        // Bob is the EOA owner
-        assertEq(users.bob.addr, aliceDeleGator.owner());
     }
 
     // A delegate replacing ALL of the existing keys (passkeys and EOA) in a single transaction offchain

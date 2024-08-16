@@ -10,7 +10,7 @@ import { Implementation, SignatureType } from "./utils/Types.t.sol";
 import { Counter } from "./utils/Counter.t.sol";
 import { MultiSigDeleGator } from "../src/MultiSigDeleGator.sol";
 import { IDeleGatorCoreFull } from "../src/interfaces/IDeleGatorCoreFull.sol";
-import { SimpleFactory } from "./utils/SimpleFactory.sol";
+import { SimpleFactory } from "../src/utils/SimpleFactory.sol";
 import { AllowedTargetsEnforcer } from "../src/enforcers/AllowedTargetsEnforcer.sol";
 import { AllowedMethodsEnforcer } from "../src/enforcers/AllowedMethodsEnforcer.sol";
 
