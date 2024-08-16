@@ -12,6 +12,7 @@ import { IDelegationManager } from "../src/interfaces/IDelegationManager.sol";
 
 import { AllowedCalldataEnforcer } from "../src/enforcers/AllowedCalldataEnforcer.sol";
 import { AllowedMethodsEnforcer } from "../src/enforcers/AllowedMethodsEnforcer.sol";
+import { NativeTokenTransferAmountEnforcer } from "../src/enforcers/NativeTokenTransferAmountEnforcer.sol";
 import { AllowedTargetsEnforcer } from "../src/enforcers/AllowedTargetsEnforcer.sol";
 import { BlockNumberEnforcer } from "../src/enforcers/BlockNumberEnforcer.sol";
 import { DeployedEnforcer } from "../src/enforcers/DeployedEnforcer.sol";
@@ -24,6 +25,8 @@ import { TimestampEnforcer } from "../src/enforcers/TimestampEnforcer.sol";
 import { ValueLteEnforcer } from "../src/enforcers/ValueLteEnforcer.sol";
 import { NativeTokenTransferAmountEnforcer } from "../src/enforcers/NativeTokenTransferAmountEnforcer.sol";
 import { NativeBalanceGteEnforcer } from "../src/enforcers/NativeBalanceGteEnforcer.sol";
+import { NativeTokenPaymentEnforcer } from "../src/enforcers/NativeTokenPaymentEnforcer.sol";
+import { ArgsEqualityCheckEnforcer } from "../src/enforcers/ArgsEqualityCheckEnforcer.sol";
 
 /**
  * @title DeployEnvironmentSetUp
@@ -108,6 +111,17 @@ contract DeployEnvironmentSetUp is Script {
         
         address nativeBalanceGteEnforcer = address(new NativeBalanceGteEnforcer{ salt: salt }());
         console2.log("NativeBalanceGteEnforcer: %s", address(nativeBalanceGteEnforcer));
+
+        address nativeTokenTransferAmountEnforcer = address(new NativeTokenTransferAmountEnforcer{ salt: salt }());
+        console2.log("NativeTokenTransferAmountEnforcer: %s", address(nativeTokenTransferAmountEnforcer));
+
+        address argsEqualityCheckEnforcer = address(new ArgsEqualityCheckEnforcer{ salt: salt }());
+        console2.log("ArgsEqualityCheckEnforcer: %s", address(argsEqualityCheckEnforcer));
+
+        address nativeTokenPaymentEnforcer = address(
+            new NativeTokenPaymentEnforcer{ salt: salt }(IDelegationManager(delegationManager), address(argsEqualityCheckEnforcer))
+        );
+        console2.log("NativeTokenPaymentEnforcer: %s", address(nativeTokenPaymentEnforcer));
 
         vm.stopBroadcast();
     }
