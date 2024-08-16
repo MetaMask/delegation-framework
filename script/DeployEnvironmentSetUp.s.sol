@@ -22,6 +22,7 @@ import { LimitedCallsEnforcer } from "../src/enforcers/LimitedCallsEnforcer.sol"
 import { NonceEnforcer } from "../src/enforcers/NonceEnforcer.sol";
 import { TimestampEnforcer } from "../src/enforcers/TimestampEnforcer.sol";
 import { ValueLteEnforcer } from "../src/enforcers/ValueLteEnforcer.sol";
+import { NativeTokenTransferAmountEnforcer } from "../src/enforcers/NativeTokenTransferAmountEnforcer.sol";
 import { NativeBalanceGteEnforcer } from "../src/enforcers/NativeBalanceGteEnforcer.sol";
 
 /**
@@ -102,6 +103,9 @@ contract DeployEnvironmentSetUp is Script {
         address valueLteEnfocer = address(new ValueLteEnforcer{ salt: salt }());
         console2.log("ValueLteEnforcer: %s", address(valueLteEnfocer));
 
+        address nativeTokenTransferAmountEnforcer = address(new NativeTokenTransferAmountEnforcer{ salt: salt }());
+        console2.log("NativeTokenTransferAmountEnforcer: %s", address(nativeTokenTransferAmountEnforcer));
+        
         address nativeBalanceGteEnforcer = address(new NativeBalanceGteEnforcer{ salt: salt }());
         console2.log("NativeBalanceGteEnforcer: %s", address(nativeBalanceGteEnforcer));
 
