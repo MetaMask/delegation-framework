@@ -213,17 +213,15 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
             }
         }
 
-        {
-            // beforeHook (leaf to root)
-            for (uint256 i; i < delegations_.length; ++i) {
-                Caveat[] memory caveats_ = delegations_[i].caveats;
-                bytes32 delegationHash_ = delegationHashes_[i];
-                address delegator_ = delegations_[i].delegator;
-                uint256 caveatsLength_ = caveats_.length;
-                for (uint256 j; j < caveatsLength_; ++j) {
-                    ICaveatEnforcer enforcer_ = ICaveatEnforcer(caveats_[j].enforcer);
-                    enforcer_.beforeHook(caveats_[j].terms, caveats_[j].args, _action, delegationHash_, delegator_, msg.sender);
-                }
+        // beforeHook (leaf to root)
+        for (uint256 i; i < delegations_.length; ++i) {
+            Caveat[] memory caveats_ = delegations_[i].caveats;
+            bytes32 delegationHash_ = delegationHashes_[i];
+            address delegator_ = delegations_[i].delegator;
+            uint256 caveatsLength_ = caveats_.length;
+            for (uint256 j; j < caveatsLength_; ++j) {
+                ICaveatEnforcer enforcer_ = ICaveatEnforcer(caveats_[j].enforcer);
+                enforcer_.beforeHook(caveats_[j].terms, caveats_[j].args, _action, delegationHash_, delegator_, msg.sender);
             }
         }
 
