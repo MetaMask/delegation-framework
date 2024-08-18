@@ -252,10 +252,16 @@ abstract contract DeleGatorTestSuite is BaseTest {
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation_;
 
+        bytes[] memory encodedDelegations_ = new bytes[](1);
+        encodedDelegations_[0] = abi.encode(delegations_);
+
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] = action_;
+
         vm.expectRevert(abi.encodeWithSelector(IDelegationManager.EmptySignature.selector));
 
         vm.prank(address(users.bob.deleGator));
-        users.bob.deleGator.redeemDelegation(abi.encode(delegations_), action_);
+        users.bob.deleGator.redeemDelegation(encodedDelegations_, actions_);
     }
 
     // should not allow to enable already enabled delegation
@@ -359,10 +365,14 @@ abstract contract DeleGatorTestSuite is BaseTest {
         // Create Bob's action
         Action memory action_ =
             Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] = action_;
 
         // Execute Bob's UserOp
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation_;
+        bytes[] memory encodedDelegations_ = new bytes[](1);
+        encodedDelegations_[0] = abi.encode(delegations_);
 
         invokeDelegation_UserOp(users.bob, delegations_, action_);
 
@@ -380,7 +390,7 @@ abstract contract DeleGatorTestSuite is BaseTest {
         );
 
         bytes memory userOpCallData_ =
-            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, abi.encode(delegations_), action_);
+            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, encodedDelegations_, actions_);
 
         uint256[] memory signers_ = new uint256[](1);
         signers_[0] = users.bob.privateKey;
@@ -531,7 +541,14 @@ abstract contract DeleGatorTestSuite is BaseTest {
 
         // Bob redeems the delegation
         vm.prank(users.bob.addr);
-        delegationManager.redeemDelegation(abi.encode(delegations_), action_);
+
+        bytes[] memory encodedDelegations_ = new bytes[](1);
+        encodedDelegations_[0] = abi.encode(delegations_);
+
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] = action_;
+
+        delegationManager.redeemDelegation(encodedDelegations_, actions_);
 
         // Validate that the count has increased by 1
         updatedValue_ = aliceDeleGatorCounter.count();
@@ -582,7 +599,13 @@ abstract contract DeleGatorTestSuite is BaseTest {
 
         // Carol redeems the delegation
         vm.prank(users.carol.addr);
-        delegationManager.redeemDelegation(abi.encode(delegations_), action_);
+        bytes[] memory encodedDelegations_ = new bytes[](1);
+        encodedDelegations_[0] = abi.encode(delegations_);
+
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] = action_;
+
+        delegationManager.redeemDelegation(encodedDelegations_, actions_);
 
         // Validate that the count has increased by 1
         updatedValue_ = aliceDeleGatorCounter.count();
@@ -612,7 +635,13 @@ abstract contract DeleGatorTestSuite is BaseTest {
 
         vm.prank(users.bob.addr);
         vm.expectRevert();
-        delegationManager.redeemDelegation(abi.encode("quack"), action_);
+
+        bytes[] memory encodedDelegations_ = new bytes[](1);
+        encodedDelegations_[0] = abi.encode("quack");
+
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] = action_;
+        delegationManager.redeemDelegation(encodedDelegations_, actions_);
 
         // Get final count
         uint256 finalValue_ = aliceDeleGatorCounter.count();
@@ -727,7 +756,14 @@ abstract contract DeleGatorTestSuite is BaseTest {
         delegations_[0] = delegation_;
 
         vm.prank(users.bob.addr);
-        delegationManager.redeemDelegation(abi.encode(delegations_), action_);
+
+        bytes[] memory encodedDelegations_ = new bytes[](1);
+        encodedDelegations_[0] = abi.encode(delegations_);
+
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] = action_;
+
+        delegationManager.redeemDelegation(encodedDelegations_, actions_);
 
         // Get final count
         uint256 finalValue_ = aliceDeleGatorCounter.count();
@@ -777,7 +813,14 @@ abstract contract DeleGatorTestSuite is BaseTest {
         delegations_[1] = delegation1_;
 
         vm.prank(users.carol.addr);
-        delegationManager.redeemDelegation(abi.encode(delegations_), action_);
+
+        bytes[] memory encodedDelegations_ = new bytes[](1);
+        encodedDelegations_[0] = abi.encode(delegations_);
+
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] = action_;
+
+        delegationManager.redeemDelegation(encodedDelegations_, actions_);
 
         // Get final count
         uint256 finalValue_ = aliceDeleGatorCounter.count();
@@ -828,7 +871,14 @@ abstract contract DeleGatorTestSuite is BaseTest {
 
         vm.prank(users.carol.addr);
         vm.expectRevert(abi.encodeWithSelector(IDelegationManager.InvalidSignature.selector));
-        delegationManager.redeemDelegation(abi.encode(delegations_), action_);
+
+        bytes[] memory encodedDelegations_ = new bytes[](1);
+        encodedDelegations_[0] = abi.encode(delegations_);
+
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] = action_;
+
+        delegationManager.redeemDelegation(encodedDelegations_, actions_);
 
         // Get final count
         // Validate that the count has increased by 1
@@ -964,16 +1014,20 @@ abstract contract DeleGatorTestSuite is BaseTest {
         // Create Dave's action
         Action memory action_ =
             Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] = action_;
 
         // Execute Dave's UserOp
         Delegation[] memory delegations_ = new Delegation[](2);
         delegations_[0] = carolDelegation_;
         delegations_[1] = aliceDelegation_;
+        bytes[] memory encodedDelegations_ = new bytes[](1);
+        encodedDelegations_[0] = abi.encode(delegations_);
 
         PackedUserOperation memory userOp_ = createAndSignUserOp(
             users.dave,
             address(users.dave.deleGator),
-            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, abi.encode(delegations_), action_)
+            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, encodedDelegations_, actions_)
         );
 
         PackedUserOperation[] memory userOps_ = new PackedUserOperation[](1);
@@ -1087,7 +1141,14 @@ abstract contract DeleGatorTestSuite is BaseTest {
         delegations_[1] = aliceDelegation_;
 
         vm.prank(users.carol.addr);
-        delegationManager.redeemDelegation(abi.encode(delegations_), action_);
+
+        bytes[] memory encodedDelegations_ = new bytes[](1);
+        encodedDelegations_[0] = abi.encode(delegations_);
+
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] = action_;
+
+        delegationManager.redeemDelegation(encodedDelegations_, actions_);
 
         // Get final count
         uint256 finalValue_ = aliceDeleGatorCounter.count();
@@ -1158,15 +1219,19 @@ abstract contract DeleGatorTestSuite is BaseTest {
         delegation_ = signDelegation(users.alice, delegation_);
 
         // Create Action
-        Action memory incrementAction_ =
+        Action memory action_ =
             Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] = action_;
 
         // Invoke delegation calldata
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation_;
+        bytes[] memory encodedDelegations_ = new bytes[](1);
+        encodedDelegations_[0] = abi.encode(delegations_);
 
         bytes memory invokeDelegationCalldata_ =
-            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, abi.encode(delegations_), incrementAction_);
+            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, encodedDelegations_, actions_);
 
         // Create invoke delegation Actions
         Action[] memory redemptionActions_ = new Action[](2);
@@ -1205,12 +1270,15 @@ abstract contract DeleGatorTestSuite is BaseTest {
         // Invoke delegation calldata
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation;
+        bytes[] memory encodedDelegations_ = new bytes[](1);
+        encodedDelegations_[0] = abi.encode(delegations_);
 
-        bytes memory invokeDelegationCalldata_ = abi.encodeWithSelector(
-            IDeleGatorCoreFull.redeemDelegation.selector,
-            abi.encode(delegations_),
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) })
-        );
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] =
+            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+
+        bytes memory invokeDelegationCalldata_ =
+            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, encodedDelegations_, actions_);
 
         // Create invoke delegation Actions
         Action[] memory redemptionActions_ = new Action[](2);
@@ -1503,58 +1571,21 @@ abstract contract DeleGatorTestSuite is BaseTest {
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation_;
 
+        bytes[] memory encodedDelegations_ = new bytes[](1);
+        encodedDelegations_[0] = abi.encode(delegations_);
+
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] = action_;
+
         vm.prank(users.bob.addr);
         vm.expectRevert();
-        delegationManager.redeemDelegation(abi.encode(delegations_), action_);
+        delegationManager.redeemDelegation(encodedDelegations_, actions_);
 
         // Get final count
         uint256 finalValue_ = aliceDeleGatorCounter.count();
 
         // Validate that the count has not increased by 1
         assertEq(finalValue_, initialValue_);
-    }
-
-    // Should revert if user tries to redeem a delegation without providing delegations_
-    function test_error_NoDelegationsProvided() public {
-        // Create delegation
-        Delegation memory delegation_ = Delegation({
-            delegate: address(users.bob.deleGator),
-            delegator: address(users.alice.deleGator),
-            authority: ROOT_AUTHORITY,
-            caveats: new Caveat[](0),
-            salt: 0,
-            signature: hex""
-        });
-
-        delegation_ = signDelegation(users.alice, delegation_);
-
-        // Create Bob's action
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
-
-        Delegation[] memory delegations_ = new Delegation[](0);
-
-        // creating userOpCallData_
-        bytes memory userOpCallData_ =
-            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, abi.encode(delegations_), action_);
-
-        PackedUserOperation memory userOp_ = createAndSignUserOp(users.bob, address(users.bob.deleGator), userOpCallData_);
-
-        PackedUserOperation[] memory userOps_ = new PackedUserOperation[](1);
-        userOps_[0] = userOp_;
-
-        // prank from bundler
-        vm.prank(bundler);
-
-        // get User Operation hash
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-
-        vm.expectEmit(true, true, false, true, address(entryPoint));
-        // expected error
-        emit UserOperationRevertReason(
-            userOpHash_, address(users.bob.deleGator), 0, abi.encodeWithSelector(IDelegationManager.NoDelegationsProvided.selector)
-        );
-        entryPoint.handleOps(userOps_, bundler);
     }
 
     // Should revert if the caller is not the delegate
@@ -1574,13 +1605,17 @@ abstract contract DeleGatorTestSuite is BaseTest {
         // Create Bob's action
         Action memory action_ =
             Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] = action_;
 
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation_;
+        bytes[] memory encodedDelegations_ = new bytes[](1);
+        encodedDelegations_[0] = abi.encode(delegations_);
 
         // create user operation calldata for invokeDelegation
         bytes memory userOpCallData_ =
-            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, abi.encode(delegations_), action_);
+            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, encodedDelegations_, actions_);
 
         PackedUserOperation memory userOp_ = createAndSignUserOp(users.carol, address(users.carol.deleGator), userOpCallData_);
 
@@ -1620,6 +1655,8 @@ abstract contract DeleGatorTestSuite is BaseTest {
         // Create Bob's action
         Action memory action_ =
             Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] = action_;
 
         // signing the userOp_ from bob
         uint256[] memory signers_ = new uint256[](1);
@@ -1627,9 +1664,11 @@ abstract contract DeleGatorTestSuite is BaseTest {
 
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation_;
+        bytes[] memory encodedDelegations_ = new bytes[](1);
+        encodedDelegations_[0] = abi.encode(delegations_);
 
         bytes memory userOpCallData_ =
-            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, abi.encode(delegations_), action_);
+            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, encodedDelegations_, actions_);
 
         PackedUserOperation memory userOp_ = createAndSignUserOp(users.bob, address(users.bob.deleGator), userOpCallData_);
 
@@ -1669,13 +1708,17 @@ abstract contract DeleGatorTestSuite is BaseTest {
         // Create Bob's action
         Action memory action_ =
             Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] = action_;
 
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation_;
+        bytes[] memory encodedDelegations_ = new bytes[](1);
+        encodedDelegations_[0] = abi.encode(delegations_);
 
         // create user operation calldata for invokeDelegation
         bytes memory userOpCallData_ =
-            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, abi.encode(delegations_), action_);
+            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, encodedDelegations_, actions_);
 
         // create and sign user operation with Bob
         PackedUserOperation memory userOp_ = createAndSignUserOp(users.bob, address(users.bob.deleGator), userOpCallData_);
@@ -1756,10 +1799,15 @@ abstract contract DeleGatorTestSuite is BaseTest {
         Delegation[] memory delegations_ = new Delegation[](2);
         delegations_[0] = bobDelegation_;
         delegations_[1] = aliceDelegation_;
+        bytes[] memory encodedDelegations_ = new bytes[](1);
+        encodedDelegations_[0] = abi.encode(delegations_);
+
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] = action_;
 
         // create user operation calldata for invokeDelegation
         bytes memory userOpCallData_ =
-            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, abi.encode(delegations_), action_);
+            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, encodedDelegations_, actions_);
 
         PackedUserOperation memory userOp_ = createAndSignUserOp(users.carol, address(users.carol.deleGator), userOpCallData_);
 

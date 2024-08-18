@@ -321,8 +321,14 @@ abstract contract BaseTest is Test {
     )
         public
     {
+        bytes[] memory dataArray = new bytes[](1);
+        dataArray[0] = abi.encode(_delegations);
+
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] = _action;
+
         bytes memory userOpCallData_ =
-            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, abi.encode(_delegations), _action);
+            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, dataArray, actions_);
         PackedUserOperation memory userOp_ = createUserOp(address(_user.deleGator), userOpCallData_, _initCode);
         bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
         userOp_.signature = signHash(_user, userOpHash_.toEthSignedMessageHash());

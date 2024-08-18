@@ -288,7 +288,6 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
 
     function test_delegationFrontRunning() public {
         address recipient_ = address(users.alice.deleGator);
-        bytes memory paymentTerms_ = abi.encodePacked(recipient_, uint256(1 ether));
         // The original terms indicating to send 1 ether to Alice as the payment for Bob
         bytes memory originalPaymentTerms_ = abi.encodePacked(recipient_, uint256(1 ether));
 
@@ -467,7 +466,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
 
 /// @dev This contract is used for testing a case where the redeemDelegation() function doesn't work as expected
 contract MockDelegationManager {
-    function redeemDelegation(bytes calldata _data, Action calldata _action) external {
+    function redeemDelegation(bytes[] calldata _permissionContexts, Action[] calldata _actions) external {
         // Does not do anything, the action is not processed
     }
 }

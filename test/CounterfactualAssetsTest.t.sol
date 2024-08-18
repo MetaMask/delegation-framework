@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 
 import { BaseTest } from "./utils/BaseTest.t.sol";
-import { Delegation, Delegation, Caveat, Action } from "../src/utils/Types.sol";
+import { Delegation, Caveat, Action } from "../src/utils/Types.sol";
 import { Implementation, SignatureType } from "./utils/Types.t.sol";
 import { BasicCF721 } from "./utils/BasicCF721.t.sol";
 import { EncoderLib } from "../src/libraries/EncoderLib.sol";

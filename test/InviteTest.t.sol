@@ -172,8 +172,13 @@ contract InviteTest is BaseTest {
             Delegation[] memory delegations_ = new Delegation[](1);
             delegations_[0] = delegation_;
 
-            bytes memory userOpCallData_ =
-                abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, abi.encode(delegations_), action_);
+            bytes[] memory dataArray = new bytes[](1);
+            dataArray[0] = abi.encode(delegations_);
+
+            Action[] memory actions_ = new Action[](1);
+            actions_[0] = action_;
+
+            bytes memory userOpCallData_ = abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, dataArray, actions_);
             PackedUserOperation memory userOp_ = createUserOp(predictedAddr_, userOpCallData_, initcode_);
             bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
             userOp_.signature = signHash(users.bob, userOpHash_.toEthSignedMessageHash());

@@ -4,7 +4,7 @@ A Delegation Manager is responsible for validating delegations and triggering th
 
 ## Rules
 
-- A Delegation Manager MUST implement `redeemDelegation` interface as specified `function redeemDelegation(bytes calldata _data, Action calldata _action) external;`.
+- A Delegation Manager MUST implement `redeemDelegation` interface as specified `function redeemDelegation(bytes[] calldata _permissionContexts, Action[] calldata _actions) external;`.
 
 ## Delegations
 
@@ -34,7 +34,7 @@ Open delegations are delegations that don't have a strict `delegate`. By setting
 
 Our `DelegationManager` implementation:
 
-1. `redeemDelegation` consumes a list of delegations (`Delegation[]`) and an `Action` to be executed
+1. `redeemDelegation` consumes an array of bytes with the encoded delegation chains (`Delegation[]`) for executing each of the `Action`.
    > NOTE: Delegations are ordered from leaf to root. The last delegation in the array must have the root authority.
 2. Validates the `msg.sender` calling `redeemDelegation` is allowed to do so
 3. Validates the signatures of offchain delegations.

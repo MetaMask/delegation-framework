@@ -4,7 +4,7 @@ pragma solidity 0.8.23;
 import "forge-std/Test.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
-import { Action, Caveat, Delegation, Delegation } from "../../src/utils/Types.sol";
+import { Action, Caveat, Delegation } from "../../src/utils/Types.sol";
 import { Counter } from "../utils/Counter.t.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { AllowedMethodsEnforcer } from "../../src/enforcers/AllowedMethodsEnforcer.sol";

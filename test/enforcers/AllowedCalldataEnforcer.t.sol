@@ -2,12 +2,11 @@
 pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
-import "forge-std/console2.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { BytesLib } from "@bytes-utils/BytesLib.sol";
 
 import { Counter } from "../utils/Counter.t.sol";
-import { Action, Caveat, Delegation, Delegation } from "../../src/utils/Types.sol";
+import { Action, Caveat, Delegation } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { AllowedCalldataEnforcer } from "../../src/enforcers/AllowedCalldataEnforcer.sol";
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";

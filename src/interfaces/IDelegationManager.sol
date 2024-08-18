@@ -33,9 +33,6 @@ interface IDelegationManager {
     /// @dev Error thrown when a user attempts to use a disabled delegation
     error CannotUseADisabledDelegation();
 
-    /// @dev Error thrown when there are no delegations provided
-    error NoDelegationsProvided();
-
     /// @dev Error thrown when the authority in a chain of delegations doesn't match the expected authority
     error InvalidAuthority();
 
@@ -57,6 +54,9 @@ interface IDelegationManager {
     /// @dev Error thrown when the delegation provided is already enabled
     error AlreadyEnabled();
 
+    /// @dev Error thrown when the batch size doesn't match the action array size
+    error BatchDataLengthMismatch();
+
     ////////////////////////////// MM Implementation Methods //////////////////////////////
 
     function pause() external;
@@ -71,7 +71,7 @@ interface IDelegationManager {
 
     function getDelegationHash(Delegation calldata _delegation) external pure returns (bytes32);
 
-    function redeemDelegation(bytes calldata _data, Action calldata _action) external;
+    function redeemDelegation(bytes[] calldata _permissionContexts, Action[] calldata _actions) external;
 
     function getDomainHash() external view returns (bytes32);
 }

@@ -112,15 +112,14 @@ abstract contract DeleGatorCore is Initializable, UUPSUpgradeable, IERC165, IDel
     receive() external payable { }
 
     /**
-     * @notice Redeems a delegation on the DelegationManager and executes the action as the root delegator
-     * @dev `_data` is made up of an array of `Delegation` structs that are used to validate the authority given to execute the
-     * action
-     * on the root delegator ordered from leaf to root.
-     * @param _data the data used to validate the authority given to execute the action
-     * @param _action The action to be executed
+     * @notice Redeems a delegation on the DelegationManager and executes the specified actions on behalf of the root delegator.
+     * @param _permissionContexts An array of bytes where each element is made up of an array
+     * of `Delegation` structs that are used to validate the authority given to execute the corresponding action on the
+     * root delegator, ordered from leaf to root.
+     * @param _actions An array of `Action` structs representing the actions to be executed.
      */
-    function redeemDelegation(bytes calldata _data, Action calldata _action) external onlyEntryPointOrSelf {
-        delegationManager.redeemDelegation(_data, _action);
+    function redeemDelegation(bytes[] calldata _permissionContexts, Action[] calldata _actions) external onlyEntryPointOrSelf {
+        delegationManager.redeemDelegation(_permissionContexts, _actions);
     }
 
     /// @inheritdoc IDeleGatorCore

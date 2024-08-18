@@ -10,7 +10,7 @@ import { BytesLib } from "@bytes-utils/BytesLib.sol";
 import { SigningUtilsLib } from "./utils/SigningUtilsLib.t.sol";
 import { StorageUtilsLib } from "./utils/StorageUtilsLib.t.sol";
 import { Implementation, SignatureType } from "./utils/Types.t.sol";
-import { Action, PackedUserOperation, Caveat, Delegation, Delegation } from "../src/utils/Types.sol";
+import { Action, PackedUserOperation, Caveat, Delegation } from "../src/utils/Types.sol";
 import { BaseTest } from "./utils/BaseTest.t.sol";
 import { HybridDeleGator } from "../src/HybridDeleGator.sol";
 import { IDeleGatorCoreFull } from "../src/interfaces/IDeleGatorCoreFull.sol";

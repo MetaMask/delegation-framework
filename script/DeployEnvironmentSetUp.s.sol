@@ -23,7 +23,6 @@ import { LimitedCallsEnforcer } from "../src/enforcers/LimitedCallsEnforcer.sol"
 import { NonceEnforcer } from "../src/enforcers/NonceEnforcer.sol";
 import { TimestampEnforcer } from "../src/enforcers/TimestampEnforcer.sol";
 import { ValueLteEnforcer } from "../src/enforcers/ValueLteEnforcer.sol";
-import { NativeTokenTransferAmountEnforcer } from "../src/enforcers/NativeTokenTransferAmountEnforcer.sol";
 import { NativeBalanceGteEnforcer } from "../src/enforcers/NativeBalanceGteEnforcer.sol";
 import { NativeTokenPaymentEnforcer } from "../src/enforcers/NativeTokenPaymentEnforcer.sol";
 import { ArgsEqualityCheckEnforcer } from "../src/enforcers/ArgsEqualityCheckEnforcer.sol";
@@ -108,12 +107,9 @@ contract DeployEnvironmentSetUp is Script {
 
         address nativeTokenTransferAmountEnforcer = address(new NativeTokenTransferAmountEnforcer{ salt: salt }());
         console2.log("NativeTokenTransferAmountEnforcer: %s", address(nativeTokenTransferAmountEnforcer));
-        
+
         address nativeBalanceGteEnforcer = address(new NativeBalanceGteEnforcer{ salt: salt }());
         console2.log("NativeBalanceGteEnforcer: %s", address(nativeBalanceGteEnforcer));
-
-        address nativeTokenTransferAmountEnforcer = address(new NativeTokenTransferAmountEnforcer{ salt: salt }());
-        console2.log("NativeTokenTransferAmountEnforcer: %s", address(nativeTokenTransferAmountEnforcer));
 
         address argsEqualityCheckEnforcer = address(new ArgsEqualityCheckEnforcer{ salt: salt }());
         console2.log("ArgsEqualityCheckEnforcer: %s", address(argsEqualityCheckEnforcer));

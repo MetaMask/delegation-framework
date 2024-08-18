@@ -10,7 +10,7 @@ import { ERC1967Proxy as DeleGatorProxy } from "@openzeppelin/contracts/proxy/ER
 
 import { SigningUtilsLib } from "./utils/SigningUtilsLib.t.sol";
 import { Implementation, SignatureType } from "./utils/Types.t.sol";
-import { Action, PackedUserOperation, Caveat, Delegation, Delegation } from "../src/utils/Types.sol";
+import { Action, PackedUserOperation, Caveat, Delegation } from "../src/utils/Types.sol";
 import { BaseTest } from "./utils/BaseTest.t.sol";
 import { AccountSorterLib } from "./utils/AccountSorterLib.t.sol";
 import { MultiSigDeleGator } from "../src/MultiSigDeleGator.sol";

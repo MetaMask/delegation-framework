@@ -29,7 +29,7 @@ interface IDeleGatorCoreFull is IDeleGatorCore, IERC165 {
 
     ////////////////////////////// MM Implementation Methods //////////////////////////////
 
-    function redeemDelegation(bytes calldata _data, Action calldata _action) external;
+    function redeemDelegation(bytes[] calldata _permissionContexts, Action[] calldata _actions) external;
 
     function execute(Action calldata _action) external;
 

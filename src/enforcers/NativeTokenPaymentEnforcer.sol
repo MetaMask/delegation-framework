@@ -80,12 +80,16 @@ contract NativeTokenPaymentEnforcer is CaveatEnforcer {
             }
         }
 
-        bytes memory newEncodedContext_ = abi.encode(delegations_);
-
         uint256 balanceBefore_ = recipient_.balance;
 
+        bytes[] memory encodedDelegations_ = new bytes[](1);
+        encodedDelegations_[0] = abi.encode(delegations_);
+
+        Action[] memory actions_ = new Action[](1);
+        actions_[0] = Action({ to: recipient_, value: amount_, data: hex"" });
+
         // Attempt to redeem the delegation and make the payment
-        delegationManager.redeemDelegation(newEncodedContext_, Action({ to: recipient_, value: amount_, data: hex"" }));
+        delegationManager.redeemDelegation(encodedDelegations_, actions_);
 
         // Ensure the recipient received the payment
         uint256 balanceAfter_ = recipient_.balance;

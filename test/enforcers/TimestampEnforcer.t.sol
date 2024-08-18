@@ -3,7 +3,7 @@ pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
 
-import { Action, Caveat, Delegation, Delegation } from "../../src/utils/Types.sol";
+import { Action, Caveat, Delegation } from "../../src/utils/Types.sol";
 import { Counter } from "../utils/Counter.t.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { TimestampEnforcer } from "../../src/enforcers/TimestampEnforcer.sol";

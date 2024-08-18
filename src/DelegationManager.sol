@@ -108,112 +108,162 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
     }
 
     /**
-     * @notice This method validates the provided data and executes the action if the caller has authority to do so.
-     * @dev _data is made up of an array of `Delegation` structs that are used to validate the authority given to execute the action
-     * on the root delegator ordered from leaf to root.
-     * @dev Delegations can be invalidated for a number of reasons at any moment including invalid signatures due to ownership
-     * changes, disabled delegations or arbitrary caveat
-     * restrictions. Be sure to validate offchain before submitting anything onchain.
-     * @dev Delegations are ordered from leaf to root. The last delegation in the array must have the root authority.
-     * @dev Delegations are signed by the delegator and are validated at the time of redemption.
-     * @dev Caveats are enforced with the order: `beforeHook` from leaf to root, execute action, `afterHook` from root to leaf
-     * @param _data the data used to validate the authority given to execute the action.
-     * @param _action the action to be executed
+     * @notice This method validates the provided permission contexts and executes the action if the caller has authority to do so.
+     * @dev The structure of the _permissionContexts array is determined by the specific Delegation Manager implementation
+     * If an entry in _permissionsContexts is empty (i.e., its length is 0), it is treated as a self-authorized action.
+     * @dev The length of _permissionsContexts must match the length of _actions.
+     * @dev The afterHook calls of all the caveat enforcers are called after the execution of all the actions in the batch.
+     * @dev If any afterHook fails, the entire transaction will revert.
+     * @param _permissionContexts An array of bytes where each element is made up of an array
+     * of `Delegation` structs that are used to validate the authority given to execute the corresponding action on the
+     * root delegator, ordered from leaf to root.
+     * @param _actions the array of actions to be executed
      */
-    function redeemDelegation(bytes calldata _data, Action calldata _action) external whenNotPaused {
-        Delegation[] memory delegations_ = abi.decode(_data, (Delegation[]));
+    function redeemDelegation(bytes[] calldata _permissionContexts, Action[] calldata _actions) external whenNotPaused {
+        uint256 batchSize_ = _permissionContexts.length;
+        if (batchSize_ != _actions.length) revert BatchDataLengthMismatch();
 
-        // Validate caller
-        if (delegations_.length == 0) {
-            revert NoDelegationsProvided();
-        }
+        Delegation[][] memory batchDelegations_ = new Delegation[][](batchSize_);
+        bytes32[][] memory batchDelegationHashes_ = new bytes32[][](batchSize_);
 
-        // Load delegation hashes and validate signatures (leaf to root)
-        bytes32[] memory delegationHashes_ = new bytes32[](delegations_.length);
-        Delegation memory delegation_;
+        // Validate and process delegations for each action
+        for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
+            Delegation[] memory delegations_ = abi.decode(_permissionContexts[batchIndex_], (Delegation[]));
 
-        // Validate caller
-        if (delegations_[0].delegate != msg.sender && delegations_[0].delegate != ANY_DELEGATE) {
-            revert InvalidDelegate();
-        }
-
-        for (uint256 i; i < delegations_.length; ++i) {
-            delegation_ = delegations_[i];
-            delegationHashes_[i] = EncoderLib._getDelegationHash(delegation_);
-
-            if (delegation_.signature.length == 0) {
-                // Ensure that delegations without signatures revert
-                revert EmptySignature();
-            }
-            // Check if the delegator is an EOA or a contract
-            address delegator_ = delegation_.delegator;
-
-            if (delegator_.code.length == 0) {
-                // Validate delegation if it's an EOA
-                address result_ =
-                    ECDSA.recover(MessageHashUtils.toTypedDataHash(getDomainHash(), delegationHashes_[i]), delegation_.signature);
-                if (result_ != delegator_) revert InvalidSignature();
+            if (delegations_.length == 0) {
+                // Special case: If the permissionContext is empty, treat it as a self authorized action
+                batchDelegations_[batchIndex_] = new Delegation[](0);
+                batchDelegationHashes_[batchIndex_] = new bytes32[](0);
             } else {
-                // Validate delegation if it's a contract
-                bytes32 typedDataHash_ = MessageHashUtils.toTypedDataHash(getDomainHash(), delegationHashes_[i]);
+                batchDelegations_[batchIndex_] = delegations_;
 
-                bytes32 result_ = IERC1271(delegator_).isValidSignature(typedDataHash_, delegation_.signature);
-                if (result_ != ERC1271Lib.EIP1271_MAGIC_VALUE) {
-                    revert InvalidSignature();
-                }
-            }
-        }
+                // Load delegation hashes and validate signatures (leaf to root)
+                bytes32[] memory delegationHashes_ = new bytes32[](delegations_.length);
+                batchDelegationHashes_[batchIndex_] = delegationHashes_;
 
-        // (leaf to root)
-        for (uint256 i; i < delegations_.length; ++i) {
-            // Validate if delegation is disabled
-            if (disabledDelegations[delegationHashes_[i]]) {
-                revert CannotUseADisabledDelegation();
-            }
+                // Validate caller
+                if (delegations_[0].delegate != msg.sender && delegations_[0].delegate != ANY_DELEGATE) revert InvalidDelegate();
 
-            // Validate authority
-            if (i != delegations_.length - 1) {
-                if (delegations_[i].authority != delegationHashes_[i + 1]) {
-                    revert InvalidAuthority();
+                for (uint256 delegationsIndex_; delegationsIndex_ < delegations_.length; ++delegationsIndex_) {
+                    Delegation memory delegation_ = delegations_[delegationsIndex_];
+                    delegationHashes_[delegationsIndex_] = EncoderLib._getDelegationHash(delegation_);
+
+                    if (delegation_.signature.length == 0) {
+                        // Ensure that delegations without signatures revert
+                        revert EmptySignature();
+                    }
+
+                    // Check if the delegator is an EOA or a contract
+                    address delegator_ = delegation_.delegator;
+
+                    if (delegator_.code.length == 0) {
+                        // Validate delegation if it's an EOA
+                        address result_ = ECDSA.recover(
+                            MessageHashUtils.toTypedDataHash(getDomainHash(), delegationHashes_[delegationsIndex_]),
+                            delegation_.signature
+                        );
+                        if (result_ != delegator_) revert InvalidSignature();
+                    } else {
+                        // Validate delegation if it's a contract
+                        bytes32 typedDataHash_ =
+                            MessageHashUtils.toTypedDataHash(getDomainHash(), delegationHashes_[delegationsIndex_]);
+
+                        bytes32 result_ = IERC1271(delegator_).isValidSignature(typedDataHash_, delegation_.signature);
+                        if (result_ != ERC1271Lib.EIP1271_MAGIC_VALUE) {
+                            revert InvalidSignature();
+                        }
+                    }
                 }
-                // Validate delegate
-                address nextDelegate = delegations_[i + 1].delegate;
-                if (nextDelegate != ANY_DELEGATE && delegations_[i].delegator != nextDelegate) {
-                    revert InvalidDelegate();
+
+                // Validate authority and delegate (leaf to root)
+                for (uint256 delegationsIndex_; delegationsIndex_ < delegations_.length; ++delegationsIndex_) {
+                    // Validate if delegation is disabled
+                    if (disabledDelegations[delegationHashes_[delegationsIndex_]]) {
+                        revert CannotUseADisabledDelegation();
+                    }
+
+                    // Validate authority
+                    if (delegationsIndex_ != delegations_.length - 1) {
+                        if (delegations_[delegationsIndex_].authority != delegationHashes_[delegationsIndex_ + 1]) {
+                            revert InvalidAuthority();
+                        }
+                        // Validate delegate
+                        address nextDelegate_ = delegations_[delegationsIndex_ + 1].delegate;
+                        if (nextDelegate_ != ANY_DELEGATE && delegations_[delegationsIndex_].delegator != nextDelegate_) {
+                            revert InvalidDelegate();
+                        }
+                    } else if (delegations_[delegationsIndex_].authority != ROOT_AUTHORITY) {
+                        revert InvalidAuthority();
+                    }
                 }
-            } else if (delegations_[i].authority != ROOT_AUTHORITY) {
-                revert InvalidAuthority();
             }
         }
 
         // beforeHook (leaf to root)
-        for (uint256 i; i < delegations_.length; ++i) {
-            Caveat[] memory caveats_ = delegations_[i].caveats;
-            bytes32 delegationHash_ = delegationHashes_[i];
-            address delegator_ = delegations_[i].delegator;
-            uint256 caveatsLength_ = caveats_.length;
-            for (uint256 j; j < caveatsLength_; ++j) {
-                ICaveatEnforcer enforcer_ = ICaveatEnforcer(caveats_[j].enforcer);
-                enforcer_.beforeHook(caveats_[j].terms, caveats_[j].args, _action, delegationHash_, delegator_, msg.sender);
+        for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
+            if (batchDelegations_[batchIndex_].length > 0) {
+                Delegation[] memory delegations_ = batchDelegations_[batchIndex_];
+                bytes32[] memory delegationHashes_ = batchDelegationHashes_[batchIndex_];
+                // Execute beforeHooks
+                for (uint256 delegationsIndex_; delegationsIndex_ < delegations_.length; ++delegationsIndex_) {
+                    Caveat[] memory caveats_ = delegations_[delegationsIndex_].caveats;
+                    for (uint256 caveatsIndex_; caveatsIndex_ < caveats_.length; ++caveatsIndex_) {
+                        ICaveatEnforcer enforcer_ = ICaveatEnforcer(caveats_[caveatsIndex_].enforcer);
+                        enforcer_.beforeHook(
+                            caveats_[caveatsIndex_].terms,
+                            caveats_[caveatsIndex_].args,
+                            _actions[batchIndex_],
+                            delegationHashes_[delegationsIndex_],
+                            delegations_[delegationsIndex_].delegator,
+                            msg.sender
+                        );
+                    }
+                }
             }
         }
 
-        // Execute action (root)
-        IDeleGatorCore(delegations_[delegations_.length - 1].delegator).executeDelegatedAction(_action);
+        for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
+            if (batchDelegations_[batchIndex_].length == 0) {
+                // special case: If there are no delegations, defer the call to the caller.
+                IDeleGatorCore(msg.sender).executeDelegatedAction(_actions[batchIndex_]);
+            } else {
+                IDeleGatorCore(batchDelegations_[batchIndex_][batchDelegations_[batchIndex_].length - 1].delegator)
+                    .executeDelegatedAction(_actions[batchIndex_]);
+            }
+        }
 
         // afterHook (root to leaf)
-        for (uint256 i = delegations_.length; i > 0; --i) {
-            Caveat[] memory caveats_ = delegations_[i - 1].caveats;
-            bytes32 delegationHash_ = delegationHashes_[i - 1];
-            address delegator_ = delegations_[i - 1].delegator;
-            uint256 caveatsLength_ = caveats_.length;
-            for (uint256 j; j < caveatsLength_; ++j) {
-                ICaveatEnforcer enforcer_ = ICaveatEnforcer(caveats_[j].enforcer);
-                enforcer_.afterHook(caveats_[j].terms, caveats_[j].args, _action, delegationHash_, delegator_, msg.sender);
+        for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
+            if (batchDelegations_[batchIndex_].length > 0) {
+                Delegation[] memory delegations_ = batchDelegations_[batchIndex_];
+                bytes32[] memory delegationHashes_ = batchDelegationHashes_[batchIndex_];
+                // Execute afterHooks
+                for (uint256 delegationsIndex_ = delegations_.length; delegationsIndex_ > 0; --delegationsIndex_) {
+                    Caveat[] memory caveats_ = delegations_[delegationsIndex_ - 1].caveats;
+                    for (uint256 caveatsIndex_; caveatsIndex_ < caveats_.length; ++caveatsIndex_) {
+                        ICaveatEnforcer enforcer_ = ICaveatEnforcer(caveats_[caveatsIndex_].enforcer);
+                        enforcer_.afterHook(
+                            caveats_[caveatsIndex_].terms,
+                            caveats_[caveatsIndex_].args,
+                            _actions[batchIndex_],
+                            delegationHashes_[delegationsIndex_ - 1],
+                            delegations_[delegationsIndex_ - 1].delegator,
+                            msg.sender
+                        );
+                    }
+                }
             }
         }
-        for (uint256 i; i < delegations_.length; ++i) {
-            emit RedeemedDelegation(delegations_[delegations_.length - 1].delegator, msg.sender, delegations_[i]);
+
+        for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
+            if (batchDelegations_[batchIndex_].length > 0) {
+                Delegation[] memory delegations_ = batchDelegations_[batchIndex_];
+                for (uint256 delegationsIndex_; delegationsIndex_ < delegations_.length; ++delegationsIndex_) {
+                    emit RedeemedDelegation(
+                        delegations_[delegations_.length - 1].delegator, msg.sender, delegations_[delegationsIndex_]
+                    );
+                }
+            }
         }
     }
 
