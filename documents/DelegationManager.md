@@ -4,7 +4,7 @@ A Delegation Manager is responsible for validating delegations and triggering th
 
 ## Rules
 
-- A Delegation Manager MUST implement `redeemDelegation` interface as specified `function redeemDelegation(bytes[] calldata _permissionContexts, Action[] calldata _actions) external;`.
+- A Delegation Manager MUST implement `redeemDelegation` interface as specified `function redeemDelegation(bytes[] calldata _permissionContexts, ModeCode[] _modes, bytes[] calldata _executionCallDatas) external;`.
 
 ## Delegations
 
@@ -30,18 +30,18 @@ Open delegations are delegations that don't have a strict `delegate`. By setting
 
 ## Redeeming a Delegation
 
-`redeemDelegation` method that can be used by delegation redeemers to execute some `Action` which will be verified by the `DelegationManager` before ultimately calling `executeAction` on the root delegator.
+`redeemDelegation` method that can be used by delegation redeemers to execute some `Execution` which will be verified by the `DelegationManager` before ultimately calling `executeAsExecutor` on the root delegator.
 
 Our `DelegationManager` implementation:
 
-1. `redeemDelegation` consumes an array of bytes with the encoded delegation chains (`Delegation[]`) for executing each of the `Action`.
+1. `redeemDelegation` consumes an array of bytes with the encoded delegation chains (`Delegation[]`) for executing each of the `Execution`.
    > NOTE: Delegations are ordered from leaf to root. The last delegation in the array must have the root authority.
 2. Validates the `msg.sender` calling `redeemDelegation` is allowed to do so
 3. Validates the signatures of offchain delegations.
 4. Checks if any of the delegations being redeemed are disabled
 5. Ensures each delegation has sufficient authority to execute, given by the previous delegation or by being a root delegation
 6. Calls `beforeHook` for all delegations (from leaf to root delegation)
-7. Executes the `Action` provided
+7. Executes the `Execution` provided
 8. Calls `afterHook` for all delegations (from root to leaf delegation)
 
 > NOTE: Ensure to double check that the delegation is valid before submitting a UserOp. A delegation can be revoked or a signature can be invalidated at any time.

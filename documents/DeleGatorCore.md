@@ -1,6 +1,6 @@
 # DeleGator Core
 
-Defines the interface needed for a `DelegationManager` to invoke an `Action` on behalf of the delegator.
+Defines the interface needed for a `DelegationManager` to invoke an `Execution` on behalf of the delegator.
 
 # MetaMask's DeleGatorCore
 
