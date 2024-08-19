@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
-import { Action } from "../utils/Types.sol";
+import { ModeCode } from "../utils/Types.sol";
 
 /**
  *  * @title ArgsEqualityCheckEnforcer
@@ -31,7 +31,8 @@ contract ArgsEqualityCheckEnforcer is CaveatEnforcer {
     function beforeHook(
         bytes calldata _terms,
         bytes calldata _args,
-        Action calldata,
+        ModeCode,
+        bytes calldata,
         bytes32 _delegationHash,
         address,
         address _redeemer

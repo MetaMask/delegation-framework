@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { IDeleGatorCoreFull } from "../../src/interfaces/IDeleGatorCoreFull.sol";
+import { DeleGatorCore } from "../../src/DeleGatorCore.sol";
 
 struct TestUser {
     string name;
     address payable addr;
     uint256 privateKey;
-    IDeleGatorCoreFull deleGator;
+    DeleGatorCore deleGator;
     uint256 x;
     uint256 y;
 }

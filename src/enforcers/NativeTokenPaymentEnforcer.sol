@@ -1,20 +1,26 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
+import { ModeLib } from "@erc7579/lib/ModeLib.sol";
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
+
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
-import { Action, Delegation } from "../utils/Types.sol";
+import { Execution, Delegation, ModeCode } from "../utils/Types.sol";
 import { IDelegationManager } from "../interfaces/IDelegationManager.sol";
 
 /**
  * @title NativeTokenPaymentEnforcer
  * @notice This contract enforces payment in native token (e.g., ETH) for the right to use a delegation.
- * @dev The redeemer must include a payment delegation in the arguments when executing an action.
- * The payment, made in native token, is processed during the execution of the delegated action, ensuring that the
+ * @dev The redeemer must include a payment delegation in the arguments when executing an execution.
+ * The payment, made in native token, is processed during the execution of the delegated execution, ensuring that the
  * enforced conditions are met.
  * Combining `NativeTokenTransferAmountEnforcer` and `ArgsEqualityCheckEnforcer` when creating the payment delegation is recommended
  * to prevent front-running attacks.
+ * @dev Requires the redeemer to be a DeleGator that supports the single execution mode.
  */
 contract NativeTokenPaymentEnforcer is CaveatEnforcer {
+    using ModeLib for ModeCode;
+
     ////////////////////////////// State //////////////////////////////
 
     /// @dev The Delegation Manager contract to redeem the delegation
@@ -55,7 +61,8 @@ contract NativeTokenPaymentEnforcer is CaveatEnforcer {
     function afterHook(
         bytes calldata _terms,
         bytes calldata _args,
-        Action calldata,
+        ModeCode,
+        bytes calldata,
         bytes32 _delegationHash,
         address _delegator,
         address _redeemer
@@ -80,16 +87,19 @@ contract NativeTokenPaymentEnforcer is CaveatEnforcer {
             }
         }
 
+        bytes[] memory permissionContexts_ = new bytes[](1);
+        permissionContexts_[0] = abi.encode(delegations_);
+
+        bytes[] memory executionCallDatas_ = new bytes[](1);
+        executionCallDatas_[0] = ExecutionLib.encodeSingle(recipient_, amount_, hex"");
+
+        ModeCode[] memory encodedModes_ = new ModeCode[](1);
+        encodedModes_[0] = ModeLib.encodeSimpleSingle();
+
         uint256 balanceBefore_ = recipient_.balance;
 
-        bytes[] memory encodedDelegations_ = new bytes[](1);
-        encodedDelegations_[0] = abi.encode(delegations_);
-
-        Action[] memory actions_ = new Action[](1);
-        actions_[0] = Action({ to: recipient_, value: amount_, data: hex"" });
-
         // Attempt to redeem the delegation and make the payment
-        delegationManager.redeemDelegation(encodedDelegations_, actions_);
+        delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
 
         // Ensure the recipient received the payment
         uint256 balanceAfter_ = recipient_.balance;

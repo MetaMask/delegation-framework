@@ -4,9 +4,11 @@ pragma solidity 0.8.23;
 import "forge-std/Test.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { BytesLib } from "@bytes-utils/BytesLib.sol";
+import { ModeLib } from "@erc7579/lib/ModeLib.sol";
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { Counter } from "../utils/Counter.t.sol";
-import { Action, Caveat, Delegation } from "../../src/utils/Types.sol";
+import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { AllowedCalldataEnforcer } from "../../src/enforcers/AllowedCalldataEnforcer.sol";
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
@@ -21,10 +23,13 @@ contract DummyContract {
 }
 
 contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
+    using ModeLib for ModeCode;
+
     ////////////////////////////// State //////////////////////////////
     AllowedCalldataEnforcer public allowedCalldataEnforcer;
     BasicERC20 public basicCF20;
     BasicCF721 public basicCF721;
+    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////// Set up //////////////////////
 
@@ -40,12 +45,13 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
 
     // should allow a single method to be called when a single function parameter is equal
     function test_singleMethodCanBeCalledWithEqualParam() public {
-        // Create the action that would be executed
-        Action memory action_ = Action({
-            to: address(basicCF20),
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(basicCF20),
             value: 0,
-            data: abi.encodeWithSelector(BasicERC20.mint.selector, address(users.alice.deleGator), uint256(100))
+            callData: abi.encodeWithSelector(BasicERC20.mint.selector, address(users.alice.deleGator), uint256(100))
         });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // beforeHook, mimicking the behavior of Alice's DeleGator
         uint256 paramStart_ = abi.encodeWithSelector(BasicERC20.mint.selector, address(0)).length;
@@ -53,7 +59,7 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory inputTerms_ = abi.encodePacked(paramStart_, paramValue_);
 
         vm.prank(address(delegationManager));
-        allowedCalldataEnforcer.beforeHook(inputTerms_, hex"", action_, keccak256(""), address(0), address(0));
+        allowedCalldataEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     // should allow a method to be called when a single function parameter that is a dynamic array
@@ -62,52 +68,55 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
         param[0] = 1;
         param[1] = 2;
 
-        // Create the action that would be executed
-        Action memory action_ =
-            Action({ to: address(0), value: 0, data: abi.encodeWithSelector(DummyContract.arrayFn.selector, param) });
+        // Create the execution that would be executed
+        Execution memory execution_ =
+            Execution({ target: address(0), value: 0, callData: abi.encodeWithSelector(DummyContract.arrayFn.selector, param) });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // The subset of the calldata that includes the index of the calldata where the dynamic array starts
         bytes memory offsetTerms_ = abi.encodePacked(uint256(4), uint256(32));
         // The subset of the calldata that includes the number of elements in the array
         bytes memory lengthTerms_ = abi.encodePacked(uint256(36), uint256(2));
         // The subset of the calldata that includes data in the array
-        bytes memory parameterTerms_ = abi.encodePacked(uint256(68), BytesLib.slice(action_.data, uint256(68), uint256(64)));
+        bytes memory parameterTerms_ = abi.encodePacked(uint256(68), BytesLib.slice(execution_.callData, uint256(68), uint256(64)));
 
         vm.prank(address(delegationManager));
-        allowedCalldataEnforcer.beforeHook(offsetTerms_, hex"", action_, keccak256(""), address(0), address(0));
-        allowedCalldataEnforcer.beforeHook(lengthTerms_, hex"", action_, keccak256(""), address(0), address(0));
-        allowedCalldataEnforcer.beforeHook(parameterTerms_, hex"", action_, keccak256(""), address(0), address(0));
+        allowedCalldataEnforcer.beforeHook(offsetTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        allowedCalldataEnforcer.beforeHook(lengthTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        allowedCalldataEnforcer.beforeHook(parameterTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     // should allow a single method to be called when a single function parameter that is dynamic is equal
     function test_singleMethodCanBeCalledWithEqualDynamicStringParam() public {
         string memory param = "Test string";
 
-        // Create the action that would be executed
-        Action memory action_ =
-            Action({ to: address(0), value: 0, data: abi.encodeWithSelector(DummyContract.arrayFn.selector, param) });
+        // Create the execution that would be executed
+        Execution memory execution_ =
+            Execution({ target: address(0), value: 0, callData: abi.encodeWithSelector(DummyContract.arrayFn.selector, param) });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // The offset of the string in the calldata
         bytes memory offsetTerms_ = abi.encodePacked(uint256(4), uint256(32));
         // The length of the string
         bytes memory lengthTerms_ = abi.encodePacked(uint256(36), uint256(11));
         // The string itself
-        bytes memory parameterTerms_ = abi.encodePacked(uint256(68), BytesLib.slice(action_.data, uint256(68), uint256(32)));
+        bytes memory parameterTerms_ = abi.encodePacked(uint256(68), BytesLib.slice(execution_.callData, uint256(68), uint256(32)));
 
         vm.prank(address(delegationManager));
-        allowedCalldataEnforcer.beforeHook(offsetTerms_, hex"", action_, keccak256(""), address(0), address(0));
-        allowedCalldataEnforcer.beforeHook(lengthTerms_, hex"", action_, keccak256(""), address(0), address(0));
-        allowedCalldataEnforcer.beforeHook(parameterTerms_, hex"", action_, keccak256(""), address(0), address(0));
+        allowedCalldataEnforcer.beforeHook(offsetTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        allowedCalldataEnforcer.beforeHook(lengthTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        allowedCalldataEnforcer.beforeHook(parameterTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     // should allow Artist to create NFT specific delegations with metadata caveat
     function test_methodCanBeCalledWithSpecificMetadata() public {
         string memory metadataUrl_ = "ipfs://bafybeigxsy55qgbdqw44y5yrs2jhhk2kdn7vbt6y4myvhcwdjak6cwj464/3762";
 
-        // The Action with the mint calldata that would be executed
+        // The Execution with the mint calldata that would be executed
         bytes memory encodedData_ =
             abi.encodeWithSelector(BasicCF721.mintWithMetadata.selector, address(users.bob.deleGator), metadataUrl_);
-        Action memory action_ = Action({ to: address(basicCF721), value: 0, data: encodedData_ });
+        Execution memory execution_ = Execution({ target: address(basicCF721), value: 0, callData: encodedData_ });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // Calculate the start and length of the metadata bytes within the calldata
         bytes memory encodedMetadataString_ = abi.encode(metadataUrl_);
@@ -117,19 +126,20 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         // NOTE: Using encodedData_ not  encodedMetadataString_ to ensure the value for the offset is correct
         bytes memory allowedCalldata_ = abi.encodePacked(start_, BytesLib.slice(encodedData_, uint256(start_), uint256(length_)));
-        allowedCalldataEnforcer.beforeHook(allowedCalldata_, hex"", action_, keccak256(""), address(0), address(0));
+        allowedCalldataEnforcer.beforeHook(allowedCalldata_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     ////////////////////// Invalid cases //////////////////////
 
     // should NOT allow a method to be called when a single function parameter is not equal
     function test_singleMethodCanNotCalledWithNonEqualParam() public {
-        // Create the action that would be executed
-        Action memory action_ = Action({
-            to: address(basicCF20),
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(basicCF20),
             value: 0,
-            data: abi.encodeWithSelector(BasicERC20.mint.selector, address(users.alice.deleGator), uint256(200))
+            callData: abi.encodeWithSelector(BasicERC20.mint.selector, address(users.alice.deleGator), uint256(200))
         });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // beforeHook, mimicking the behavior of Alice's DeleGator
         uint256 paramStart_ = abi.encodeWithSelector(BasicERC20.mint.selector, address(0)).length;
@@ -138,17 +148,18 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         vm.expectRevert("AllowedCalldataEnforcer:invalid-calldata");
-        allowedCalldataEnforcer.beforeHook(inputTerms_, hex"", action_, keccak256(""), address(0), address(0));
+        allowedCalldataEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     // should NOT allow to pass an invalid calldata length (invalid terms)
     function test_failsWithInvalidTermsLength() public {
-        // Create the action that would be executed
-        Action memory action_ = Action({
-            to: address(basicCF20),
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(basicCF20),
             value: 0,
-            data: abi.encodeWithSelector(BasicERC20.mint.selector, address(users.alice.deleGator), uint256(200))
+            callData: abi.encodeWithSelector(BasicERC20.mint.selector, address(users.alice.deleGator), uint256(200))
         });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // beforeHook, mimicking the behavior of Alice's DeleGator
         uint256 paramStart_ = abi.encodeWithSelector(BasicERC20.mint.selector, address(0)).length;
@@ -157,17 +168,18 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         vm.expectRevert("AllowedCalldataEnforcer:invalid-calldata-length");
-        allowedCalldataEnforcer.beforeHook(inputTerms_, hex"", action_, keccak256(""), address(0), address(0));
+        allowedCalldataEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     // should NOT allow a method to be called when a terms size is invalid
     function test_singleMethodCanNotCalledWithInvalidTermsSize() public {
-        // Create the action that would be executed
-        Action memory action_ = Action({
-            to: address(basicCF20),
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(basicCF20),
             value: 0,
-            data: abi.encodeWithSelector(BasicERC20.mint.selector, address(users.alice.deleGator), uint256(200))
+            callData: abi.encodeWithSelector(BasicERC20.mint.selector, address(users.alice.deleGator), uint256(200))
         });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // beforeHook, mimicking the behavior of Alice's DeleGator
         uint256 paramStart_ = abi.encodeWithSelector(BasicERC20.mint.selector, address(0)).length;
@@ -175,7 +187,7 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         vm.expectRevert("AllowedCalldataEnforcer:invalid-terms-size");
-        allowedCalldataEnforcer.beforeHook(inputTerms_, hex"", action_, keccak256(""), address(0), address(0));
+        allowedCalldataEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     ////////////////////// Integration //////////////////////
@@ -184,11 +196,11 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
     function test_singleMethodCanBeCalledWithEqualParamIntegration() public {
         assertEq(basicCF20.balanceOf(address(users.bob.deleGator)), 0);
 
-        // Create the action that would be executed on Alice for transferring a ft tokens
-        Action memory action1_ = Action({
-            to: address(basicCF20),
+        // Create the execution that would be executed on Alice for transferring a ft tokens
+        Execution memory execution1_ = Execution({
+            target: address(basicCF20),
             value: 0,
-            data: abi.encodeWithSelector(IERC20.transfer.selector, address(users.bob.deleGator), uint256(1))
+            callData: abi.encodeWithSelector(IERC20.transfer.selector, address(users.bob.deleGator), uint256(1))
         });
 
         // create terms for the enforcer
@@ -214,13 +226,13 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
         delegations_[0] = delegation_;
 
         // Enforcer allows the delegation
-        invokeDelegation_UserOp(users.bob, delegations_, action1_);
+        invokeDelegation_UserOp(users.bob, delegations_, execution1_);
 
         // Validate that the balance have increased
         assertEq(basicCF20.balanceOf(address(users.bob.deleGator)), uint256(1));
 
         // Enforcer allows to reuse the delegation
-        invokeDelegation_UserOp(users.bob, delegations_, action1_);
+        invokeDelegation_UserOp(users.bob, delegations_, execution1_);
 
         // Validate that the balance has increased again
         assertEq(basicCF20.balanceOf(address(users.bob.deleGator)), uint256(2));
@@ -230,11 +242,11 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
     function test_singleMethodCanNotBeCalledWithNonEqualParamIntegration() public {
         assertEq(basicCF20.balanceOf(address(users.bob.deleGator)), 0);
 
-        // Create the action that would be executed on Alice for transferring a ft tokens
-        Action memory action1_ = Action({
-            to: address(basicCF20),
+        // Create the execution that would be executed on Alice for transferring a ft tokens
+        Execution memory execution1_ = Execution({
+            target: address(basicCF20),
             value: 0,
-            data: abi.encodeWithSelector(IERC20.transfer.selector, address(users.bob.deleGator), uint256(2))
+            callData: abi.encodeWithSelector(IERC20.transfer.selector, address(users.bob.deleGator), uint256(2))
         });
 
         // create terms for the enforcer
@@ -260,7 +272,7 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
         delegations_[0] = delegation_;
 
         // Enforcer allows the delegation
-        invokeDelegation_UserOp(users.bob, delegations_, action1_);
+        invokeDelegation_UserOp(users.bob, delegations_, execution1_);
 
         // Validate that the balance have not increased
         assertEq(basicCF20.balanceOf(address(users.bob.deleGator)), uint256(0));

@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 
 import { CaveatEnforcer } from "../../src/enforcers/CaveatEnforcer.sol";
-import { Action } from "../../src/utils/Types.sol";
+import { Execution, ModeCode } from "../../src/utils/Types.sol";
 
 /**
  * @title Password Enforcer
@@ -18,7 +18,8 @@ contract PasswordEnforcer is CaveatEnforcer {
     function beforeHook(
         bytes calldata _terms,
         bytes calldata _args,
-        Action calldata,
+        ModeCode,
+        bytes calldata,
         bytes32,
         address,
         address

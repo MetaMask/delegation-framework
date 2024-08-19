@@ -10,12 +10,12 @@ import { ERC1967Proxy as DeleGatorProxy } from "@openzeppelin/contracts/proxy/ER
 
 import { SigningUtilsLib } from "./utils/SigningUtilsLib.t.sol";
 import { Implementation, SignatureType } from "./utils/Types.t.sol";
-import { Action, PackedUserOperation, Caveat, Delegation } from "../src/utils/Types.sol";
+import { Execution, PackedUserOperation, Caveat, Delegation } from "../src/utils/Types.sol";
 import { BaseTest } from "./utils/BaseTest.t.sol";
 import { AccountSorterLib } from "./utils/AccountSorterLib.t.sol";
 import { MultiSigDeleGator } from "../src/MultiSigDeleGator.sol";
 import { IDelegationManager } from "../src/interfaces/IDelegationManager.sol";
-import { IDeleGatorCoreFull } from "../src/interfaces/IDeleGatorCoreFull.sol";
+import { DeleGatorCore } from "../src/DeleGatorCore.sol";
 import { EncoderLib } from "../src/libraries/EncoderLib.sol";
 import { Counter } from "./utils/Counter.t.sol";
 import { SimpleFactory } from "../src/utils/SimpleFactory.sol";
@@ -126,7 +126,7 @@ contract MultiSigDeleGatorTest is BaseTest {
             abi.encodeWithSelector(SimpleFactory.deploy.selector, abi.encodePacked(type(DeleGatorProxy).creationCode, args_), salt)
         );
 
-        // Give the new MultiSigDeleGator some funds to pay for the action
+        // Give the new MultiSigDeleGator some funds to pay for the execution
         vm.deal(predictedAddr_, 100);
 
         // Preload the EntryPoint with funds for the new MultiSigDeleGator
@@ -167,15 +167,18 @@ contract MultiSigDeleGatorTest is BaseTest {
         bytes memory signature_ = SigningUtilsLib.signHash_MultiSig(sharedDeleGatorPrivateKeys, typedDataHash_);
         delegation_.signature = signature_;
 
-        // Create Dave's action
-        Action memory action_ =
-            Action({ to: address(sharedDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        // Create Dave's execution
+        Execution memory execution_ = Execution({
+            target: address(sharedDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
 
         // Execute Dave's UserOp
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation_;
 
-        invokeDelegation_UserOp(users.dave, delegations_, action_);
+        invokeDelegation_UserOp(users.dave, delegations_, execution_);
 
         // Get final count
         uint256 finalValue_ = sharedDeleGatorCounter.count();
@@ -518,7 +521,7 @@ contract MultiSigDeleGatorTest is BaseTest {
         // Don't allow someone else to replace Alice's MultiSigDeleGator's signers
         // replaceSigner call must come from the MultiSigDeleGator itself
         vm.prank(address(users.alice.addr));
-        vm.expectRevert(abi.encodeWithSelector(IDeleGatorCoreFull.NotEntryPointOrSelf.selector));
+        vm.expectRevert(abi.encodeWithSelector(DeleGatorCore.NotEntryPointOrSelf.selector));
         aliceDeleGator.replaceSigner(users.alice.addr, users.bob.addr);
 
         // Mock calls from the MultiSigDeleGator itself
@@ -572,7 +575,7 @@ contract MultiSigDeleGatorTest is BaseTest {
         // Don't allow someone else to remove signers.
         // Call must come from the MultiSigDeleGator itself.
         vm.prank(address(users.alice.addr));
-        vm.expectRevert(abi.encodeWithSelector(IDeleGatorCoreFull.NotEntryPointOrSelf.selector));
+        vm.expectRevert(abi.encodeWithSelector(DeleGatorCore.NotEntryPointOrSelf.selector));
         aliceDeleGator.addSigner(users.bob.addr);
 
         // Mock calls from the MultiSigDeleGator itself
@@ -656,7 +659,7 @@ contract MultiSigDeleGatorTest is BaseTest {
         // Don't allow someone else to remove signers.
         // Call must come from the MultiSigDeleGator itself.
         vm.prank(address(users.alice.addr));
-        vm.expectRevert(abi.encodeWithSelector(IDeleGatorCoreFull.NotEntryPointOrSelf.selector));
+        vm.expectRevert(abi.encodeWithSelector(DeleGatorCore.NotEntryPointOrSelf.selector));
         aliceDeleGator.removeSigner(users.alice.addr);
 
         // Mock calls from the MultiSigDeleGator itself
@@ -700,7 +703,7 @@ contract MultiSigDeleGatorTest is BaseTest {
         // Don't allow someone else to remove signers.
         // Call must come from the MultiSigDeleGator itself.
         vm.prank(address(users.alice.addr));
-        vm.expectRevert(abi.encodeWithSelector(IDeleGatorCoreFull.NotEntryPointOrSelf.selector));
+        vm.expectRevert(abi.encodeWithSelector(DeleGatorCore.NotEntryPointOrSelf.selector));
         aliceDeleGator.updateThreshold(1);
 
         uint256 preThreshold_ = aliceDeleGator.getThreshold();
@@ -729,17 +732,17 @@ contract MultiSigDeleGatorTest is BaseTest {
 
         // Don't allow Alice to update Alice's MultiSigDeleGator's signers
         vm.prank(address(users.alice.addr));
-        vm.expectRevert(abi.encodeWithSelector(IDeleGatorCoreFull.NotEntryPointOrSelf.selector));
+        vm.expectRevert(abi.encodeWithSelector(DeleGatorCore.NotEntryPointOrSelf.selector));
         aliceDeleGator.updateMultiSigParameters(signers_, 1, false);
 
         // Don't allow Bob to update Alice's MultiSigDeleGator's signers
         vm.prank(address(users.bob.addr));
-        vm.expectRevert(abi.encodeWithSelector(IDeleGatorCoreFull.NotEntryPointOrSelf.selector));
+        vm.expectRevert(abi.encodeWithSelector(DeleGatorCore.NotEntryPointOrSelf.selector));
         aliceDeleGator.updateMultiSigParameters(signers_, 1, false);
 
         // Don't allow Bob's MultiSigDeleGator to update Alice's MultiSigDeleGator's signers
         vm.prank(address(bobDeleGator));
-        vm.expectRevert(abi.encodeWithSelector(IDeleGatorCoreFull.NotEntryPointOrSelf.selector));
+        vm.expectRevert(abi.encodeWithSelector(DeleGatorCore.NotEntryPointOrSelf.selector));
         aliceDeleGator.updateMultiSigParameters(signers_, 1, false);
     }
 
@@ -851,12 +854,12 @@ contract MultiSigDeleGatorTest is BaseTest {
         // Load DeleGator to manipulate
         address payable delegator_ = payable(address(aliceDeleGator));
 
-        uint64 version_ = IDeleGatorCoreFull(delegator_).getInitializedVersion() + 1;
+        uint64 version_ = DeleGatorCore(delegator_).getInitializedVersion() + 1;
         address[] memory newSigners_ = new address[](1);
         newSigners_[0] = users.bob.addr;
 
         vm.prank(users.bob.addr);
-        vm.expectRevert(abi.encodeWithSelector(IDeleGatorCoreFull.NotEntryPointOrSelf.selector));
+        vm.expectRevert(abi.encodeWithSelector(DeleGatorCore.NotEntryPointOrSelf.selector));
         MultiSigDeleGator(delegator_).reinitialize(version_, newSigners_, 1, false);
     }
 

@@ -11,7 +11,7 @@ import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { ICaveatEnforcer } from "./interfaces/ICaveatEnforcer.sol";
 import { IDelegationManager } from "./interfaces/IDelegationManager.sol";
 import { IDeleGatorCore } from "./interfaces/IDeleGatorCore.sol";
-import { Action, Delegation, Caveat } from "./utils/Types.sol";
+import { Delegation, Caveat, ModeCode } from "./utils/Types.sol";
 import { EncoderLib } from "./libraries/EncoderLib.sol";
 import { ERC1271Lib } from "./libraries/ERC1271Lib.sol";
 
@@ -29,7 +29,7 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
     string public constant NAME = "DelegationManager";
 
     /// @dev The full version of the contract
-    string public constant VERSION = "1.0.0";
+    string public constant VERSION = "1.1.0";
 
     /// @dev The version used in the domainSeparator for EIP712
     string public constant DOMAIN_VERSION = "1";
@@ -108,30 +108,39 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
     }
 
     /**
-     * @notice This method validates the provided permission contexts and executes the action if the caller has authority to do so.
+     * @notice This method validates the provided permission contexts and executes the execution if the caller has authority to do
+     * so.
      * @dev The structure of the _permissionContexts array is determined by the specific Delegation Manager implementation
-     * If an entry in _permissionsContexts is empty (i.e., its length is 0), it is treated as a self-authorized action.
-     * @dev The length of _permissionsContexts must match the length of _actions.
-     * @dev The afterHook calls of all the caveat enforcers are called after the execution of all the actions in the batch.
+     * If an entry in _permissionsContexts is empty (i.e., its length is 0), it is treated as a self-authorized execution.
+     * @dev The length of _permissionsContexts must match the length of _executionCallDatas.
+     * @dev The afterHook calls of all the caveat enforcers are called after the execution of all the executions in the batch.
      * @dev If any afterHook fails, the entire transaction will revert.
      * @param _permissionContexts An array of bytes where each element is made up of an array
-     * of `Delegation` structs that are used to validate the authority given to execute the corresponding action on the
+     * of `Delegation` structs that are used to validate the authority given to execute the corresponding execution on the
      * root delegator, ordered from leaf to root.
-     * @param _actions the array of actions to be executed
+     * @param _modes the array of modes to execute the related execution callData
+     * @param _executionCallDatas the array of encoded executions to be executed
      */
-    function redeemDelegation(bytes[] calldata _permissionContexts, Action[] calldata _actions) external whenNotPaused {
+    function redeemDelegations(
+        bytes[] calldata _permissionContexts,
+        ModeCode[] calldata _modes,
+        bytes[] calldata _executionCallDatas
+    )
+        external
+        whenNotPaused
+    {
         uint256 batchSize_ = _permissionContexts.length;
-        if (batchSize_ != _actions.length) revert BatchDataLengthMismatch();
+        if (batchSize_ != _executionCallDatas.length || batchSize_ != _modes.length) revert BatchDataLengthMismatch();
 
         Delegation[][] memory batchDelegations_ = new Delegation[][](batchSize_);
         bytes32[][] memory batchDelegationHashes_ = new bytes32[][](batchSize_);
 
-        // Validate and process delegations for each action
+        // Validate and process delegations for each execution
         for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
             Delegation[] memory delegations_ = abi.decode(_permissionContexts[batchIndex_], (Delegation[]));
 
             if (delegations_.length == 0) {
-                // Special case: If the permissionContext is empty, treat it as a self authorized action
+                // Special case: If the permissionContext is empty, treat it as a self authorized execution
                 batchDelegations_[batchIndex_] = new Delegation[](0);
                 batchDelegationHashes_[batchIndex_] = new bytes32[](0);
             } else {
@@ -142,7 +151,9 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
                 batchDelegationHashes_[batchIndex_] = delegationHashes_;
 
                 // Validate caller
-                if (delegations_[0].delegate != msg.sender && delegations_[0].delegate != ANY_DELEGATE) revert InvalidDelegate();
+                if (delegations_[0].delegate != msg.sender && delegations_[0].delegate != ANY_DELEGATE) {
+                    revert InvalidDelegate();
+                }
 
                 for (uint256 delegationsIndex_; delegationsIndex_ < delegations_.length; ++delegationsIndex_) {
                     Delegation memory delegation_ = delegations_[delegationsIndex_];
@@ -153,22 +164,19 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
                         revert EmptySignature();
                     }
 
-                    // Check if the delegator is an EOA or a contract
-                    address delegator_ = delegation_.delegator;
-
-                    if (delegator_.code.length == 0) {
+                    if (delegation_.delegator.code.length == 0) {
                         // Validate delegation if it's an EOA
                         address result_ = ECDSA.recover(
                             MessageHashUtils.toTypedDataHash(getDomainHash(), delegationHashes_[delegationsIndex_]),
                             delegation_.signature
                         );
-                        if (result_ != delegator_) revert InvalidSignature();
+                        if (result_ != delegation_.delegator) revert InvalidSignature();
                     } else {
                         // Validate delegation if it's a contract
                         bytes32 typedDataHash_ =
                             MessageHashUtils.toTypedDataHash(getDomainHash(), delegationHashes_[delegationsIndex_]);
 
-                        bytes32 result_ = IERC1271(delegator_).isValidSignature(typedDataHash_, delegation_.signature);
+                        bytes32 result_ = IERC1271(delegation_.delegator).isValidSignature(typedDataHash_, delegation_.signature);
                         if (result_ != ERC1271Lib.EIP1271_MAGIC_VALUE) {
                             revert InvalidSignature();
                         }
@@ -202,19 +210,18 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
         // beforeHook (leaf to root)
         for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
             if (batchDelegations_[batchIndex_].length > 0) {
-                Delegation[] memory delegations_ = batchDelegations_[batchIndex_];
-                bytes32[] memory delegationHashes_ = batchDelegationHashes_[batchIndex_];
                 // Execute beforeHooks
-                for (uint256 delegationsIndex_; delegationsIndex_ < delegations_.length; ++delegationsIndex_) {
-                    Caveat[] memory caveats_ = delegations_[delegationsIndex_].caveats;
+                for (uint256 delegationsIndex_; delegationsIndex_ < batchDelegations_[batchIndex_].length; ++delegationsIndex_) {
+                    Caveat[] memory caveats_ = batchDelegations_[batchIndex_][delegationsIndex_].caveats;
                     for (uint256 caveatsIndex_; caveatsIndex_ < caveats_.length; ++caveatsIndex_) {
                         ICaveatEnforcer enforcer_ = ICaveatEnforcer(caveats_[caveatsIndex_].enforcer);
                         enforcer_.beforeHook(
                             caveats_[caveatsIndex_].terms,
                             caveats_[caveatsIndex_].args,
-                            _actions[batchIndex_],
-                            delegationHashes_[delegationsIndex_],
-                            delegations_[delegationsIndex_].delegator,
+                            _modes[batchIndex_],
+                            _executionCallDatas[batchIndex_],
+                            batchDelegationHashes_[batchIndex_][delegationsIndex_],
+                            batchDelegations_[batchIndex_][delegationsIndex_].delegator,
                             msg.sender
                         );
                     }
@@ -225,29 +232,29 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
         for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
             if (batchDelegations_[batchIndex_].length == 0) {
                 // special case: If there are no delegations, defer the call to the caller.
-                IDeleGatorCore(msg.sender).executeDelegatedAction(_actions[batchIndex_]);
+                IDeleGatorCore(msg.sender).executeFromExecutor(_modes[batchIndex_], _executionCallDatas[batchIndex_]);
             } else {
                 IDeleGatorCore(batchDelegations_[batchIndex_][batchDelegations_[batchIndex_].length - 1].delegator)
-                    .executeDelegatedAction(_actions[batchIndex_]);
+                    .executeFromExecutor(_modes[batchIndex_], _executionCallDatas[batchIndex_]);
             }
         }
 
         // afterHook (root to leaf)
         for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
             if (batchDelegations_[batchIndex_].length > 0) {
-                Delegation[] memory delegations_ = batchDelegations_[batchIndex_];
-                bytes32[] memory delegationHashes_ = batchDelegationHashes_[batchIndex_];
                 // Execute afterHooks
-                for (uint256 delegationsIndex_ = delegations_.length; delegationsIndex_ > 0; --delegationsIndex_) {
-                    Caveat[] memory caveats_ = delegations_[delegationsIndex_ - 1].caveats;
+                for (uint256 delegationsIndex_ = batchDelegations_[batchIndex_].length; delegationsIndex_ > 0; --delegationsIndex_)
+                {
+                    Caveat[] memory caveats_ = batchDelegations_[batchIndex_][delegationsIndex_ - 1].caveats;
                     for (uint256 caveatsIndex_; caveatsIndex_ < caveats_.length; ++caveatsIndex_) {
                         ICaveatEnforcer enforcer_ = ICaveatEnforcer(caveats_[caveatsIndex_].enforcer);
                         enforcer_.afterHook(
                             caveats_[caveatsIndex_].terms,
                             caveats_[caveatsIndex_].args,
-                            _actions[batchIndex_],
-                            delegationHashes_[delegationsIndex_ - 1],
-                            delegations_[delegationsIndex_ - 1].delegator,
+                            _modes[batchIndex_],
+                            _executionCallDatas[batchIndex_],
+                            batchDelegationHashes_[batchIndex_][delegationsIndex_ - 1],
+                            batchDelegations_[batchIndex_][delegationsIndex_ - 1].delegator,
                             msg.sender
                         );
                     }
@@ -257,10 +264,11 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
 
         for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
             if (batchDelegations_[batchIndex_].length > 0) {
-                Delegation[] memory delegations_ = batchDelegations_[batchIndex_];
-                for (uint256 delegationsIndex_; delegationsIndex_ < delegations_.length; ++delegationsIndex_) {
+                for (uint256 delegationsIndex_; delegationsIndex_ < batchDelegations_[batchIndex_].length; ++delegationsIndex_) {
                     emit RedeemedDelegation(
-                        delegations_[delegations_.length - 1].delegator, msg.sender, delegations_[delegationsIndex_]
+                        batchDelegations_[batchIndex_][batchDelegations_[batchIndex_].length - 1].delegator,
+                        msg.sender,
+                        batchDelegations_[batchIndex_][delegationsIndex_]
                     );
                 }
             }

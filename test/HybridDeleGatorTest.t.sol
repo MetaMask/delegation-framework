@@ -6,18 +6,20 @@ import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy
 import { FCL_ecdsa_utils } from "@freshCryptoLib/FCL_ecdsa_utils.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { BytesLib } from "@bytes-utils/BytesLib.sol";
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { SigningUtilsLib } from "./utils/SigningUtilsLib.t.sol";
 import { StorageUtilsLib } from "./utils/StorageUtilsLib.t.sol";
 import { Implementation, SignatureType } from "./utils/Types.t.sol";
-import { Action, PackedUserOperation, Caveat, Delegation } from "../src/utils/Types.sol";
+import { Execution, PackedUserOperation, Caveat, Delegation } from "../src/utils/Types.sol";
 import { BaseTest } from "./utils/BaseTest.t.sol";
 import { HybridDeleGator } from "../src/HybridDeleGator.sol";
-import { IDeleGatorCoreFull } from "../src/interfaces/IDeleGatorCoreFull.sol";
 import { IDeleGatorCore } from "../src/interfaces/IDeleGatorCore.sol";
+import { DeleGatorCore } from "../src/DeleGatorCore.sol";
 import { IERC173 } from "../src/interfaces/IERC173.sol";
 import { IDelegationManager } from "../src/interfaces/IDelegationManager.sol";
 import { EncoderLib } from "../src/libraries/EncoderLib.sol";
+import { EXECUTE_SINGULAR_SIGNATURE } from "./utils/Constants.sol";
 
 contract HybridDeleGator_Test is BaseTest {
     using MessageHashUtils for bytes32;
@@ -95,12 +97,12 @@ contract HybridDeleGator_Test is BaseTest {
     // Should emit AddedP256Key in addKey
     function test_keyAdded_addKey() public {
         // Create and Sign UserOp
-        bytes memory userOpCallData_ = abi.encodeWithSelector(
-            IDeleGatorCoreFull.execute.selector,
-            Action({
-                to: address(aliceDeleGator),
+        bytes memory userOpCallData_ = abi.encodeWithSignature(
+            EXECUTE_SINGULAR_SIGNATURE,
+            Execution({
+                target: address(aliceDeleGator),
                 value: 0,
-                data: abi.encodeWithSelector(HybridDeleGator.addKey.selector, keyId, users.alice.x, users.alice.y)
+                callData: abi.encodeWithSelector(HybridDeleGator.addKey.selector, keyId, users.alice.x, users.alice.y)
             })
         );
         PackedUserOperation memory userOp_ = createAndSignUserOp(users.alice, address(aliceDeleGator), userOpCallData_);
@@ -117,9 +119,13 @@ contract HybridDeleGator_Test is BaseTest {
         execute_UserOp(users.alice, abi.encodeWithSelector(HybridDeleGator.addKey.selector, keyId, users.alice.x, users.alice.y));
 
         // Create and Sign UserOp
-        bytes memory userOpCallData_ = abi.encodeWithSelector(
-            IDeleGatorCoreFull.execute.selector,
-            Action({ to: address(aliceDeleGator), value: 0, data: abi.encodeWithSelector(HybridDeleGator.removeKey.selector, keyId) })
+        bytes memory userOpCallData_ = abi.encodeWithSignature(
+            EXECUTE_SINGULAR_SIGNATURE,
+            Execution({
+                target: address(aliceDeleGator),
+                value: 0,
+                callData: abi.encodeWithSelector(HybridDeleGator.removeKey.selector, keyId)
+            })
         );
         PackedUserOperation memory userOp_ = createAndSignUserOp(users.alice, address(aliceDeleGator), userOpCallData_);
 
@@ -328,7 +334,7 @@ contract HybridDeleGator_Test is BaseTest {
         // Replace the signers
         vm.startPrank(address(aliceDeleGator));
         aliceDeleGator.reinitialize(
-            uint8(IDeleGatorCoreFull(address(aliceDeleGator)).getInitializedVersion() + 1),
+            uint8(DeleGatorCore(payable(address(aliceDeleGator))).getInitializedVersion() + 1),
             users.bob.addr,
             keyIds_,
             xValues_,
@@ -363,7 +369,7 @@ contract HybridDeleGator_Test is BaseTest {
         // Replace the signers
         vm.startPrank(address(aliceDeleGator));
         aliceDeleGator.reinitialize(
-            uint8(IDeleGatorCoreFull(address(aliceDeleGator)).getInitializedVersion() + 1),
+            uint8(DeleGatorCore(payable(address(aliceDeleGator))).getInitializedVersion() + 1),
             users.bob.addr,
             keyIds_,
             xValues_,
@@ -402,11 +408,11 @@ contract HybridDeleGator_Test is BaseTest {
         execute_UserOp(
             users.alice,
             abi.encodeWithSelector(
-                IDeleGatorCoreFull.upgradeToAndCall.selector,
+                DeleGatorCore.upgradeToAndCall.selector,
                 address(hybridDeleGatorImpl),
                 abi.encodeWithSelector(
                     HybridDeleGator.reinitialize.selector,
-                    IDeleGatorCoreFull(deleGator_).getInitializedVersion() + 1,
+                    DeleGatorCore(deleGator_).getInitializedVersion() + 1,
                     users.bob.addr,
                     keyIds_,
                     xValues_,
@@ -418,7 +424,7 @@ contract HybridDeleGator_Test is BaseTest {
         );
 
         // Assert DeleGator is Hybrid
-        assertEq(address(IDeleGatorCoreFull(deleGator_).getImplementation()), address(hybridDeleGatorImpl));
+        assertEq(address(DeleGatorCore(deleGator_).getImplementation()), address(hybridDeleGatorImpl));
 
         // ERC4337 should be the same
         assertEq(delegatorCoreStoragePre_, vm.load(deleGator_, DELEGATOR_CORE_STORAGE_LOCATION));
@@ -491,7 +497,7 @@ contract HybridDeleGator_Test is BaseTest {
     function test_notAllow_transferOwnership_directOwner() public {
         // Submit Alice's tx
         vm.prank(users.alice.addr);
-        vm.expectRevert(abi.encodeWithSelector(IDeleGatorCoreFull.NotEntryPointOrSelf.selector));
+        vm.expectRevert(abi.encodeWithSelector(DeleGatorCore.NotEntryPointOrSelf.selector));
         aliceDeleGator.transferOwnership(users.bob.addr);
     }
 
@@ -499,7 +505,7 @@ contract HybridDeleGator_Test is BaseTest {
     function test_notAllow_transferOwnership_directNonOwner() public {
         // Submit Bob's tx
         vm.prank(users.bob.addr);
-        vm.expectRevert(abi.encodeWithSelector(IDeleGatorCoreFull.NotEntryPointOrSelf.selector));
+        vm.expectRevert(abi.encodeWithSelector(DeleGatorCore.NotEntryPointOrSelf.selector));
         aliceDeleGator.transferOwnership(users.bob.addr);
     }
 
@@ -525,12 +531,12 @@ contract HybridDeleGator_Test is BaseTest {
         assertEq(users.alice.addr, onlyEoaHybridDeleGator.owner());
 
         // Create and Sign UserOp
-        bytes memory userOpCallData_ = abi.encodeWithSelector(
-            IDeleGatorCoreFull.execute.selector,
-            Action({
-                to: address(onlyEoaHybridDeleGator),
+        bytes memory userOpCallData_ = abi.encodeWithSignature(
+            EXECUTE_SINGULAR_SIGNATURE,
+            Execution({
+                target: address(onlyEoaHybridDeleGator),
                 value: 0,
-                data: abi.encodeWithSelector(
+                callData: abi.encodeWithSelector(
                     HybridDeleGator.updateSigners.selector, users.bob.addr, new string[](0), new uint256[](0), new uint256[](0)
                 )
             })
@@ -560,12 +566,12 @@ contract HybridDeleGator_Test is BaseTest {
         yValues_[0] = users.bob.y;
 
         // Create and Sign UserOp
-        bytes memory userOpCallData_ = abi.encodeWithSelector(
-            IDeleGatorCoreFull.execute.selector,
-            Action({
-                to: address(onlyEoaHybridDeleGator),
+        bytes memory userOpCallData_ = abi.encodeWithSignature(
+            EXECUTE_SINGULAR_SIGNATURE,
+            Execution({
+                target: address(onlyEoaHybridDeleGator),
                 value: 0,
-                data: abi.encodeWithSelector(HybridDeleGator.updateSigners.selector, address(0), keyIds_, xValues_, yValues_)
+                callData: abi.encodeWithSelector(HybridDeleGator.updateSigners.selector, address(0), keyIds_, xValues_, yValues_)
             })
         );
         PackedUserOperation memory userOp_ = createUserOp(address(onlyEoaHybridDeleGator), userOpCallData_);
@@ -595,12 +601,12 @@ contract HybridDeleGator_Test is BaseTest {
         yValues_[0] = users.bob.y;
 
         // Create and Sign UserOp
-        bytes memory userOpCallData_ = abi.encodeWithSelector(
-            IDeleGatorCoreFull.execute.selector,
-            Action({
-                to: address(onlyEoaHybridDeleGator),
+        bytes memory userOpCallData_ = abi.encodeWithSignature(
+            EXECUTE_SINGULAR_SIGNATURE,
+            Execution({
+                target: address(onlyEoaHybridDeleGator),
                 value: 0,
-                data: abi.encodeWithSelector(HybridDeleGator.updateSigners.selector, users.bob.addr, keyIds_, xValues_, yValues_)
+                callData: abi.encodeWithSelector(HybridDeleGator.updateSigners.selector, users.bob.addr, keyIds_, xValues_, yValues_)
             })
         );
         PackedUserOperation memory userOp_ = createUserOp(address(onlyEoaHybridDeleGator), userOpCallData_);
@@ -632,11 +638,11 @@ contract HybridDeleGator_Test is BaseTest {
         xValues_[0] = users.bob.x;
         yValues_[0] = users.bob.y;
 
-        // Create the action that would be executed
-        Action memory action_ = Action({
-            to: address(aliceDeleGator),
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGator),
             value: 0,
-            data: abi.encodeWithSelector(HybridDeleGator.updateSigners.selector, users.bob.addr, keyIds_, xValues_, yValues_)
+            callData: abi.encodeWithSelector(HybridDeleGator.updateSigners.selector, users.bob.addr, keyIds_, xValues_, yValues_)
         });
 
         Caveat[] memory caveats_ = new Caveat[](0);
@@ -656,7 +662,7 @@ contract HybridDeleGator_Test is BaseTest {
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation_;
 
-        invokeDelegation_UserOp(users.bob, delegations_, action_);
+        invokeDelegation_UserOp(users.bob, delegations_, execution_);
 
         // Bob is the EOA owner now
         (uint256 x__, uint256 y__) = aliceDeleGator.getKey(users.bob.name);
@@ -685,13 +691,13 @@ contract HybridDeleGator_Test is BaseTest {
         vm.prank(address(entryPoint));
         aliceDeleGator.addKey(webAuthnKeyId_, xWebAuthn_, yWebAuthn_);
 
-        // Create the action that would be executed
-        bytes memory userOpCallData_ = abi.encodeWithSelector(
-            IDeleGatorCoreFull.execute.selector,
-            Action({
-                to: address(aliceDeleGator),
+        // Create the execution that would be executed
+        bytes memory userOpCallData_ = abi.encodeWithSignature(
+            EXECUTE_SINGULAR_SIGNATURE,
+            Execution({
+                target: address(aliceDeleGator),
                 value: 0,
-                data: abi.encodeWithSelector(Ownable.transferOwnership.selector, address(1))
+                callData: abi.encodeWithSelector(Ownable.transferOwnership.selector, address(1))
             })
         );
         PackedUserOperation memory userOp_ = createUserOp(address(aliceDeleGator), userOpCallData_);
@@ -745,13 +751,13 @@ contract HybridDeleGator_Test is BaseTest {
         vm.prank(address(entryPoint));
         aliceDeleGator.addKey(webAuthnKeyId_, xWebAuthn_, yWebAuthn_);
 
-        // Create the action that would be executed
-        bytes memory userOpCallData_ = abi.encodeWithSelector(
-            IDeleGatorCoreFull.execute.selector,
-            Action({
-                to: address(aliceDeleGator),
+        // Create the execution that would be executed
+        bytes memory userOpCallData_ = abi.encodeWithSignature(
+            EXECUTE_SINGULAR_SIGNATURE,
+            Execution({
+                target: address(aliceDeleGator),
                 value: 0,
-                data: abi.encodeWithSelector(Ownable.transferOwnership.selector, address(1))
+                callData: abi.encodeWithSelector(Ownable.transferOwnership.selector, address(1))
             })
         );
         PackedUserOperation memory userOp_ = createUserOp(address(aliceDeleGator), userOpCallData_);

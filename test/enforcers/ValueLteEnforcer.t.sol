@@ -3,18 +3,23 @@ pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
 import { BasicERC20 } from "../utils/BasicERC20.t.sol";
+import { ModeLib } from "@erc7579/lib/ModeLib.sol";
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import "../../src/utils/Types.sol";
-import { Action } from "../../src/utils/Types.sol";
+import { Execution, ModeCode } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { ValueLteEnforcer } from "../../src/enforcers/ValueLteEnforcer.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
 contract ValueLteEnforcerTest is CaveatEnforcerBaseTest {
+    using ModeLib for ModeCode;
+
     ////////////////////////////// State //////////////////////////////
     ValueLteEnforcer public enforcer;
     BasicERC20 public token;
     address delegator;
+    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////////////// Events //////////////////////////////
 
@@ -53,25 +58,27 @@ contract ValueLteEnforcerTest is CaveatEnforcerBaseTest {
     // Validates that valid values don't revert
     function test_allow_valueLte() public view {
         // Equal
-        bytes memory terms_ = abi.encodePacked(uint256(1 ether));
-        Action memory action_ = Action({
-            to: address(users.alice.deleGator),
+        bytes memory terms_ = abi.encode(uint256(1 ether));
+        Execution memory execution_ = Execution({
+            target: address(users.alice.deleGator),
             value: 1 ether,
-            data: abi.encodeWithSignature("test_valueLteIsAllowed()")
+            callData: abi.encodeWithSignature("test_valueLteIsAllowed()")
         });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // Should not revert
-        enforcer.beforeHook(terms_, "", action_, bytes32(0), address(0), address(0));
+        enforcer.beforeHook(terms_, "", mode, executionCallData_, bytes32(0), address(0), address(0));
 
         // Less than
-        action_ = Action({
-            to: address(users.alice.deleGator),
+        execution_ = Execution({
+            target: address(users.alice.deleGator),
             value: 0.1 ether,
-            data: abi.encodeWithSignature("test_valueLteIsAllowed()")
+            callData: abi.encodeWithSignature("test_valueLteIsAllowed()")
         });
+        executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // Should not revert
-        enforcer.beforeHook(terms_, "", action_, bytes32(0), address(0), address(0));
+        enforcer.beforeHook(terms_, "", mode, executionCallData_, bytes32(0), address(0), address(0));
     }
 
     //////////////////////// Errors ////////////////////////
@@ -80,15 +87,16 @@ contract ValueLteEnforcerTest is CaveatEnforcerBaseTest {
     function test_notAllow_valueGt() public {
         // Gt
         bytes memory terms_ = abi.encodePacked(uint256(1 ether));
-        Action memory action_ = Action({
-            to: address(users.alice.deleGator),
+        Execution memory execution_ = Execution({
+            target: address(users.alice.deleGator),
             value: 2 ether,
-            data: abi.encodeWithSignature("test_valueLteIsAllowed()")
+            callData: abi.encodeWithSignature("test_valueLteIsAllowed()")
         });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // Should not revert
         vm.expectRevert(bytes("ValueLteEnforcer:value-too-high"));
-        enforcer.beforeHook(terms_, "", action_, bytes32(0), address(0), address(0));
+        enforcer.beforeHook(terms_, "", mode, executionCallData_, bytes32(0), address(0), address(0));
     }
 
     // Validates the terms are well formed

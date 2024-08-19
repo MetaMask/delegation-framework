@@ -1,13 +1,21 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { Action, Caveat, Delegation } from "../../src/utils/Types.sol";
+import { ModeLib } from "@erc7579/lib/ModeLib.sol";
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
+
+import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { NativeTokenTransferAmountEnforcer } from "../../src/enforcers/NativeTokenTransferAmountEnforcer.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
 contract NativeAllowanceEnforcerTest is CaveatEnforcerBaseTest {
+    using ModeLib for ModeCode;
+
+    ////////////////////// State //////////////////////
+    ModeCode mode = ModeLib.encodeSimpleSingle();
+
     ////////////////////// Set up //////////////////////
     NativeTokenTransferAmountEnforcer public nativeTokenTransferAmountEnforcer;
 
@@ -29,8 +37,9 @@ contract NativeAllowanceEnforcerTest is CaveatEnforcerBaseTest {
     function test_transferSucceedsIfCalledBelowAllowance() public {
         uint256 allowance_ = 1 ether;
 
-        // Create the action that would be executed
-        Action memory action_ = Action({ to: address(users.bob.deleGator), value: 1 ether, data: hex"" });
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({ target: address(users.bob.deleGator), value: 1 ether, callData: hex"" });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         bytes memory inputTerms_ = abi.encode(allowance_);
 
@@ -42,7 +51,9 @@ contract NativeAllowanceEnforcerTest is CaveatEnforcerBaseTest {
         emit NativeTokenTransferAmountEnforcer.IncreasedSpentMap(
             address(delegationManager), address(0), delegationHash_, allowance_, 1 ether
         );
-        nativeTokenTransferAmountEnforcer.beforeHook(inputTerms_, hex"", action_, delegationHash_, address(0), address(0));
+        nativeTokenTransferAmountEnforcer.beforeHook(
+            inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0)
+        );
 
         assertEq(nativeTokenTransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), allowance_);
     }
@@ -51,8 +62,9 @@ contract NativeAllowanceEnforcerTest is CaveatEnforcerBaseTest {
     function test_transferSucceedsIfCalledBelowAllowanceMultipleCalls() public {
         uint256 allowance_ = 3 ether;
 
-        // Create the action that would be executed
-        Action memory action_ = Action({ to: address(users.bob.deleGator), value: 1 ether, data: hex"" });
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({ target: address(users.bob.deleGator), value: 1 ether, callData: hex"" });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         bytes memory inputTerms_ = abi.encode(allowance_);
 
@@ -65,7 +77,9 @@ contract NativeAllowanceEnforcerTest is CaveatEnforcerBaseTest {
         emit NativeTokenTransferAmountEnforcer.IncreasedSpentMap(
             address(delegationManager), address(0), delegationHash_, allowance_, 1 ether
         );
-        nativeTokenTransferAmountEnforcer.beforeHook(inputTerms_, hex"", action_, delegationHash_, address(0), address(0));
+        nativeTokenTransferAmountEnforcer.beforeHook(
+            inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0)
+        );
         assertEq(nativeTokenTransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), 1 ether);
 
         // Second use
@@ -73,7 +87,9 @@ contract NativeAllowanceEnforcerTest is CaveatEnforcerBaseTest {
         emit NativeTokenTransferAmountEnforcer.IncreasedSpentMap(
             address(delegationManager), address(0), delegationHash_, allowance_, 2 ether
         );
-        nativeTokenTransferAmountEnforcer.beforeHook(inputTerms_, hex"", action_, delegationHash_, address(0), address(0));
+        nativeTokenTransferAmountEnforcer.beforeHook(
+            inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0)
+        );
         assertEq(nativeTokenTransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), 2 ether);
 
         // Third use, maximum allowance used
@@ -81,7 +97,9 @@ contract NativeAllowanceEnforcerTest is CaveatEnforcerBaseTest {
         emit NativeTokenTransferAmountEnforcer.IncreasedSpentMap(
             address(delegationManager), address(0), delegationHash_, allowance_, allowance_
         );
-        nativeTokenTransferAmountEnforcer.beforeHook(inputTerms_, hex"", action_, delegationHash_, address(0), address(0));
+        nativeTokenTransferAmountEnforcer.beforeHook(
+            inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0)
+        );
         assertEq(nativeTokenTransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), allowance_);
     }
 
@@ -91,9 +109,10 @@ contract NativeAllowanceEnforcerTest is CaveatEnforcerBaseTest {
     function test_transferFailsIfAllowanceExceeded() public {
         uint256 allowance_ = 1 ether;
 
-        // Create the action that would be executed
+        // Create the execution that would be executed
         // The value is higher than the allowance
-        Action memory action_ = Action({ to: address(users.bob.deleGator), value: allowance_ + 1, data: hex"" });
+        Execution memory execution_ = Execution({ target: address(users.bob.deleGator), value: allowance_ + 1, callData: hex"" });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         bytes memory inputTerms_ = abi.encode(allowance_);
 
@@ -102,7 +121,9 @@ contract NativeAllowanceEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(nativeTokenTransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), 0);
         vm.prank(address(delegationManager));
         vm.expectRevert("NativeTokenTransferAmountEnforcer:allowance-exceeded");
-        nativeTokenTransferAmountEnforcer.beforeHook(inputTerms_, hex"", action_, delegationHash_, address(0), address(0));
+        nativeTokenTransferAmountEnforcer.beforeHook(
+            inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0)
+        );
 
         // The allowance does not change
         assertEq(nativeTokenTransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), 0);

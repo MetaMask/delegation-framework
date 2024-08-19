@@ -5,7 +5,7 @@ import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import { Create2 } from "@openzeppelin/contracts/utils/Create2.sol";
 
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
-import { Action } from "../utils/Types.sol";
+import { ModeCode } from "../utils/Types.sol";
 
 /**
  * @title DeployedEnforcer
@@ -49,7 +49,18 @@ contract DeployedEnforcer is CaveatEnforcer {
      *    the next 32 bytes are the salt to use for create2
      *    the remaining bytes are the bytecode of the contract to deploy
      */
-    function beforeHook(bytes calldata _terms, bytes calldata, Action calldata, bytes32, address, address) public override {
+    function beforeHook(
+        bytes calldata _terms,
+        bytes calldata,
+        ModeCode,
+        bytes calldata,
+        bytes32,
+        address,
+        address
+    )
+        public
+        override
+    {
         (address expectedAddress_, bytes32 salt_, bytes memory bytecode_) = getTermsInfo(_terms);
 
         // check if this contract has been deployed yet

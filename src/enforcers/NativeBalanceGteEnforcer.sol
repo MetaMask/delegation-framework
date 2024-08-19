@@ -2,12 +2,13 @@
 pragma solidity 0.8.23;
 
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
-import { Action } from "../utils/Types.sol";
+import { ModeCode } from "../utils/Types.sol";
 
 /**
  * @title NativeBalanceGteEnforcer
  * @dev This contract enforces that a recipient's native token balance has increased by at least the specified amount
- * after the action has been executed, measured between the `beforeHook` and `afterHook` calls, regardless of what the action is.
+ * after the execution has been executed, measured between the `beforeHook` and `afterHook` calls, regardless of what the execution
+ * is.
  * @dev This contract does not enforce how the balance increases. It is meant to be used with additional enforcers to create
  * granular permissions.
  */
@@ -40,7 +41,8 @@ contract NativeBalanceGteEnforcer is CaveatEnforcer {
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
-        Action calldata,
+        ModeCode,
+        bytes calldata,
         bytes32 _delegationHash,
         address,
         address
@@ -65,7 +67,8 @@ contract NativeBalanceGteEnforcer is CaveatEnforcer {
     function afterHook(
         bytes calldata _terms,
         bytes calldata,
-        Action calldata,
+        ModeCode,
+        bytes calldata,
         bytes32 _delegationHash,
         address,
         address

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { Action, Delegation } from "../utils/Types.sol";
+import { Delegation, Execution, ModeCode } from "../utils/Types.sol";
 
 /**
  * @title IDelegationManager
@@ -54,7 +54,7 @@ interface IDelegationManager {
     /// @dev Error thrown when the delegation provided is already enabled
     error AlreadyEnabled();
 
-    /// @dev Error thrown when the batch size doesn't match the action array size
+    /// @dev Error thrown when the batch size doesn't match the execution array size
     error BatchDataLengthMismatch();
 
     ////////////////////////////// MM Implementation Methods //////////////////////////////
@@ -71,7 +71,12 @@ interface IDelegationManager {
 
     function getDelegationHash(Delegation calldata _delegation) external pure returns (bytes32);
 
-    function redeemDelegation(bytes[] calldata _permissionContexts, Action[] calldata _actions) external;
+    function redeemDelegations(
+        bytes[] calldata _permissionContexts,
+        ModeCode[] calldata _modes,
+        bytes[] calldata _executionCallDatas
+    )
+        external;
 
     function getDomainHash() external view returns (bytes32);
 }

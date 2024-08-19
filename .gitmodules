@@ -16,3 +16,6 @@
 [submodule "lib/account-abstraction"]
 	path = lib/account-abstraction
 	url = https://github.com/eth-infinitism/account-abstraction
+[submodule "lib/erc7579-implementation"]
+	path = lib/erc7579-implementation
+	url = https://github.com/erc7579/erc7579-implementation

@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
+
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
-import { Action } from "../utils/Types.sol";
+import { ModeCode } from "../utils/Types.sol";
 
 /**
  * @title NativeTokenTransferAmountEnforcer
  * @notice This contract enforces an allowance of native currency (e.g., ETH) for a specific delegation.
  */
 contract NativeTokenTransferAmountEnforcer is CaveatEnforcer {
+    using ExecutionLib for bytes;
+
     ////////////////////////////// State //////////////////////////////
 
     /// @notice Mapping to store used allowance for each delegation
@@ -25,24 +29,29 @@ contract NativeTokenTransferAmountEnforcer is CaveatEnforcer {
     /**
      * @notice Enforces the conditions that should hold before a transaction is performed.
      * @param _terms The encoded amount of native token allowance.
-     * @param _action The action of the transaction.
+     * @param _mode The mode of the execution.
+     * @param _executionCallData The call data of the execution.
      * @param _delegationHash The hash of the delegation.
      */
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
-        Action calldata _action,
+        ModeCode _mode,
+        bytes calldata _executionCallData,
         bytes32 _delegationHash,
         address,
         address _redeemer
     )
         public
         override
+        onlySingleExecutionMode(_mode)
     {
         // Decode the total allowance from _terms
         uint256 allowance_ = getTermsInfo(_terms);
 
-        uint256 spent_ = spentMap[msg.sender][_delegationHash] += _action.value;
+        (, uint256 value_,) = _executionCallData.decodeSingle();
+
+        uint256 spent_ = spentMap[msg.sender][_delegationHash] += value_;
         require(spent_ <= allowance_, "NativeTokenTransferAmountEnforcer:allowance-exceeded");
 
         emit IncreasedSpentMap(msg.sender, _redeemer, _delegationHash, allowance_, spent_);

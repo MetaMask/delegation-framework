@@ -3,8 +3,10 @@ pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { ModeLib } from "@erc7579/lib/ModeLib.sol";
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
-import { Action, Caveat, Delegation } from "../../src/utils/Types.sol";
+import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
 import { Counter } from "../utils/Counter.t.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { AllowedMethodsEnforcer } from "../../src/enforcers/AllowedMethodsEnforcer.sol";
@@ -13,9 +15,12 @@ import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
 contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
+    using ModeLib for ModeCode;
+
     ////////////////////// State //////////////////////
 
     AllowedMethodsEnforcer public allowedMethodsEnforcer;
+    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////// Set up //////////////////////
 
@@ -29,29 +34,38 @@ contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
 
     // should allow a method to be called when a single method is allowed
     function test_singleMethodCanBeCalled() public {
-        // Create the action that would be executed
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // beforeHook, mimicking the behavior of Alice's DeleGator
         vm.prank(address(delegationManager));
         allowedMethodsEnforcer.beforeHook(
-            abi.encodePacked(Counter.increment.selector), hex"", action_, keccak256(""), address(0), address(0)
+            abi.encodePacked(Counter.increment.selector), hex"", mode, executionCallData_, keccak256(""), address(0), address(0)
         );
     }
 
     // should allow a method to be called when a multiple methods are allowed
     function test_multiMethodCanBeCalled() public {
-        // Create the action that would be executed
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // beforeHook, mimicking the behavior of Alice's DeleGator
         vm.prank(address(delegationManager));
         allowedMethodsEnforcer.beforeHook(
             abi.encodePacked(Counter.setCount.selector, Ownable.renounceOwnership.selector, Counter.increment.selector),
             hex"",
-            action_,
+            mode,
+            executionCallData_,
             keccak256(""),
             address(0),
             address(0)
@@ -66,18 +80,21 @@ contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
         allowedMethodsEnforcer.getTermsInfo(bytes("1"));
     }
 
-    // should FAIL if action.data length < 4
-    function test_notAllow_invalidActionLength() public {
-        // Create the action that would be executed
-        Action memory action_ = Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodePacked(true) });
+    // should FAIL if execution.callData length < 4
+    function test_notAllow_invalidExecutionLength() public {
+        // Create the execution that would be executed
+        Execution memory execution_ =
+            Execution({ target: address(aliceDeleGatorCounter), value: 0, callData: abi.encodePacked(true) });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // beforeHook, mimicking the behavior of Alice's DeleGator
         vm.prank(address(delegationManager));
-        vm.expectRevert("AllowedMethodsEnforcer:invalid-action-data-length");
+        vm.expectRevert("AllowedMethodsEnforcer:invalid-execution-data-length");
         allowedMethodsEnforcer.beforeHook(
             abi.encodePacked(Counter.setCount.selector, Ownable.renounceOwnership.selector, Ownable.owner.selector),
             hex"",
-            action_,
+            mode,
+            executionCallData_,
             keccak256(""),
             address(0),
             address(0)
@@ -86,9 +103,13 @@ contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
 
     // should NOT allow a method to be called when the method is not allowed
     function test_onlyApprovedMethodsCanBeCalled() public {
-        // Create the action that would be executed
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // beforeHook, mimicking the behavior of Alice's DeleGator
         vm.prank(address(delegationManager));
@@ -96,7 +117,8 @@ contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
         allowedMethodsEnforcer.beforeHook(
             abi.encodePacked(Counter.setCount.selector, Ownable.renounceOwnership.selector, Ownable.owner.selector),
             hex"",
-            action_,
+            mode,
+            executionCallData_,
             keccak256(""),
             address(0),
             address(0)
@@ -109,9 +131,12 @@ contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
     function test_methodCanBeSingleMethodIntegration() public {
         uint256 initialValue_ = aliceDeleGatorCounter.count();
 
-        // Create the action that would be executed
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
 
         Caveat[] memory caveats_ = new Caveat[](1);
         caveats_[0] =
@@ -132,14 +157,14 @@ contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
         delegations_[0] = delegation_;
 
         // Enforcer allows the delegation
-        invokeDelegation_UserOp(users.bob, delegations_, action_);
+        invokeDelegation_UserOp(users.bob, delegations_, execution_);
         // Get count
         uint256 valueAfter_ = aliceDeleGatorCounter.count();
         // Validate that the count has increased by 1
         assertEq(valueAfter_, initialValue_ + 1);
 
         // Enforcer allows to reuse the delegation
-        invokeDelegation_UserOp(users.bob, delegations_, action_);
+        invokeDelegation_UserOp(users.bob, delegations_, execution_);
         // Get final count
         uint256 finalValue_ = aliceDeleGatorCounter.count();
         // Validate that the count has increased again
@@ -150,9 +175,12 @@ contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
     function test_onlyApprovedMethodsCanBeCalledIntegration() public {
         uint256 initialValue_ = aliceDeleGatorCounter.count();
 
-        // Create the action that would be executed
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
 
         Caveat[] memory caveats_ = new Caveat[](1);
         caveats_[0] = Caveat({
@@ -176,7 +204,7 @@ contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
         delegations_[0] = delegation_;
 
         // Enforcer allows the delegation
-        invokeDelegation_UserOp(users.bob, delegations_, action_);
+        invokeDelegation_UserOp(users.bob, delegations_, execution_);
         // Get final count
         uint256 valueAfter_ = aliceDeleGatorCounter.count();
         // Validate that the count has not changed

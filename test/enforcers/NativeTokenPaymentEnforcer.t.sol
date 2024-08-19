@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { Action, Caveat, Delegation } from "../../src/utils/Types.sol";
+import { ModeLib } from "@erc7579/lib/ModeLib.sol";
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
+
+import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { NativeTokenPaymentEnforcer } from "../../src/enforcers/NativeTokenPaymentEnforcer.sol";
 import { NativeTokenTransferAmountEnforcer } from "../../src/enforcers/NativeTokenTransferAmountEnforcer.sol";
@@ -14,6 +17,8 @@ import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 import { Counter } from "../utils/Counter.t.sol";
 
 contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
+    using ModeLib for ModeCode;
+
     ////////////////////// Set up //////////////////////
     NativeTokenPaymentEnforcer public nativeTokenPaymentEnforcer;
     NativeTokenTransferAmountEnforcer public nativeTokenTransferAmountEnforcer;
@@ -70,8 +75,13 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
 
         (bytes32 delegationHash_,) = _getExampleDelegation(terms_, hex"");
 
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
+        ModeCode mode_ = ModeLib.encodeSimpleSingle();
 
         vm.startPrank(address(delegationManager));
         vm.expectEmit(true, true, true, true, address(nativeTokenPaymentEnforcer));
@@ -79,7 +89,9 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
             address(delegationManager), delegationHash_, recipient_, address(users.alice.deleGator), address(0), 1 ether
         );
 
-        nativeTokenPaymentEnforcer.afterHook(terms_, args_, action_, delegationHash_, address(users.alice.deleGator), address(0));
+        nativeTokenPaymentEnforcer.afterHook(
+            terms_, args_, mode_, executionCallData_, delegationHash_, address(users.alice.deleGator), address(0)
+        );
     }
 
     // Should SUCCEED to make the payment with a redelegation
@@ -114,8 +126,13 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
 
         (bytes32 delegationHash_,) = _getExampleDelegation(terms_, hex"");
 
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
+        ModeCode mode_ = ModeLib.encodeSimpleSingle();
 
         vm.startPrank(address(delegationManager));
         vm.expectEmit(true, true, true, true, address(nativeTokenPaymentEnforcer));
@@ -123,14 +140,15 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
             address(delegationManager), delegationHash_, recipient_, address(users.alice.deleGator), address(0), 1 ether
         );
 
-        nativeTokenPaymentEnforcer.afterHook(terms_, args_, action_, delegationHash_, address(users.alice.deleGator), address(0));
+        nativeTokenPaymentEnforcer.afterHook(
+            terms_, args_, mode_, executionCallData_, delegationHash_, address(users.alice.deleGator), address(0)
+        );
     }
 
     // Should only overwrite the args of the args equality enforcer
     function test_onlyOverwriteAllowanceEnforcerArgs() public {
         // The terms indicate to send 1 ether to Alice.
-        address recipient_ = address(users.alice.deleGator);
-        bytes memory paymentTerms_ = abi.encodePacked(recipient_, uint256(1 ether));
+        bytes memory paymentTerms_ = abi.encodePacked(address(users.alice.deleGator), uint256(1 ether));
         (bytes32 delegationHash_, Delegation memory paidDelegation_) = _getExampleDelegation(paymentTerms_, hex"");
 
         Delegation[] memory paidDelegations_ = new Delegation[](1);
@@ -146,7 +164,11 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         Caveat[] memory paymentCaveats_ = new Caveat[](4);
         paymentCaveats_[0] = Caveat({ args: hex"", enforcer: address(nativeTokenTransferAmountEnforcer), terms: allowanceTerms_ });
         paymentCaveats_[1] = Caveat({ args: hex"", enforcer: address(limitedCallsEnforcer), terms: abi.encodePacked(uint256(10)) });
-        paymentCaveats_[2] = Caveat({ args: hex"", enforcer: address(allowedTargetsEnforcer), terms: abi.encodePacked(recipient_) });
+        paymentCaveats_[2] = Caveat({
+            args: hex"",
+            enforcer: address(allowedTargetsEnforcer),
+            terms: abi.encodePacked(address(users.alice.deleGator))
+        });
         paymentCaveats_[3] = Caveat({ args: hex"", enforcer: address(argsEqualityCheckEnforcer), terms: argsTerms_ });
 
         // Create payment delegation from Bob to NativeTokenPaymentEnforcer
@@ -165,8 +187,11 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         // The args contain the payment delegation to redeem
         bytes memory args_ = abi.encode(paymentDelegations_);
 
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
 
         vm.startPrank(address(delegationManager));
 
@@ -179,7 +204,13 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
             paymentDelegations_[0].delegator, address(nativeTokenPaymentEnforcer), paymentDelegations_[0]
         );
         nativeTokenPaymentEnforcer.afterHook(
-            paymentTerms_, args_, action_, delegationHash_, address(users.alice.deleGator), address(0)
+            paymentTerms_,
+            args_,
+            ModeLib.encodeSimpleSingle(),
+            ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData),
+            delegationHash_,
+            address(users.alice.deleGator),
+            address(0)
         );
     }
 
@@ -208,7 +239,6 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
             salt: 0,
             signature: hex""
         });
-
         paymentDelegations_[0] = signDelegation(users.bob, paymentDelegations_[0]);
 
         // Using a mock delegation manager
@@ -219,12 +249,17 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
 
         (bytes32 delegationHash_,) = _getExampleDelegation(terms_, hex"");
 
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
+        ModeCode mode_ = ModeLib.encodeSimpleSingle();
 
         vm.startPrank(mockDelegationManager_);
         vm.expectRevert("NativeTokenPaymentEnforcer:payment-not-received");
-        nativeTokenPaymentEnforcer.afterHook(terms_, args_, action_, delegationHash_, address(0), address(0));
+        nativeTokenPaymentEnforcer.afterHook(terms_, args_, mode_, executionCallData_, delegationHash_, address(0), address(0));
     }
 
     // Should FAIL if the sender is different from the delegation manager.
@@ -232,7 +267,9 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         // Using an invalid sender, it must be the delegation manager
         vm.startPrank(address(users.bob.deleGator));
         vm.expectRevert("NativeTokenPaymentEnforcer:only-delegation-manager");
-        nativeTokenPaymentEnforcer.afterHook(hex"", hex"", new Action[](1)[0], bytes32(0), address(0), address(0));
+        nativeTokenPaymentEnforcer.afterHook(
+            hex"", hex"", ModeLib.encodeSimpleSingle(), new bytes(0), bytes32(0), address(0), address(0)
+        );
     }
 
     function test_chargePaymentFromAllowance() public {
@@ -269,8 +306,11 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         // The args contain the payment delegation to redeem
         bytes memory args_ = abi.encode(paymentDelegations_);
 
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
 
         uint256 aliceBalanceBefore_ = address(users.alice.deleGator).balance;
 
@@ -278,7 +318,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
 
         // Pass the delegation payment in the args.
         paidDelegations_[0].caveats[0].args = args_;
-        invokeDelegation_UserOp(users.bob, paidDelegations_, action_);
+        invokeDelegation_UserOp(users.bob, paidDelegations_, execution_);
 
         assertEq(aliceDeleGatorCounter.count(), 1);
 
@@ -324,8 +364,11 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         // The args contain the payment delegation to redeem
         bytes memory argsWithBobPayment_ = abi.encode(paymentDelegations_);
 
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
 
         uint256 aliceBalanceBefore_ = address(users.alice.deleGator).balance;
 
@@ -333,7 +376,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
 
         // Pass the delegation payment in the args.
         maliciousPaidDelegations_[0].caveats[0].args = argsWithBobPayment_;
-        invokeDelegation_UserOp(users.carol, maliciousPaidDelegations_, action_);
+        invokeDelegation_UserOp(users.carol, maliciousPaidDelegations_, execution_);
         assertEq(aliceDeleGatorCounter.count(), 1);
 
         // Alice received the payment
@@ -341,7 +384,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
 
         // Pass the delegation payment in the args.
         originalPaidDelegations_[0].caveats[0].args = argsWithBobPayment_;
-        invokeDelegation_UserOp(users.bob, originalPaidDelegations_, action_);
+        invokeDelegation_UserOp(users.bob, originalPaidDelegations_, execution_);
         // The execution did not work because the allowance has already been used.
         assertEq(aliceDeleGatorCounter.count(), 1);
     }
@@ -389,8 +432,11 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         // The args contain the payment delegation to redeem
         bytes memory argsWithBobPayment_ = abi.encode(paymentDelegations_);
 
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
 
         uint256 aliceBalanceBefore_ = address(users.alice.deleGator).balance;
 
@@ -398,7 +444,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
 
         // Pass the delegation payment in the args.
         maliciousPaidDelegations_[0].caveats[0].args = argsWithBobPayment_;
-        invokeDelegation_UserOp(users.carol, maliciousPaidDelegations_, action_);
+        invokeDelegation_UserOp(users.carol, maliciousPaidDelegations_, execution_);
         // The execution did not work because the allowance fails due to the invalid args.
         assertEq(aliceDeleGatorCounter.count(), 0);
         // Alice did not receive the payment
@@ -406,7 +452,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
 
         // Pass the delegation payment in the args.
         originalPaidDelegations_[0].caveats[0].args = argsWithBobPayment_;
-        invokeDelegation_UserOp(users.bob, originalPaidDelegations_, action_);
+        invokeDelegation_UserOp(users.bob, originalPaidDelegations_, execution_);
         // The execution works well with a proper args
         assertEq(aliceDeleGatorCounter.count(), 1);
         // Alice received the payment
@@ -464,9 +510,15 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
     }
 }
 
-/// @dev This contract is used for testing a case where the redeemDelegation() function doesn't work as expected
+/// @dev This contract is used for testing a case where the redeemDelegations() function doesn't work as expected
 contract MockDelegationManager {
-    function redeemDelegation(bytes[] calldata _permissionContexts, Action[] calldata _actions) external {
-        // Does not do anything, the action is not processed
+    function redeemDelegations(
+        bytes[] calldata _permissionContexts,
+        ModeCode[] calldata _modes,
+        bytes[] calldata _executionCallDatas
+    )
+        external
+    {
+        // Does not do anything, the execution is not processed
     }
 }

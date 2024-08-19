@@ -1,20 +1,26 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
+import { ModeLib } from "@erc7579/lib/ModeLib.sol";
+
 import "../../src/utils/Types.sol";
-import { Action } from "../../src/utils/Types.sol";
+import { Execution } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { NativeBalanceGteEnforcer } from "../../src/enforcers/NativeBalanceGteEnforcer.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 import { Counter } from "../utils/Counter.t.sol";
 
 contract NativeBalanceGteEnforcerTest is CaveatEnforcerBaseTest {
+    using ModeLib for ModeCode;
+
     ////////////////////////////// State //////////////////////////////
     NativeBalanceGteEnforcer public enforcer;
     address delegator;
     address delegate;
     address dm;
-    Action noAction;
+    Execution noExecution;
+    bytes executionCallData = abi.encode(noExecution);
+    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////// Set up //////////////////////
 
@@ -25,7 +31,7 @@ contract NativeBalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         dm = address(delegationManager);
         enforcer = new NativeBalanceGteEnforcer();
         vm.label(address(enforcer), "NativeBalanceGte Enforcer");
-        noAction = Action(address(0), 0, hex"");
+        noExecution = Execution(address(0), 0, hex"");
     }
 
     ////////////////////// Basic Functionality //////////////////////
@@ -48,14 +54,14 @@ contract NativeBalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // Increase by 100
         vm.startPrank(dm);
-        enforcer.beforeHook(terms_, hex"", noAction, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", mode, executionCallData, bytes32(0), delegator, delegate);
         _increaseBalance(delegator, 100);
-        enforcer.afterHook(terms_, hex"", noAction, bytes32(0), delegator, delegate);
+        enforcer.afterHook(terms_, hex"", mode, executionCallData, bytes32(0), delegator, delegate);
 
         // Increase by 1000
-        enforcer.beforeHook(terms_, hex"", noAction, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", mode, executionCallData, bytes32(0), delegator, delegate);
         _increaseBalance(delegator, 1000);
-        enforcer.afterHook(terms_, hex"", noAction, bytes32(0), delegator, delegate);
+        enforcer.afterHook(terms_, hex"", mode, executionCallData, bytes32(0), delegator, delegate);
     }
 
     // ////////////////////// Errors //////////////////////
@@ -68,10 +74,10 @@ contract NativeBalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // Increase by 10, expect revert
         vm.startPrank(dm);
-        enforcer.beforeHook(terms_, hex"", noAction, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", mode, executionCallData, bytes32(0), delegator, delegate);
         _increaseBalance(delegator, 10);
         vm.expectRevert(bytes("NativeBalanceGteEnforcer:balance-not-gt"));
-        enforcer.afterHook(terms_, hex"", noAction, bytes32(0), delegator, delegate);
+        enforcer.afterHook(terms_, hex"", mode, executionCallData, bytes32(0), delegator, delegate);
     }
 
     // Reverts if a enforcer is locked
@@ -84,19 +90,19 @@ contract NativeBalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         // Increase by 100
         vm.startPrank(dm);
         // Locks the enforcer
-        enforcer.beforeHook(terms_, hex"", noAction, delegationHash_, delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", mode, executionCallData, delegationHash_, delegator, delegate);
         bytes32 hashKey_ = enforcer.getHashKey(address(delegationManager), delegationHash_);
         assertTrue(enforcer.isLocked(hashKey_));
         vm.expectRevert(bytes("NativeBalanceGteEnforcer:enforcer-is-locked"));
-        enforcer.beforeHook(terms_, hex"", noAction, delegationHash_, delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", mode, executionCallData, delegationHash_, delegator, delegate);
         _increaseBalance(delegator, 1000);
         vm.startPrank(dm);
 
         // Unlocks the enforcer
-        enforcer.afterHook(terms_, hex"", noAction, delegationHash_, delegator, delegate);
+        enforcer.afterHook(terms_, hex"", mode, executionCallData, delegationHash_, delegator, delegate);
         assertFalse(enforcer.isLocked(hashKey_));
         // Can be used again, and locks it again
-        enforcer.beforeHook(terms_, hex"", noAction, delegationHash_, delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", mode, executionCallData, delegationHash_, delegator, delegate);
         assertTrue(enforcer.isLocked(hashKey_));
     }
 
@@ -124,9 +130,9 @@ contract NativeBalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(recipient_, type(uint256).max);
         vm.deal(recipient_, type(uint256).max);
         vm.startPrank(dm);
-        enforcer.beforeHook(terms_, hex"", noAction, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", mode, executionCallData, bytes32(0), delegator, delegate);
         vm.expectRevert();
-        enforcer.afterHook(terms_, hex"", noAction, bytes32(0), delegator, delegate);
+        enforcer.afterHook(terms_, hex"", mode, executionCallData, bytes32(0), delegator, delegate);
     }
 
     function _increaseBalance(address _recipient, uint256 _amount) internal {
