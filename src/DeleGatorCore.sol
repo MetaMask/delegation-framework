@@ -10,12 +10,15 @@ import { IERC1155Receiver } from "@openzeppelin/contracts/token/ERC1155/IERC1155
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { Initializable } from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import { ERC1967Utils } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
+import { ModeLib } from "@erc7579/lib/ModeLib.sol";
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
+import { ExecutionHelper } from "@erc7579/core/ExecutionHelper.sol";
 
 import { ERC1271Lib } from "./libraries/ERC1271Lib.sol";
 import { IDeleGatorCore } from "./interfaces/IDeleGatorCore.sol";
 import { IDelegationManager } from "./interfaces/IDelegationManager.sol";
-import { Action, Delegation, PackedUserOperation } from "./utils/Types.sol";
-import { ExecutionLib } from "./libraries/ExecutionLib.sol";
+import { CallType, ExecType, Execution, Delegation, PackedUserOperation, ModeCode } from "./utils/Types.sol";
+import { CALLTYPE_SINGLE, CALLTYPE_BATCH, EXECTYPE_DEFAULT, EXECTYPE_TRY } from "./utils/Constants.sol";
 
 /**
  * @title DeleGatorCore
@@ -24,8 +27,18 @@ import { ExecutionLib } from "./libraries/ExecutionLib.sol";
  * @dev DeleGator implementations can inherit this to enable Delegation, ERC4337 and UUPS.
  * @dev DeleGator implementations MUST use Namespaced Storage to ensure subsequent UUPS implementation updates are safe.
  */
-abstract contract DeleGatorCore is Initializable, UUPSUpgradeable, IERC165, IDeleGatorCore, IERC721Receiver, IERC1155Receiver {
+abstract contract DeleGatorCore is
+    Initializable,
+    ExecutionHelper,
+    UUPSUpgradeable,
+    IERC165,
+    IDeleGatorCore,
+    IERC721Receiver,
+    IERC1155Receiver
+{
     using MessageHashUtils for bytes32;
+    using ModeLib for ModeCode;
+    using ExecutionLib for bytes;
 
     ////////////////////////////// State //////////////////////////////
 
@@ -46,6 +59,9 @@ abstract contract DeleGatorCore is Initializable, UUPSUpgradeable, IERC165, IDel
     /// @dev Emitted when the storage is cleared
     event ClearedStorage();
 
+    /// @dev Event emitted when prefunding is sent.
+    event SentPrefund(address indexed sender, uint256 amount, bool success);
+
     ////////////////////////////// Errors //////////////////////////////
 
     /// @dev Error thrown when the caller is not this contract.
@@ -59,6 +75,12 @@ abstract contract DeleGatorCore is Initializable, UUPSUpgradeable, IERC165, IDel
 
     /// @dev Error thrown when the caller is not the delegation manager.
     error NotDelegationManager();
+
+    /// @dev Error thrown when an execution with an unsupported CallType was made
+    error UnsupportedCallType(CallType callType);
+
+    /// @dev Error thrown when an execution with an unsupported ExecType was made
+    error UnsupportedExecType(ExecType execType);
 
     ////////////////////////////// Modifiers //////////////////////////////
 
@@ -112,40 +134,111 @@ abstract contract DeleGatorCore is Initializable, UUPSUpgradeable, IERC165, IDel
     receive() external payable { }
 
     /**
-     * @notice Redeems a delegation on the DelegationManager and executes the action as the root delegator
-     * @dev `_data` is made up of an array of `Delegation` structs that are used to validate the authority given to execute the
-     * action
-     * on the root delegator ordered from leaf to root.
-     * @param _data the data used to validate the authority given to execute the action
-     * @param _action The action to be executed
+     * @notice Redeems a delegation on the DelegationManager and executes the specified executions on behalf of the root delegator.
+     * @param _permissionContexts An array of bytes where each element is made up of an array
+     * of `Delegation` structs that are used to validate the authority given to execute the corresponding execution on the
+     * root delegator, ordered from leaf to root.
+     * @param _modes An array of `ModeCode` structs representing the mode of execiton for each execution callData.
+     * @param _executionCallDatas An array of `Execution` structs representing the executions to be executed.
      */
-    function redeemDelegation(bytes calldata _data, Action calldata _action) external onlyEntryPointOrSelf {
-        delegationManager.redeemDelegation(_data, _action);
-    }
-
-    /// @inheritdoc IDeleGatorCore
-    function executeDelegatedAction(Action calldata _action) external onlyDelegationManager {
-        ExecutionLib._execute(_action);
+    function redeemDelegations(
+        bytes[] calldata _permissionContexts,
+        ModeCode[] calldata _modes,
+        bytes[] calldata _executionCallDatas
+    )
+        external
+        onlyEntryPointOrSelf
+    {
+        delegationManager.redeemDelegations(_permissionContexts, _modes, _executionCallDatas);
     }
 
     /**
-     * @notice Executes an Action from this contract
+     * @notice Executes an Execution from this contract
      * @dev This method is intended to be called through a UserOp which ensures the invoker has sufficient permissions
-     * @dev This method reverts if the action fails.
-     * @param _action the action to execute
+     * @dev This convenience method defeaults to reverting on failure and a single execution.
+     * @param _execution The Execution to be executed
      */
-    function execute(Action calldata _action) external onlyEntryPoint {
-        ExecutionLib._execute(_action);
+    function execute(Execution calldata _execution) external payable onlyEntryPoint {
+        _execute(_execution.target, _execution.value, _execution.callData);
     }
 
     /**
-     * @notice This method executes several Actions in order.
-     * @dev This method is intended to be called through a UserOp which ensures the invoker has sufficient permissions.
-     * @dev This method reverts if any of the actions fail.
-     * @param _actions the ordered actions to execute
+     * @notice Executes an Execution from this contract
+     * @dev Related: @erc7579/MSAAdvanced.sol
+     * @dev This method is intended to be called through a UserOp which ensures the invoker has sufficient permissions
+     * @param _mode The ModeCode for the execution
+     * @param _executionCalldata The calldata for the execution
      */
-    function executeBatch(Action[] calldata _actions) external onlyEntryPointOrSelf {
-        ExecutionLib._executeBatch(_actions);
+    function execute(ModeCode _mode, bytes calldata _executionCalldata) external payable onlyEntryPoint {
+        (CallType callType_, ExecType execType_,,) = _mode.decode();
+
+        // Check if calltype is batch or single
+        if (callType_ == CALLTYPE_BATCH) {
+            // destructure executionCallData according to batched exec
+            Execution[] calldata executions_ = _executionCalldata.decodeBatch();
+            // Check if execType is revert or try
+            if (execType_ == EXECTYPE_DEFAULT) _execute(executions_);
+            else if (execType_ == EXECTYPE_TRY) _tryExecute(executions_);
+            else revert UnsupportedExecType(execType_);
+        } else if (callType_ == CALLTYPE_SINGLE) {
+            // Destructure executionCallData according to single exec
+            (address target_, uint256 value_, bytes calldata callData_) = _executionCalldata.decodeSingle();
+            // Check if execType is revert or try
+            if (execType_ == EXECTYPE_DEFAULT) {
+                _execute(target_, value_, callData_);
+            } else if (execType_ == EXECTYPE_TRY) {
+                bytes[] memory returnData_ = new bytes[](1);
+                bool success_;
+                (success_, returnData_[0]) = _tryExecute(target_, value_, callData_);
+                if (!success_) emit TryExecuteUnsuccessful(0, returnData_[0]);
+            } else {
+                revert UnsupportedExecType(execType_);
+            }
+        } else {
+            revert UnsupportedCallType(callType_);
+        }
+    }
+
+    /**
+     * @inheritdoc IDeleGatorCore
+     * @dev Related: @erc7579/MSAAdvanced.sol
+     */
+    function executeFromExecutor(
+        ModeCode _mode,
+        bytes calldata _executionCalldata
+    )
+        external
+        payable
+        onlyDelegationManager
+        returns (bytes[] memory returnData_)
+    {
+        (CallType callType_, ExecType execType_,,) = _mode.decode();
+
+        // Check if calltype is batch or single
+        if (callType_ == CALLTYPE_BATCH) {
+            // Destructure executionCallData according to batched exec
+            Execution[] calldata executions_ = _executionCalldata.decodeBatch();
+            // check if execType is revert or try
+            if (execType_ == EXECTYPE_DEFAULT) returnData_ = _execute(executions_);
+            else if (execType_ == EXECTYPE_TRY) returnData_ = _tryExecute(executions_);
+            else revert UnsupportedExecType(execType_);
+        } else if (callType_ == CALLTYPE_SINGLE) {
+            // Destructure executionCallData according to single exec
+            (address target_, uint256 value_, bytes calldata callData_) = _executionCalldata.decodeSingle();
+            returnData_ = new bytes[](1);
+            bool success_;
+            // check if execType is revert or try
+            if (execType_ == EXECTYPE_DEFAULT) {
+                returnData_[0] = _execute(target_, value_, callData_);
+            } else if (execType_ == EXECTYPE_TRY) {
+                (success_, returnData_[0]) = _tryExecute(target_, value_, callData_);
+                if (!success_) emit TryExecuteUnsuccessful(0, returnData_[0]);
+            } else {
+                revert UnsupportedExecType(execType_);
+            }
+        } else {
+            revert UnsupportedCallType(callType_);
+        }
     }
 
     /**
@@ -167,7 +260,7 @@ abstract contract DeleGatorCore is Initializable, UUPSUpgradeable, IERC165, IDel
         returns (uint256 validationData_)
     {
         validationData_ = _validateUserOpSignature(_userOp, _userOpHash);
-        ExecutionLib._payPrefund(_missingAccountFunds);
+        _payPrefund(_missingAccountFunds);
     }
 
     /**
@@ -250,15 +343,6 @@ abstract contract DeleGatorCore is Initializable, UUPSUpgradeable, IERC165, IDel
     }
 
     /**
-     * @notice Delegates authority to an address and caches the delegation hash onchain
-     * @dev Forwards a call to the DelegationManager to delegate
-     * @param _delegation The delegation to be stored
-     */
-    function delegate(Delegation calldata _delegation) external onlyEntryPointOrSelf {
-        delegationManager.delegate(_delegation);
-    }
-
-    /**
      * @notice Disables a delegation from being used
      * @param _delegation The delegation to be disabled
      */
@@ -303,15 +387,6 @@ abstract contract DeleGatorCore is Initializable, UUPSUpgradeable, IERC165, IDel
      */
     function isDelegationDisabled(bytes32 _delegationHash) external view returns (bool) {
         return delegationManager.disabledDelegations(_delegationHash);
-    }
-
-    /**
-     * @notice Checks if the delegation hash has been cached onchain
-     * @param _delegationHash the hash of the delegation to check for
-     * @return bool is the delegation stored onchain
-     */
-    function isDelegationOnchain(bytes32 _delegationHash) external view returns (bool) {
-        return delegationManager.onchainDelegations(_delegationHash);
     }
 
     /**
@@ -420,6 +495,20 @@ abstract contract DeleGatorCore is Initializable, UUPSUpgradeable, IERC165, IDel
             return 0;
         } else {
             return 1;
+        }
+    }
+
+    /**
+     * @notice Sends the entrypoint (msg.sender) any needed funds for the transaction.
+     * @param _missingAccountFunds the minimum value this method should send the entrypoint.
+     *         this value MAY be zero, in case there is enough deposit, or the userOp has a paymaster.
+     */
+    function _payPrefund(uint256 _missingAccountFunds) internal {
+        if (_missingAccountFunds != 0) {
+            (bool success_,) = payable(msg.sender).call{ value: _missingAccountFunds, gas: type(uint256).max }("");
+            (success_);
+            // Ignore failure (it's EntryPoint's job to verify, not account.)
+            emit SentPrefund(msg.sender, _missingAccountFunds, success_);
         }
     }
 }

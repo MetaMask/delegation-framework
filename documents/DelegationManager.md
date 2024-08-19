@@ -4,28 +4,21 @@ A Delegation Manager is responsible for validating delegations and triggering th
 
 ## Rules
 
-- A Delegation Manager MUST implement `redeemDelegation` interface as specified `function redeemDelegation(bytes calldata _data, Action calldata _action) external;`.
+- A Delegation Manager MUST implement `redeemDelegation` interface as specified `function redeemDelegation(bytes[] calldata _permissionContexts, ModeCode[] _modes, bytes[] calldata _executionCallDatas) external;`.
 
 ## Delegations
 
-Users can allow other contracts or EOAs to invoke an Action directly from their DeleGator Smart Account through a Delegation. There are 2 flows for delegating: onchain and offchain. Both flows require creating a Delegation and sharing some additional data offchain to the delegate for them to be able to redeem the Delegation.
+Users can allow other contracts or EOAs to invoke an action directly from their DeleGator Smart Account through a delegation. Creating a delegation requires specifying a delegate and some optional data such caveats (more detail below) and an authority. Delegations are stored offchain and helper utilities that assist with the delegation lifecycle are provided in the SDK.
 
-> NOTE: onchain Delegations are validated at the time of creation, not at the time of execution. This means if anything regarding a DeleGator’s control scheme is changed, the onchain Delegation is not impacted. Contrast this with an offchain Delegation, which is validated at the time of execution.
+> NOTE: Delegations are validated at execution time, so the signature may become invalid if the conditions of a valid signature change.
 >
-> Example: Alice delegates to Bob the ability to spend her USDC with a 1 of 1 MultiSig DeleGator Account. She then updates her DeleGator Account to a 2 of 3 MultiSig.
->
-> - If she delegated onchain, Bob is still able to spend her USDC.
-> - If she delegated offchain, the signature will no longer be valid and Bob is not able to spend her USDC.
+> Example: Alice delegates to Bob the ability to spend her USDC with a 1 of 1 MultiSig DeleGator Account. She then updates her DeleGator Account to a 2 of 3 MultiSig. When Bob redeems the delegation from Alice, it will fail since the signed delegation is no longer valid.
 
 # MetaMask's Delegation Manager
 
 ## Creating a Delegation
 
-Users can create a `Delegation` and provide it to a delegate in the form of an onchain delegation or an offchain delegation.
-
-### Onchain Delegations
-
-Onchain Delegations are done through calling the `delegate` method on a DeleGator or DelegationManager. This validates the delegation at this time and the redeemer only needs the `Delegation` to redeem it (no signature needed).
+Users can create a `Delegation` and provide it to a delegate in the form of an offchain delegation.
 
 ### Offchain Delegations
 
@@ -37,18 +30,18 @@ Open delegations are delegations that don't have a strict `delegate`. By setting
 
 ## Redeeming a Delegation
 
-`redeemDelegation` method that can be used by delegation redeemers to execute some `Action` which will be verified by the `DelegationManager` before ultimately calling `executeAction` on the root delegator.
+`redeemDelegation` method that can be used by delegation redeemers to execute some `Execution` which will be verified by the `DelegationManager` before ultimately calling `executeAsExecutor` on the root delegator.
 
 Our `DelegationManager` implementation:
 
-1. `redeemDelegation` consumes a list of delegations (`Delegation[]`) and an `Action` to be executed
+1. `redeemDelegation` consumes an array of bytes with the encoded delegation chains (`Delegation[]`) for executing each of the `Execution`.
    > NOTE: Delegations are ordered from leaf to root. The last delegation in the array must have the root authority.
 2. Validates the `msg.sender` calling `redeemDelegation` is allowed to do so
-3. Validates the signatures of offchain delegations and that onchain delegations have already been verified
+3. Validates the signatures of offchain delegations.
 4. Checks if any of the delegations being redeemed are disabled
 5. Ensures each delegation has sufficient authority to execute, given by the previous delegation or by being a root delegation
 6. Calls `beforeHook` for all delegations (from leaf to root delegation)
-7. Executes the `Action` provided
+7. Executes the `Execution` provided
 8. Calls `afterHook` for all delegations (from root to leaf delegation)
 
 > NOTE: Ensure to double check that the delegation is valid before submitting a UserOp. A delegation can be revoked or a signature can be invalidated at any time.

@@ -10,13 +10,14 @@ import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/Mes
 import { SigningUtilsLib } from "./utils/SigningUtilsLib.t.sol";
 import { StorageUtilsLib } from "./utils/StorageUtilsLib.t.sol";
 import { Implementation, SignatureType } from "./utils/Types.t.sol";
-import { Action, PackedUserOperation, Caveat, Delegation, Delegation } from "../src/utils/Types.sol";
+import { Execution, PackedUserOperation, Caveat, Delegation } from "../src/utils/Types.sol";
 import { BaseTest } from "./utils/BaseTest.t.sol";
 import { HybridDeleGator } from "../src/HybridDeleGator.sol";
 import { MultiSigDeleGator } from "../src/MultiSigDeleGator.sol";
-import { IDeleGatorCoreFull } from "../src/interfaces/IDeleGatorCoreFull.sol";
+import { DeleGatorCore } from "../src/DeleGatorCore.sol";
 import { IDelegationManager } from "../src/interfaces/IDelegationManager.sol";
 import { EncoderLib } from "../src/libraries/EncoderLib.sol";
+import { EXECUTE_SINGULAR_SIGNATURE } from "./utils/Constants.sol";
 
 contract HybridDeleGator_Test is BaseTest {
     using MessageHashUtils for bytes32;
@@ -43,18 +44,18 @@ contract HybridDeleGator_Test is BaseTest {
         vm.deal(deleGator_, 100 ether);
 
         // Assert DeleGator is MultiSig
-        assertEq(address(IDeleGatorCoreFull(deleGator_).getImplementation()), address(multiSigDeleGatorImpl));
+        assertEq(address(DeleGatorCore(deleGator_).getImplementation()), address(multiSigDeleGatorImpl));
 
         // Upgrade to Hybrid
-        Action memory action_ = Action({
-            to: address(deleGator_),
+        Execution memory execution_ = Execution({
+            target: address(deleGator_),
             value: 0,
-            data: abi.encodeWithSelector(
-                IDeleGatorCoreFull.upgradeToAndCall.selector,
+            callData: abi.encodeWithSelector(
+                DeleGatorCore.upgradeToAndCall.selector,
                 address(hybridDeleGatorImpl),
                 abi.encodeWithSelector(
                     HybridDeleGator.reinitialize.selector,
-                    IDeleGatorCoreFull(deleGator_).getInitializedVersion() + 1,
+                    DeleGatorCore(deleGator_).getInitializedVersion() + 1,
                     users.alice.addr,
                     new string[](0),
                     new uint256[](0),
@@ -63,7 +64,7 @@ contract HybridDeleGator_Test is BaseTest {
                 )
             )
         });
-        bytes memory userOpCallData_ = abi.encodeWithSelector(IDeleGatorCoreFull.execute.selector, action_);
+        bytes memory userOpCallData_ = abi.encodeWithSignature(EXECUTE_SINGULAR_SIGNATURE, execution_);
         PackedUserOperation memory userOp_ = createUserOp(address(deleGator_), userOpCallData_);
         bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
         userOp_.signature = signHash(SignatureType.MultiSig, users.alice, userOpHash_.toEthSignedMessageHash());
@@ -74,7 +75,7 @@ contract HybridDeleGator_Test is BaseTest {
         submitUserOp_Bundler(userOp_);
 
         // Assert DeleGator is Hybrid
-        assertEq(address(IDeleGatorCoreFull(deleGator_).getImplementation()), address(hybridDeleGatorImpl));
+        assertEq(address(DeleGatorCore(deleGator_).getImplementation()), address(hybridDeleGatorImpl));
 
         // Assert MultiSig storage was cleared
         bytes32 DEFAULT_MULTISIG_DELEGATOR_STORAGE_LOCATION = StorageUtilsLib.getStorageLocation("DeleGator.MultiSigDeleGator");
@@ -95,22 +96,18 @@ contract HybridDeleGator_Test is BaseTest {
         // Upgrade to MultiSig
         owners_ = new address[](1);
         owners_[0] = users.alice.addr;
-        action_ = Action({
-            to: address(deleGator_),
+        execution_ = Execution({
+            target: address(deleGator_),
             value: 0,
-            data: abi.encodeWithSelector(
-                IDeleGatorCoreFull.upgradeToAndCall.selector,
+            callData: abi.encodeWithSelector(
+                DeleGatorCore.upgradeToAndCall.selector,
                 address(multiSigDeleGatorImpl),
                 abi.encodeWithSelector(
-                    MultiSigDeleGator.reinitialize.selector,
-                    IDeleGatorCoreFull(deleGator_).getInitializedVersion() + 1,
-                    owners_,
-                    1,
-                    false
+                    MultiSigDeleGator.reinitialize.selector, DeleGatorCore(deleGator_).getInitializedVersion() + 1, owners_, 1, false
                 )
             )
         });
-        userOpCallData_ = abi.encodeWithSelector(IDeleGatorCoreFull.execute.selector, action_);
+        userOpCallData_ = abi.encodeWithSignature(EXECUTE_SINGULAR_SIGNATURE, execution_);
         userOp_ = createUserOp(address(deleGator_), userOpCallData_);
         userOpHash_ = entryPoint.getUserOpHash(userOp_);
         userOp_.signature = signHash(SignatureType.EOA, users.alice, userOpHash_.toEthSignedMessageHash());
@@ -121,7 +118,7 @@ contract HybridDeleGator_Test is BaseTest {
         submitUserOp_Bundler(userOp_);
 
         // Assert DeleGator is MultiSig
-        assertEq(address(IDeleGatorCoreFull(deleGator_).getImplementation()), address(multiSigDeleGatorImpl));
+        assertEq(address(DeleGatorCore(deleGator_).getImplementation()), address(multiSigDeleGatorImpl));
 
         // Assert Hybrid storage was cleared
         bytes32 DEFAULT_HYBRID_DELEGATOR_STORAGE_LOCATION = StorageUtilsLib.getStorageLocation("DeleGator.HybridDeleGator");
@@ -148,18 +145,18 @@ contract HybridDeleGator_Test is BaseTest {
         vm.deal(deleGator_, 100 ether);
 
         // Assert DeleGator is MultiSig
-        assertEq(address(IDeleGatorCoreFull(deleGator_).getImplementation()), address(multiSigDeleGatorImpl));
+        assertEq(address(DeleGatorCore(deleGator_).getImplementation()), address(multiSigDeleGatorImpl));
 
         // Upgrade to Hybrid
-        Action memory action_ = Action({
-            to: address(deleGator_),
+        Execution memory execution_ = Execution({
+            target: address(deleGator_),
             value: 0,
-            data: abi.encodeWithSelector(
-                IDeleGatorCoreFull.upgradeToAndCallAndRetainStorage.selector,
+            callData: abi.encodeWithSelector(
+                DeleGatorCore.upgradeToAndCallAndRetainStorage.selector,
                 address(hybridDeleGatorImpl),
                 abi.encodeWithSelector(
                     HybridDeleGator.reinitialize.selector,
-                    IDeleGatorCoreFull(deleGator_).getInitializedVersion() + 1,
+                    DeleGatorCore(deleGator_).getInitializedVersion() + 1,
                     users.alice.addr,
                     new string[](0),
                     new uint256[](0),
@@ -168,7 +165,7 @@ contract HybridDeleGator_Test is BaseTest {
                 )
             )
         });
-        bytes memory userOpCallData_ = abi.encodeWithSelector(IDeleGatorCoreFull.execute.selector, action_);
+        bytes memory userOpCallData_ = abi.encodeWithSignature(EXECUTE_SINGULAR_SIGNATURE, execution_);
         PackedUserOperation memory userOp_ = createUserOp(address(deleGator_), userOpCallData_);
         bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
         userOp_.signature = signHash(SignatureType.MultiSig, users.alice, userOpHash_.toEthSignedMessageHash());
@@ -176,7 +173,7 @@ contract HybridDeleGator_Test is BaseTest {
         submitUserOp_Bundler(userOp_);
 
         // Assert DeleGator is Hybrid
-        assertEq(address(IDeleGatorCoreFull(deleGator_).getImplementation()), address(hybridDeleGatorImpl));
+        assertEq(address(DeleGatorCore(deleGator_).getImplementation()), address(hybridDeleGatorImpl));
 
         // Assert MultiSig storage was not cleared
         bytes32 DEFAULT_MULTISIG_DELEGATOR_STORAGE_LOCATION = StorageUtilsLib.getStorageLocation("DeleGator.MultiSigDeleGator");

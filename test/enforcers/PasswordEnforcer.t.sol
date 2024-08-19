@@ -2,9 +2,11 @@
 pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
+import { ModeLib } from "@erc7579/lib/ModeLib.sol";
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import "../../src/utils/Types.sol";
-import { Action } from "../../src/utils/Types.sol";
+import { Execution } from "../../src/utils/Types.sol";
 import { Counter } from "../utils/Counter.t.sol";
 import { PasswordEnforcer } from "../utils/PasswordCaveatEnforcer.t.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
@@ -15,8 +17,11 @@ import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/Mes
 import { SigningUtilsLib } from "../utils/SigningUtilsLib.t.sol";
 
 contract PasswordEnforcerTest is CaveatEnforcerBaseTest {
+    using ModeLib for ModeCode;
+
     ////////////////////////////// State //////////////////////////////
     PasswordEnforcer public passwordEnforcer;
+    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////// Set up //////////////////////
 
@@ -27,7 +32,8 @@ contract PasswordEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     function test_userInputCorrectArgsWorks() public {
-        Action memory action_;
+        Execution memory execution_;
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
         uint256 password_ = uint256(123456789);
         bytes memory terms_ = abi.encode(password_);
         address delegator_ = address(users.alice.deleGator);
@@ -35,11 +41,12 @@ contract PasswordEnforcerTest is CaveatEnforcerBaseTest {
         vm.startPrank(address(delegationManager));
 
         // First usage works well
-        passwordEnforcer.beforeHook(terms_, abi.encode(password_), action_, bytes32(0), delegator_, address(0));
+        passwordEnforcer.beforeHook(terms_, abi.encode(password_), mode, executionCallData_, bytes32(0), delegator_, address(0));
     }
 
     function test_userInputIncorrectArgs() public {
-        Action memory action_;
+        Execution memory execution_;
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
         uint256 password_ = uint256(123456789);
         uint256 incorrectPassword_ = uint256(5154848789);
         bytes memory terms_ = abi.encode(password_);
@@ -49,48 +56,21 @@ contract PasswordEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.expectRevert("PasswordEnforcerError");
 
-        passwordEnforcer.beforeHook(terms_, abi.encode(incorrectPassword_), action_, bytes32(0), delegator_, address(0));
+        passwordEnforcer.beforeHook(
+            terms_, abi.encode(incorrectPassword_), mode, executionCallData_, bytes32(0), delegator_, address(0)
+        );
     }
 
     //////////////////////  Integration  //////////////////////
 
-    function test_userInputCorrectArgsWorksWithOnchainDelegation() public {
+    function test_userInputIncorrectArgsWithOffchainDelegation() public {
         uint256 initialValue_ = aliceDeleGatorCounter.count();
-        // Create the action that would be executed
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
-
-        bytes memory inputTerms_ = abi.encode(uint256(12345));
-        bytes memory password_ = abi.encode(uint256(12345));
-
-        Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: password_, enforcer: address(passwordEnforcer), terms: inputTerms_ });
-        Delegation memory delegation = Delegation({
-            delegate: address(users.bob.deleGator),
-            delegator: address(users.alice.deleGator),
-            authority: ROOT_AUTHORITY,
-            caveats: caveats_,
-            salt: 0,
-            signature: hex""
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
         });
-        // Store delegation
-        execute_UserOp(users.alice, abi.encodeWithSelector(IDelegationManager.delegate.selector, delegation));
-
-        // Execute Bob's UserOp
-        Delegation[] memory delegations_ = new Delegation[](1);
-        delegations_[0] = delegation;
-
-        // Enforcer allows the delegation
-        invokeDelegation_UserOp(users.bob, delegations_, action_);
-        // Validate that the count has increased by 1
-        assertEq(aliceDeleGatorCounter.count(), initialValue_ + 1);
-    }
-
-    function test_userInputIncorrectArgsWithOnchainDelegation() public {
-        uint256 initialValue_ = aliceDeleGatorCounter.count();
-        // Create the action that would be executed
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
 
         bytes memory inputTerms_ = abi.encode(uint256(12345));
         bytes memory incorrectPassword_ = abi.encode(uint256(123154245));
@@ -105,15 +85,15 @@ contract PasswordEnforcerTest is CaveatEnforcerBaseTest {
             salt: 0,
             signature: hex""
         });
-        // Store delegation
-        execute_UserOp(users.alice, abi.encodeWithSelector(IDelegationManager.delegate.selector, delegation));
+
+        delegation = signDelegation(users.alice, delegation);
 
         // Execute Bob's UserOp
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation;
 
         // Enforcer allows the delegation
-        invokeDelegation_UserOp(users.bob, delegations_, action_);
+        invokeDelegation_UserOp(users.bob, delegations_, execution_);
         // Validate that the count has not increased
         assertEq(aliceDeleGatorCounter.count(), initialValue_);
     }
@@ -122,9 +102,12 @@ contract PasswordEnforcerTest is CaveatEnforcerBaseTest {
 
     function test_userInputCorrectArgsWorksWithOffchainDelegation() public {
         uint256 initialValue_ = aliceDeleGatorCounter.count();
-        // Create the action that would be executed
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
 
         bytes memory inputTerms_ = abi.encode(uint256(12345));
         bytes memory password_ = abi.encode(uint256(12345));
@@ -154,16 +137,19 @@ contract PasswordEnforcerTest is CaveatEnforcerBaseTest {
         delegations_[0] = delegation;
 
         // Enforcer allows the delegation
-        invokeDelegation_UserOp(users.bob, delegations_, action_);
+        invokeDelegation_UserOp(users.bob, delegations_, execution_);
         // Validate that the count has increased by 1
         assertEq(aliceDeleGatorCounter.count(), initialValue_ + 1);
     }
 
     function test_userInputIncorrectArgsWorksWithOffchainDelegation() public {
         uint256 initialValue_ = aliceDeleGatorCounter.count();
-        // Create the action that would be executed
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
 
         bytes memory inputTerms_ = abi.encode(uint256(12345));
 
@@ -194,7 +180,7 @@ contract PasswordEnforcerTest is CaveatEnforcerBaseTest {
         delegations_[0] = delegation;
 
         // Enforcer allows the delegation
-        invokeDelegation_UserOp(users.bob, delegations_, action_);
+        invokeDelegation_UserOp(users.bob, delegations_, execution_);
         // Validate that the count has NOT increased
         assertEq(aliceDeleGatorCounter.count(), initialValue_);
     }

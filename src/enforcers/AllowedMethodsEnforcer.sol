@@ -1,26 +1,34 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
+import { ModeLib } from "@erc7579/lib/ModeLib.sol";
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
+
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
-import { Action } from "../utils/Types.sol";
+import { ModeCode } from "../utils/Types.sol";
 
 /**
  * @title AllowedMethodsEnforcer
  * @dev This contract enforces the allowed methods a delegate may call.
+ * @dev This caveat enforcer only works when the execution is in single mode.
  */
 contract AllowedMethodsEnforcer is CaveatEnforcer {
+    using ExecutionLib for bytes;
+
     ////////////////////////////// Public Methods //////////////////////////////
 
     /**
      * @notice Allows the delegator to limit what methods the delegate may call.
      * @dev This function enforces the allowed methods before the transaction is performed.
      * @param _terms A series of 4byte method identifiers, representing the methods that the delegate is allowed to call.
-     * @param _action The transaction the delegate might try to perform.
+     * @param _mode The execution mode for the execution.
+     * @param _executionCallData The execution the delegate is trying try to execute.
      */
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
-        Action calldata _action,
+        ModeCode _mode,
+        bytes calldata _executionCallData,
         bytes32,
         address,
         address
@@ -28,10 +36,13 @@ contract AllowedMethodsEnforcer is CaveatEnforcer {
         public
         pure
         override
+        onlySingleExecutionMode(_mode)
     {
-        require(_action.data.length >= 4, "AllowedMethodsEnforcer:invalid-action-data-length");
+        (,, bytes calldata callData_) = _executionCallData.decodeSingle();
 
-        bytes4 targetSig_ = bytes4(_action.data[0:4]);
+        require(callData_.length >= 4, "AllowedMethodsEnforcer:invalid-execution-data-length");
+
+        bytes4 targetSig_ = bytes4(callData_[0:4]);
         bytes4[] memory allowedSignatures_ = getTermsInfo(_terms);
         uint256 allowedSignaturesLength_ = allowedSignatures_.length;
 

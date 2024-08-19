@@ -2,8 +2,10 @@
 pragma solidity 0.8.23;
 
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
+import { ModeLib } from "@erc7579/lib/ModeLib.sol";
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
-import { Action, Caveat, Delegation } from "../../src/utils/Types.sol";
+import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { DeployedEnforcer } from "../../src/enforcers/DeployedEnforcer.sol";
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
@@ -11,10 +13,13 @@ import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
 contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
+    using ModeLib for ModeCode;
+
     ////////////////////////////// State //////////////////////////////
 
     DeployedEnforcer public deployedEnforcer;
     bytes32 public salt;
+    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////////////// Events //////////////////////////////
 
@@ -46,9 +51,13 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
         bytes32 bytecodeHash_ = hashInitCode(type(Counter).creationCode);
         address predictedAddr_ = vm.computeCreate2Address(salt, bytecodeHash_, address(deployedEnforcer));
 
-        // NOTE: Action isn't very relevant for this test.
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        // NOTE: Execution isn't very relevant for this test.
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // Check that the contract hasn't been deployed yet
         bytes memory initialCode_ = predictedAddr_.code;
@@ -63,7 +72,8 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
         deployedEnforcer.beforeHook(
             abi.encodePacked(predictedAddr_, salt, abi.encodePacked(type(Counter).creationCode)),
             hex"",
-            action_,
+            mode,
+            executionCallData_,
             keccak256(""),
             address(0),
             address(0)
@@ -81,14 +91,24 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
         bytes32 bytecodeHash_ = hashInitCode(bytecode_);
         address predictedAddr_ = vm.computeCreate2Address(salt, bytecodeHash_, address(deployedEnforcer));
 
-        // NOTE: Action isn't very relevant for this test.
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        // NOTE: Execution isn't very relevant for this test.
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // Deploy the contract
         vm.prank(address(delegationManager));
         deployedEnforcer.beforeHook(
-            abi.encodePacked(predictedAddr_, salt, bytecode_), hex"", action_, keccak256(""), address(0), address(0)
+            abi.encodePacked(predictedAddr_, salt, bytecode_),
+            hex"",
+            mode,
+            executionCallData_,
+            keccak256(""),
+            address(0),
+            address(0)
         );
 
         // beforeHook, mimicking the behavior of Alice's DeleGator
@@ -98,7 +118,13 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
 
         // Use enforcer when contract is already deployed
         deployedEnforcer.beforeHook(
-            abi.encodePacked(predictedAddr_, salt, bytecode_), hex"", action_, keccak256(""), address(0), address(0)
+            abi.encodePacked(predictedAddr_, salt, bytecode_),
+            hex"",
+            mode,
+            executionCallData_,
+            keccak256(""),
+            address(0),
+            address(0)
         );
     }
 
@@ -106,9 +132,13 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
 
     // should revert if the predicted address doesn't match the deployed address
     function test_revertIfPredictedAddressDoesNotMatch() public {
-        // NOTE: Action isn't very relevant for this test.
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        // NOTE: Execution isn't very relevant for this test.
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // beforeHook, mimicking the behavior of Alice's DeleGator
         vm.prank(address(delegationManager));
@@ -116,7 +146,8 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
         deployedEnforcer.beforeHook(
             abi.encodePacked(users.alice.addr, salt, abi.encodePacked(type(Counter).creationCode)),
             hex"",
-            action_,
+            mode,
+            executionCallData_,
             keccak256(""),
             address(0),
             address(0)
@@ -125,24 +156,36 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
 
     // should revert if the length of the terms is not sufficient
     function test_revertIfTermsLengthIsInvalid() public {
-        // NOTE: Action isn't very relevant for this test.
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        // NOTE: Execution isn't very relevant for this test.
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         vm.startPrank(address(delegationManager));
 
         // 0 bytes
         vm.expectRevert("DeployedEnforcer:invalid-terms-length");
-        deployedEnforcer.beforeHook(hex"", hex"", action_, keccak256(""), address(0), address(0));
+        deployedEnforcer.beforeHook(hex"", hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
 
         // 20 bytes
         vm.expectRevert("DeployedEnforcer:invalid-terms-length");
-        deployedEnforcer.beforeHook(abi.encodePacked(users.alice.addr), hex"", action_, keccak256(""), address(0), address(0));
+        deployedEnforcer.beforeHook(
+            abi.encodePacked(users.alice.addr), hex"", mode, executionCallData_, keccak256(""), address(0), address(0)
+        );
 
         // 52 bytes
         vm.expectRevert("DeployedEnforcer:invalid-terms-length");
         deployedEnforcer.beforeHook(
-            abi.encodePacked(users.alice.addr, bytes32(hex"")), hex"", action_, keccak256(""), address(0), address(0)
+            abi.encodePacked(users.alice.addr, bytes32(hex"")),
+            hex"",
+            mode,
+            executionCallData_,
+            keccak256(""),
+            address(0),
+            address(0)
         );
     }
 
@@ -154,15 +197,25 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
         bytes32 bytecodeHash_ = hashInitCode(bytecode_);
         address predictedAddr_ = vm.computeCreate2Address(salt, bytecodeHash_, address(deployedEnforcer));
 
-        // // NOTE: Action isn't very relevant for this test.
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        // // NOTE: Execution isn't very relevant for this test.
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // beforeHook, mimicking the behavior of Alice's DeleGator
         vm.prank(address(delegationManager));
         vm.expectRevert(abi.encodeWithSelector(DeployedEnforcer.DeployedEmptyContract.selector, predictedAddr_));
         deployedEnforcer.beforeHook(
-            abi.encodePacked(predictedAddr_, salt, bytecode_), hex"", action_, keccak256(""), address(0), address(0)
+            abi.encodePacked(predictedAddr_, salt, bytecode_),
+            hex"",
+            mode,
+            executionCallData_,
+            keccak256(""),
+            address(0),
+            address(0)
         );
     }
 
@@ -174,9 +227,13 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
         bytes32 bytecodeHash_ = hashInitCode(hex"");
         address predictedAddr_ = vm.computeCreate2Address(salt, bytecodeHash_, address(deployedEnforcer));
 
-        // NOTE: Action isn't very relevant for this test.
-        Action memory action_ =
-            Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
+        // NOTE: Execution isn't very relevant for this test.
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // Check that the contract hasn't been deployed yet
         bytes memory initialCode_ = predictedAddr_.code;
@@ -188,7 +245,8 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
         deployedEnforcer.beforeHook(
             abi.encodePacked(predictedAddr_, salt, abi.encodePacked(type(Counter).creationCode)),
             hex"",
-            action_,
+            mode,
+            executionCallData_,
             keccak256(""),
             address(0),
             address(0)
@@ -203,8 +261,10 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
         bytes32 bytecodeHash_ = hashInitCode(type(Counter).creationCode);
         address predictedAddr_ = vm.computeCreate2Address(salt, bytecodeHash_, address(deployedEnforcer));
 
-        // NOTE: Action isn't very relevant for this test.
-        Action memory action_ = Action({ to: predictedAddr_, value: 0, data: abi.encodeWithSelector(Counter.setCount.selector, 1) });
+        // NOTE: Execution isn't very relevant for this test.
+        Execution memory execution_ =
+            Execution({ target: predictedAddr_, value: 0, callData: abi.encodeWithSelector(Counter.setCount.selector, 1) });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // Check that the contract hasn't been deployed yet
         bytes memory initialCode_ = predictedAddr_.code;
@@ -224,15 +284,15 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
             salt: 0,
             signature: hex""
         });
-        // Store delegation
-        execute_UserOp(users.alice, abi.encodeWithSelector(IDelegationManager.delegate.selector, delegation));
+
+        delegation = signDelegation(users.alice, delegation);
 
         // Execute Bob's UserOp
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation;
 
         // Enforcer allows the delegation
-        invokeDelegation_UserOp(users.bob, delegations_, action_);
+        invokeDelegation_UserOp(users.bob, delegations_, execution_);
 
         // Check that the contract has been deployed properly
         bytes memory finalCode_ = predictedAddr_.code;
