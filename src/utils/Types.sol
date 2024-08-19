@@ -2,6 +2,8 @@
 pragma solidity 0.8.23;
 
 import { PackedUserOperation } from "@account-abstraction/interfaces/PackedUserOperation.sol";
+import { Execution } from "@erc7579/interfaces/IERC7579Account.sol";
+import { ModeCode, CallType, ExecType, ModeSelector, ModePayload } from "@erc7579/lib/ModeLib.sol";
 
 /**
  * @title EIP712Domain
@@ -37,19 +39,6 @@ struct Caveat {
     address enforcer;
     bytes terms;
     bytes args;
-}
-
-/**
- * @title Action
- * @notice This struct represents an action to be taken.
- * @dev It is used to pass the action of a transaction to a CaveatEnforcer.
- * It only includes the functional part of a transaction, allowing it to be
- * agnostic whether this was sent from a protocol-level tx or UserOperation.
- */
-struct Action {
-    address to;
-    uint256 value;
-    bytes data;
 }
 
 /**

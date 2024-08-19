@@ -4,7 +4,7 @@ pragma solidity 0.8.23;
 import { Test } from "forge-std/Test.sol";
 
 import { Caveat, Delegation } from "../../src/utils/Types.sol";
-import { DELEGATION_TYPEHASH, CAVEAT_TYPEHASH } from "../../src/utils/Typehashes.sol";
+import { DELEGATION_TYPEHASH, CAVEAT_TYPEHASH } from "../../src/utils/Constants.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 
 contract EncoderLibTest is Test {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { Action, Delegation } from "../utils/Types.sol";
+import { Delegation, Execution, ModeCode } from "../utils/Types.sol";
 
 /**
  * @title IDelegationManager
@@ -9,9 +9,6 @@ import { Action, Delegation } from "../utils/Types.sol";
  */
 interface IDelegationManager {
     ////////////////////////////// Events //////////////////////////////
-
-    /// @dev Emitted when a delegation's hash is cached onchain
-    event Delegated(bytes32 indexed delegationHash, address indexed delegator, address indexed delegate, Delegation delegation);
 
     /// @dev Emitted when a delegation is redeemed
     event RedeemedDelegation(address indexed rootDelegator, address indexed redeemer, Delegation delegation);
@@ -36,9 +33,6 @@ interface IDelegationManager {
     /// @dev Error thrown when a user attempts to use a disabled delegation
     error CannotUseADisabledDelegation();
 
-    /// @dev Error thrown when there are no delegations provided
-    error NoDelegationsProvided();
-
     /// @dev Error thrown when the authority in a chain of delegations doesn't match the expected authority
     error InvalidAuthority();
 
@@ -51,17 +45,17 @@ interface IDelegationManager {
     /// @dev Error thrown when the signature provided is invalid
     error InvalidSignature();
 
-    /// @dev Error thrown when the delegation provided hasn't been approved
-    error InvalidDelegation();
+    /// @dev Error thrown when the signature is empty
+    error EmptySignature();
 
     /// @dev Error thrown when the delegation provided is already disabled
     error AlreadyDisabled();
 
-    /// @dev Error thrown when the delegation provided is already cached
-    error AlreadyExists();
-
     /// @dev Error thrown when the delegation provided is already enabled
     error AlreadyEnabled();
+
+    /// @dev Error thrown when the batch size doesn't match the execution array size
+    error BatchDataLengthMismatch();
 
     ////////////////////////////// MM Implementation Methods //////////////////////////////
 
@@ -69,19 +63,20 @@ interface IDelegationManager {
 
     function unpause() external;
 
-    function delegate(Delegation calldata _delegation) external;
-
     function enableDelegation(Delegation calldata _delegation) external;
 
     function disableDelegation(Delegation calldata _delegation) external;
 
     function disabledDelegations(bytes32 _delegationHash) external view returns (bool);
 
-    function onchainDelegations(bytes32 _delegationHash) external view returns (bool);
-
     function getDelegationHash(Delegation calldata _delegation) external pure returns (bytes32);
 
-    function redeemDelegation(bytes calldata _data, Action calldata _action) external;
+    function redeemDelegations(
+        bytes[] calldata _permissionContexts,
+        ModeCode[] calldata _modes,
+        bytes[] calldata _executionCallDatas
+    )
+        external;
 
     function getDomainHash() external view returns (bytes32);
 }

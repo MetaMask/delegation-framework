@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 
 import { Delegation, Caveat } from "../utils/Types.sol";
-import { DELEGATION_TYPEHASH, CAVEAT_TYPEHASH } from "../utils/Typehashes.sol";
+import { DELEGATION_TYPEHASH, CAVEAT_TYPEHASH } from "../utils/Constants.sol";
 
 /**
  * @dev Provides implementations for common utility methods for Delegation.

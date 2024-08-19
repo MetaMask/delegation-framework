@@ -9,23 +9,26 @@ import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy
 import { FCL_ecdsa_utils } from "@freshCryptoLib/FCL_ecdsa_utils.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { IEntryPoint } from "@account-abstraction/core/EntryPoint.sol";
+import { ModeLib } from "@erc7579/lib/ModeLib.sol";
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
-// import { P256 } from "../../src/external/Daimo/P256.sol";
 import { P256FCLVerifierLib } from "../../src/libraries/P256FCLVerifierLib.sol";
 import { FCL_all_wrapper } from "./FCLWrapperLib.sol";
 
+import { EXECUTE_SIGNATURE } from "./Constants.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { TestUser, TestUsers, Implementation, SignatureType } from "./Types.t.sol";
 import { SigningUtilsLib } from "./SigningUtilsLib.t.sol";
 import { StorageUtilsLib } from "./StorageUtilsLib.t.sol";
-import { Action, PackedUserOperation, Delegation } from "../../src/utils/Types.sol";
-import { SimpleFactory } from "./SimpleFactory.sol";
+import { Execution, PackedUserOperation, Delegation, ModeCode } from "../../src/utils/Types.sol";
+import { SimpleFactory } from "../../src/utils/SimpleFactory.sol";
 import { DelegationManager } from "../../src/DelegationManager.sol";
-import { IDeleGatorCoreFull } from "../../src/interfaces/IDeleGatorCoreFull.sol";
+import { DeleGatorCore } from "../../src/DeleGatorCore.sol";
 import { HybridDeleGator } from "../../src/HybridDeleGator.sol";
 import { MultiSigDeleGator } from "../../src/MultiSigDeleGator.sol";
 
 abstract contract BaseTest is Test {
+    using ModeLib for ModeCode;
     using MessageHashUtils for bytes32;
 
     SignatureType public SIGNATURE_TYPE;
@@ -273,23 +276,27 @@ abstract contract BaseTest is Test {
         userOperation_ = createAndSignUserOp(_user, _sender, _callData, hex"");
     }
 
-    function execute_UserOp(TestUser memory _user, Action memory _action) public {
-        execute_UserOp(_user, _action, false);
+    function execute_UserOp(TestUser memory _user, Execution memory _execution) public {
+        execute_UserOp(_user, _execution, hex"", false);
     }
 
-    function execute_UserOp(TestUser memory _user, Action memory _action, bool _shouldFail) public {
-        execute_UserOp(_user, _action, hex"", _shouldFail);
+    function execute_UserOp(TestUser memory _user, Execution memory _execution, bool _shouldFail) public {
+        execute_UserOp(_user, _execution, hex"", _shouldFail);
     }
 
     function execute_UserOp(
         TestUser memory _user,
-        Action memory _action,
+        Execution memory _execution,
         bytes memory _paymasterAndData,
         bool _shouldFail
     )
         public
     {
-        bytes memory userOpCallData_ = abi.encodeWithSelector(IDeleGatorCoreFull.execute.selector, _action);
+        bytes memory userOpCallData_ = abi.encodeWithSignature(
+            EXECUTE_SIGNATURE,
+            ModeLib.encodeSimpleSingle(),
+            ExecutionLib.encodeSingle(_execution.target, _execution.value, _execution.callData)
+        );
         PackedUserOperation memory userOp_ = createUserOp(address(_user.deleGator), userOpCallData_, hex"", _paymasterAndData);
         bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
         userOp_.signature = signHash(_user, userOpHash_.toEthSignedMessageHash());
@@ -297,32 +304,42 @@ abstract contract BaseTest is Test {
     }
 
     function execute_UserOp(TestUser memory _user, bytes memory _callData) public {
-        Action memory action_ = Action({ to: address(_user.deleGator), value: 0, data: _callData });
-        execute_UserOp(_user, action_);
+        Execution memory execution_ = Execution({ target: address(_user.deleGator), value: 0, callData: _callData });
+        execute_UserOp(_user, execution_);
     }
 
-    function executeBatch_UserOp(TestUser memory _user, Action[] memory _actions) public {
-        bytes memory userOpCallData_ = abi.encodeWithSelector(IDeleGatorCoreFull.executeBatch.selector, _actions);
+    function executeBatch_UserOp(TestUser memory _user, Execution[] memory _executions) public {
+        bytes memory userOpCallData_ =
+            abi.encodeWithSignature(EXECUTE_SIGNATURE, ModeLib.encodeSimpleBatch(), abi.encode(_executions));
         PackedUserOperation memory userOp_ = createUserOp(address(_user.deleGator), userOpCallData_);
         bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
         userOp_.signature = signHash(_user, userOpHash_.toEthSignedMessageHash());
         submitUserOp_Bundler(userOp_, false);
     }
 
-    function invokeDelegation_UserOp(TestUser memory _user, Delegation[] memory _delegations, Action memory _action) public {
-        return invokeDelegation_UserOp(_user, _delegations, _action, hex"");
+    function invokeDelegation_UserOp(TestUser memory _user, Delegation[] memory _delegations, Execution memory _execution) public {
+        return invokeDelegation_UserOp(_user, _delegations, _execution, hex"");
     }
 
     function invokeDelegation_UserOp(
         TestUser memory _user,
         Delegation[] memory _delegations,
-        Action memory _action,
+        Execution memory _execution,
         bytes memory _initCode
     )
         public
     {
+        bytes[] memory permissionContexts_ = new bytes[](1);
+        permissionContexts_[0] = abi.encode(_delegations);
+
+        bytes[] memory executionCallDatas_ = new bytes[](1);
+        executionCallDatas_[0] = ExecutionLib.encodeSingle(_execution.target, _execution.value, _execution.callData);
+
+        ModeCode[] memory modes_ = new ModeCode[](1);
+        modes_[0] = ModeLib.encodeSimpleSingle();
+
         bytes memory userOpCallData_ =
-            abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, abi.encode(_delegations), _action);
+            abi.encodeWithSelector(DeleGatorCore.redeemDelegations.selector, permissionContexts_, modes_, executionCallDatas_);
         PackedUserOperation memory userOp_ = createUserOp(address(_user.deleGator), userOpCallData_, _initCode);
         bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
         userOp_.signature = signHash(_user, userOpHash_.toEthSignedMessageHash());
@@ -406,7 +423,7 @@ abstract contract BaseTest is Test {
         user_.addr = payable(addr_);
         user_.privateKey = privateKey_;
         (user_.x, user_.y) = FCL_ecdsa_utils.ecdsa_derivKpub(user_.privateKey);
-        user_.deleGator = IDeleGatorCoreFull(deployDeleGator(user_));
+        user_.deleGator = DeleGatorCore(payable(deployDeleGator(user_)));
 
         vm.deal(address(user_.deleGator), 100 ether);
         vm.label(address(user_.deleGator), string.concat(_name, " DeleGator"));

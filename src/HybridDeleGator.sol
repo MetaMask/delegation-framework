@@ -30,7 +30,7 @@ contract HybridDeleGator is DeleGatorCore, IERC173 {
     ////////////////////////////// State //////////////////////////////
 
     /// @dev The version of the contract
-    string public constant VERSION = "1.0.0";
+    string public constant VERSION = "1.1.0";
 
     /// @dev The storage location used for state
     /// @dev keccak256(abi.encode(uint256(keccak256("DeleGator.HybridDeleGator")) - 1)) & ~bytes32(uint256(0xff))

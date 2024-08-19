@@ -4,12 +4,13 @@ pragma solidity 0.8.23;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
-import { Action } from "../utils/Types.sol";
+import { ModeCode } from "../utils/Types.sol";
 
 /**
  * @title ERC20BalanceGteEnforcer
  * @dev This contract enforces that the delegator's ERC20 balance has increased by at least the specified amount
- * after the action has been executed, measured between the `beforeHook` and `afterHook` calls, regardless of what the action is.
+ * after the execution has been executed, measured between the `beforeHook` and `afterHook` calls, regardless of what the execution
+ * is.
  * @dev This contract has no enforcement of how the balance increases. It's meant to be used alongside additional enforcers to
  * create granular permissions.
  */
@@ -42,7 +43,8 @@ contract ERC20BalanceGteEnforcer is CaveatEnforcer {
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
-        Action calldata,
+        ModeCode,
+        bytes calldata,
         bytes32 _delegationHash,
         address _delegator,
         address
@@ -66,7 +68,8 @@ contract ERC20BalanceGteEnforcer is CaveatEnforcer {
     function afterHook(
         bytes calldata _terms,
         bytes calldata,
-        Action calldata,
+        ModeCode,
+        bytes calldata,
         bytes32 _delegationHash,
         address _delegator,
         address

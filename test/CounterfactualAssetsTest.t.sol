@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 
 import { BaseTest } from "./utils/BaseTest.t.sol";
-import { Delegation, Delegation, Caveat, Action } from "../src/utils/Types.sol";
+import { Delegation, Caveat, Execution } from "../src/utils/Types.sol";
 import { Implementation, SignatureType } from "./utils/Types.t.sol";
 import { BasicCF721 } from "./utils/BasicCF721.t.sol";
 import { EncoderLib } from "../src/libraries/EncoderLib.sol";
@@ -83,17 +83,17 @@ contract CounterfactualAssetsTest is BaseTest {
         // Alice signs Delegation to deploy BasicCF721
         delegation_ = signDelegation(users.alice, delegation_);
 
-        // Create Bob's action_ to mint an NFT
-        Action memory action_ = Action({
-            to: predictedAddr_,
+        // Create Bob's execution_ to mint an NFT
+        Execution memory execution_ = Execution({
+            target: predictedAddr_,
             value: 0,
-            data: abi.encodeWithSelector(BasicCF721.mint.selector, [address(users.bob.deleGator)])
+            callData: abi.encodeWithSelector(BasicCF721.mint.selector, [address(users.bob.deleGator)])
         });
 
         // Execute Bob's UserOp
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation_;
-        invokeDelegation_UserOp(users.bob, delegations_, action_);
+        invokeDelegation_UserOp(users.bob, delegations_, execution_);
 
         // Get final state
         bytes memory finalCode_ = predictedAddr_.code;
@@ -153,17 +153,17 @@ contract CounterfactualAssetsTest is BaseTest {
         // Alice signs Delegation to deploy BasicCF721
         delegation_ = signDelegation(users.alice, delegation_);
 
-        // Create Bob's action_ to mint an NFT
-        Action memory action_ = Action({
-            to: predictedAddr_,
+        // Create Bob's execution_ to mint an NFT
+        Execution memory execution_ = Execution({
+            target: predictedAddr_,
             value: 0,
-            data: abi.encodeWithSelector(BasicCF721.mint.selector, [address(users.bob.deleGator)])
+            callData: abi.encodeWithSelector(BasicCF721.mint.selector, [address(users.bob.deleGator)])
         });
 
         // Execute Bob's UserOp
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation_;
-        invokeDelegation_UserOp(users.bob, delegations_, action_);
+        invokeDelegation_UserOp(users.bob, delegations_, execution_);
 
         // Get final state
         bytes memory finalCode_ = predictedAddr_.code;
@@ -237,18 +237,18 @@ contract CounterfactualAssetsTest is BaseTest {
         // Bob signs Delegation to Carol
         bobDelegation_ = signDelegation(users.bob, bobDelegation_);
 
-        // Create Carols's action_ to mint an NFT
-        Action memory action_ = Action({
-            to: predictedAddr_,
+        // Create Carols's execution_ to mint an NFT
+        Execution memory execution_ = Execution({
+            target: predictedAddr_,
             value: 0,
-            data: abi.encodeWithSelector(BasicCF721.mint.selector, [address(users.carol.deleGator)])
+            callData: abi.encodeWithSelector(BasicCF721.mint.selector, [address(users.carol.deleGator)])
         });
 
         // Execute Carol's UserOp
         Delegation[] memory delegations_ = new Delegation[](2);
         delegations_[0] = bobDelegation_;
         delegations_[1] = aliceDelegation_;
-        invokeDelegation_UserOp(users.carol, delegations_, action_);
+        invokeDelegation_UserOp(users.carol, delegations_, execution_);
 
         // Get final state
         bytes memory finalCode_ = predictedAddr_.code;

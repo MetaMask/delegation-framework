@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
-import { Action } from "../utils/Types.sol";
+import { ModeCode } from "../utils/Types.sol";
 
 /**
  * @title BlockNumberEnforcer
@@ -17,7 +17,19 @@ contract BlockNumberEnforcer is CaveatEnforcer {
      * @param _terms A bytes32 blocknumber range where the first half of the word is the earliest the delegation can be used and
      * the last half of the word is the latest the delegation can be used. The block number ranges are not inclusive.
      */
-    function beforeHook(bytes calldata _terms, bytes calldata, Action calldata, bytes32, address, address) public view override {
+    function beforeHook(
+        bytes calldata _terms,
+        bytes calldata,
+        ModeCode,
+        bytes calldata,
+        bytes32,
+        address,
+        address
+    )
+        public
+        view
+        override
+    {
         (uint128 blockAfterThreshold_, uint128 blockBeforeThreshold_) = getTermsInfo(_terms);
 
         if (blockAfterThreshold_ > 0) {
