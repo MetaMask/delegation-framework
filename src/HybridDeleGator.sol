@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import { IEntryPoint } from "@account-abstraction/interfaces/IEntryPoint.sol";
+import { IEntryPoint } from "account-abstraction/interfaces/IEntryPoint.sol";
 
 import { DeleGatorCore } from "./DeleGatorCore.sol";
 import { IDelegationManager } from "./interfaces/IDelegationManager.sol";

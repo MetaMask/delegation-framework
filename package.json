@@ -1,0 +1,31 @@
+{
+  "name": "delegation-framework",
+  "version": "1.1.0",
+  "description": "Smart contracts of the delegation framework",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "files": [
+    "/src/**/*.sol",
+    "foundry.toml",
+    "remappings.txt",
+    "README.md"
+  ],
+  "dependencies": {
+    "@openzeppelin/contracts": "github:OpenZeppelin/openzeppelin-contracts#105fa4e",
+    "account-abstraction": "github:eth-infinitism/account-abstraction#7af70c8",
+    "erc7579": "github:erc7579/erc7579-implementation#42aa538",
+    "bytes-utils": "github:GNSPS/solidity-bytes-utils#6458fb2",
+    "forge-std": "github:foundry-rs/forge-std#ae570fe"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -4,13 +4,13 @@ pragma solidity 0.8.23;
 import { Test } from "forge-std/Test.sol";
 import { Vm } from "forge-std/Vm.sol";
 import { StdCheatsSafe } from "forge-std/StdCheats.sol";
-import { EntryPoint } from "@account-abstraction/core/EntryPoint.sol";
+import { EntryPoint } from "account-abstraction/core/EntryPoint.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import { FCL_ecdsa_utils } from "@freshCryptoLib/FCL_ecdsa_utils.sol";
+import { FCL_ecdsa_utils } from "freshCryptoLib/FCL_ecdsa_utils.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import { IEntryPoint } from "@account-abstraction/core/EntryPoint.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
-import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
+import { IEntryPoint } from "account-abstraction/core/EntryPoint.sol";
+import { ModeLib } from "erc7579/lib/ModeLib.sol";
+import { ExecutionLib } from "erc7579/lib/ExecutionLib.sol";
 
 import { P256FCLVerifierLib } from "../../src/libraries/P256FCLVerifierLib.sol";
 import { FCL_all_wrapper } from "./FCLWrapperLib.sol";

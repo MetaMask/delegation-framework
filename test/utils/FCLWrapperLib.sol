@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { FCL_ecdsa } from "@freshCryptoLib/FCL_ecdsa.sol";
-import { FCL_ecdsa_utils } from "@freshCryptoLib/FCL_ecdsa_utils.sol";
-import { FCL_Elliptic_ZZ } from "@freshCryptoLib/FCL_elliptic.sol";
+import { FCL_ecdsa } from "freshCryptoLib/FCL_ecdsa.sol";
+import { FCL_ecdsa_utils } from "freshCryptoLib/FCL_ecdsa_utils.sol";
+import { FCL_Elliptic_ZZ } from "freshCryptoLib/FCL_elliptic.sol";
 
 // NOTE - This Library has been taken from
 // https://github.com/rdubois-crypto/FreshCryptoLib/blob/ec7122f20900f9486a7c018d635f69738b14dfc3/solidity/tests/WebAuthn_forge/script/DeployElliptic.s.sol#L18

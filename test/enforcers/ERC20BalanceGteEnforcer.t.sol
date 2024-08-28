@@ -3,7 +3,7 @@ pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
 import { BasicERC20 } from "../utils/BasicERC20.t.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
+import { ModeLib } from "erc7579/lib/ModeLib.sol";
 
 import "../../src/utils/Types.sol";
 import { Execution } from "../../src/utils/Types.sol";

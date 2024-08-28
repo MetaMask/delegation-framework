@@ -4,9 +4,6 @@
 [submodule "lib/solidity-bytes-utils"]
 	path = lib/solidity-bytes-utils
 	url = https://github.com/GNSPS/solidity-bytes-utils
-[submodule "lib/solidity-stringutils"]
-	path = lib/solidity-stringutils
-	url = https://github.com/Arachnid/solidity-stringutils
 [submodule "lib/FreshCryptoLib"]
 	path = lib/FreshCryptoLib
 	url = https://github.com/rdubois-crypto/FreshCryptoLib

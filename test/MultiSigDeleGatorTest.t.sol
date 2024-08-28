@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { IEntryPoint, EntryPoint } from "@account-abstraction/core/EntryPoint.sol";
-import { BytesLib } from "@bytes-utils/BytesLib.sol";
-import { EntryPoint } from "@account-abstraction/core/EntryPoint.sol";
+import { IEntryPoint, EntryPoint } from "account-abstraction/core/EntryPoint.sol";
+import { BytesLib } from "bytes-utils/BytesLib.sol";
+import { EntryPoint } from "account-abstraction/core/EntryPoint.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { ERC1967Proxy as DeleGatorProxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
-import { IEntryPoint, EntryPoint } from "@account-abstraction/core/EntryPoint.sol";
+import { ExecutionLib } from "erc7579/lib/ExecutionLib.sol";
+import { IEntryPoint, EntryPoint } from "account-abstraction/core/EntryPoint.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { IERC1155Receiver } from "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
@@ -10,8 +10,8 @@ import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
-import { ExecutionHelper } from "@erc7579/core/ExecutionHelper.sol";
+import { ModeLib } from "erc7579/lib/ModeLib.sol";
+import { ExecutionHelper } from "erc7579/core/ExecutionHelper.sol";
 
 import { BaseTest } from "./utils/BaseTest.t.sol";
 import { Delegation, Caveat, PackedUserOperation, Delegation, Execution, ModeCode } from "../src/utils/Types.sol";

@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 
 import { Vm } from "forge-std/Vm.sol";
-import { BytesLib } from "@bytes-utils/BytesLib.sol";
+import { BytesLib } from "bytes-utils/BytesLib.sol";
 
 /**
  * @title Storage Utils Library

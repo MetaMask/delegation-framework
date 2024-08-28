@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
+import { ExecutionLib } from "erc7579/lib/ExecutionLib.sol";
 
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";

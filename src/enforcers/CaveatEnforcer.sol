@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
+import { ModeLib } from "erc7579/lib/ModeLib.sol";
 
 import { ICaveatEnforcer } from "../interfaces/ICaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";

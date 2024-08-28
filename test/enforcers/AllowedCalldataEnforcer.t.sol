@@ -3,9 +3,9 @@ pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-import { BytesLib } from "@bytes-utils/BytesLib.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
-import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
+import { BytesLib } from "bytes-utils/BytesLib.sol";
+import { ModeLib } from "erc7579/lib/ModeLib.sol";
+import { ExecutionLib } from "erc7579/lib/ExecutionLib.sol";
 
 import { Counter } from "../utils/Counter.t.sol";
 import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";

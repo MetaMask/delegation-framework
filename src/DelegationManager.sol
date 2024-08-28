@@ -56,7 +56,6 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
     }
 
     ////////////////////////////// Constructor //////////////////////////////
-
     /**
      * @notice Initializes Ownable and the DelegationManager's state
      * @param _owner The initial owner of the contract

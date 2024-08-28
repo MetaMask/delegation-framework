@@ -2,9 +2,9 @@
 pragma solidity 0.8.23;
 
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import { FCL_ecdsa_utils } from "@freshCryptoLib/FCL_ecdsa_utils.sol";
+import { FCL_ecdsa_utils } from "freshCryptoLib/FCL_ecdsa_utils.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import { BytesLib } from "@bytes-utils/BytesLib.sol";
+import { BytesLib } from "bytes-utils/BytesLib.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import { SigningUtilsLib } from "./utils/SigningUtilsLib.t.sol";

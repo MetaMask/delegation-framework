@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { FCL_Elliptic_ZZ } from "@freshCryptoLib/FCL_elliptic.sol";
-import { FCL_ecdsa } from "@freshCryptoLib/FCL_ecdsa.sol";
+import { FCL_Elliptic_ZZ } from "freshCryptoLib/FCL_elliptic.sol";
+import { FCL_ecdsa } from "freshCryptoLib/FCL_ecdsa.sol";
 
 import { WebAuthn } from "./WebAuthn.sol";
 

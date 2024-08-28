@@ -15,8 +15,8 @@ interface IDeleGatorCore is IERC1271 {
      *         This function is intended to be called by Executor Modules
      * @dev Ensure adequate authorization control: i.e. onlyExecutorModule
      * @dev If a mode is requested that is not supported by the Account, it MUST revert
-     * @dev Related: @erc7579/MSAAdvanced.sol
-     * @param _mode The encoded execution mode of the transaction. See @erc7579/ModeLib.sol for details.
+     * @dev Related: erc7579/MSAAdvanced.sol
+     * @param _mode The encoded execution mode of the transaction. See erc7579/ModeLib.sol for details.
      * @param _executionCalldata The encoded execution call data
      */
     function executeFromExecutor(

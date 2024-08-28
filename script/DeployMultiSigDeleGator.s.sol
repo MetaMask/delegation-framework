@@ -4,7 +4,6 @@ pragma solidity 0.8.23;
 import "forge-std/Script.sol";
 import { console2 } from "forge-std/console2.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-
 import { MultiSigDeleGator } from "../src/MultiSigDeleGator.sol";
 
 /**

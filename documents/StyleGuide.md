@@ -35,7 +35,7 @@ The imports should be sorted by external dependencies an empty line and then loc
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.21;
 
-import { IEntryPoint } from "@account-abstraction/interfaces/IEntryPoint.sol";
+import { IEntryPoint } from "account-abstraction/interfaces/IEntryPoint.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import { IDeleGatorCore } from "./interfaces/IDeleGatorCore.sol";

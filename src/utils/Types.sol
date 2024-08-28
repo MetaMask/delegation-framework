@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { PackedUserOperation } from "@account-abstraction/interfaces/PackedUserOperation.sol";
-import { Execution } from "@erc7579/interfaces/IERC7579Account.sol";
-import { ModeCode, CallType, ExecType, ModeSelector, ModePayload } from "@erc7579/lib/ModeLib.sol";
+import { PackedUserOperation } from "account-abstraction/interfaces/PackedUserOperation.sol";
+import { Execution } from "erc7579/interfaces/IERC7579Account.sol";
+import { ModeCode, CallType, ExecType, ModeSelector, ModePayload } from "erc7579/lib/ModeLib.sol";
 
 /**
  * @title EIP712Domain

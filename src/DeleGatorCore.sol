@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { IEntryPoint } from "@account-abstraction/interfaces/IEntryPoint.sol";
+import { IEntryPoint } from "account-abstraction/interfaces/IEntryPoint.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
@@ -10,9 +10,9 @@ import { IERC1155Receiver } from "@openzeppelin/contracts/token/ERC1155/IERC1155
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import { Initializable } from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import { ERC1967Utils } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
-import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
-import { ExecutionHelper } from "@erc7579/core/ExecutionHelper.sol";
+import { ModeLib } from "erc7579/lib/ModeLib.sol";
+import { ExecutionLib } from "erc7579/lib/ExecutionLib.sol";
+import { ExecutionHelper } from "erc7579/core/ExecutionHelper.sol";
 
 import { ERC1271Lib } from "./libraries/ERC1271Lib.sol";
 import { IDeleGatorCore } from "./interfaces/IDeleGatorCore.sol";
@@ -164,7 +164,7 @@ abstract contract DeleGatorCore is
 
     /**
      * @notice Executes an Execution from this contract
-     * @dev Related: @erc7579/MSAAdvanced.sol
+     * @dev Related: erc7579/MSAAdvanced.sol
      * @dev This method is intended to be called through a UserOp which ensures the invoker has sufficient permissions
      * @param _mode The ModeCode for the execution
      * @param _executionCalldata The calldata for the execution
@@ -201,7 +201,7 @@ abstract contract DeleGatorCore is
 
     /**
      * @inheritdoc IDeleGatorCore
-     * @dev Related: @erc7579/MSAAdvanced.sol
+     * @dev Related: erc7579/MSAAdvanced.sol
      */
     function executeFromExecutor(
         ModeCode _mode,
