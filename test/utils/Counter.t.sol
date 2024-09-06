@@ -21,4 +21,8 @@ contract Counter is Ownable {
     function increment() public onlyOwner {
         count++;
     }
+
+    function unsafeIncrement() public {
+        count++;
+    }
 }

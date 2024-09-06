@@ -1,3 +1,5 @@
+# NOTE: Expects to be run from inside the script directory.
+
 set -e # Exit on error
 
 cd .. 
@@ -14,15 +16,15 @@ fi
 
 
 
-# # Generates lcov.info
-forge coverage --ir-minimum --report lcov --report-file "$folder_path/lcov.info"
+# Generates lcov.info
+forge coverage --report lcov --skip scripts --report-file "$folder_path/lcov.info"
 
 # Filter out test, mock, and script files
 lcov \
     --rc branch_coverage=1 \
     --remove "$folder_path/lcov.info" \
     --output-file "$folder_path/filtered-lcov.info" \
-    "test/*.*" "script/*.*"
+    "test/*.*"
 
 # Generate summary
 lcov \
