@@ -55,8 +55,4 @@ Example: Alice delegates to Bob the ability to transfer USDC, giving Bob the abi
 
 ## Caveats
 
-`CaveatEnforcer` contracts are used to place restrictions on Delegations. This allows dapps to craft very granular delegations that only allow actions to take place under specific circumstances.
-
-> NOTE: each `CaveatEnforcer` is called by the `DelegationManager` contract. This is important when storing data in the `CaveatEnforcer`, as `msg.sender` will always be the address of the `DelegationManager`.
-
-> NOTE: there is no guarantee that the action is executed. Keep this in mind when designing Caveat Enforcers. If you are relying on the action then be sure to use the `afterHook` method to validate any expected state updates.
+[Read about "Caveats Enforcers" ->](/documents/CaveatEnforcers.md)
