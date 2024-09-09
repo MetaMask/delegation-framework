@@ -2,6 +2,8 @@
 
 Defines the interface needed for a `DelegationManager` to invoke an `Execution` on behalf of the delegator.
 
+This contract does not implement ERC7579 see [ERC-7579 Details](/documents/PartialERC7579.md).
+
 # MetaMask's DeleGatorCore
 
 Contains the logic needed for an ERC4337 SCA with delegation functionality. We provide two different "DeleGator implementations" for use: [MultiSigDeleGator](/documents/MultisigDeleGator.md) and [HybridDeleGator](/documents/HybridDeleGator.md). The distinction between the two is the signing mechanisms.
