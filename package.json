@@ -13,7 +13,8 @@
   "author": "",
   "license": "ISC",
   "files": [
-    "/src/**/*.sol",
+    "src/**/*.sol",
+    "lib/FreshCryptoLib/solidity/**/*",
     "foundry.toml",
     "remappings.txt",
     "README.md"

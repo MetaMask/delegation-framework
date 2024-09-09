@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import "openzeppelin-contracts/contracts/utils/Base64.sol";
+import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
 
 library Base64URL {
     function encode(bytes memory data) internal pure returns (string memory) {
