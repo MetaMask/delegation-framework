@@ -2,6 +2,8 @@
 
 A Delegation Manager is responsible for validating delegations and triggering the action to be taken on behalf of the delegator.
 
+This contract does not implement ERC7579 see [ERC-7579 Details](/documents/PartialERC7579.md).
+
 ## Rules
 
 - A Delegation Manager MUST implement `redeemDelegation` interface as specified `function redeemDelegation(bytes[] calldata _permissionContexts, ModeCode[] _modes, bytes[] calldata _executionCallDatas) external;`.

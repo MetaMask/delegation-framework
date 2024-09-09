@@ -6,21 +6,25 @@
 ### Getting Started
 
 1. **Fork the repository**:
-    - Click the "Fork" button at the top right of the repository page.
+
+   - Click the "Fork" button at the top right of the repository page.
 
 2. **Clone your fork**:
    ```shell
    git clone https://github.com/<your-username>/delegation-framework.git
+   ```
 3. **Create Working Branch**:
-    ```shell
+   ```shell
    git checkout -b feat/example-branch
+   ```
+
 # DeleGator Smart Account
 
 A DeleGator Smart Account is a 4337-compatible Smart Account that implements delegation functionality. An end user will operate through a DeleGatorProxy which uses a chosen DeleGator implementation.
 
 ## Overview
 
-An end user controls a DeleGator Proxy that USES a DeleGator Implementation which IMPLEMENTS DeleGatorCore and interacts with a DelegationManager.
+An end user controls a DeleGator Proxy that USES a DeleGator Implementation, which IMPLEMENTS DeleGatorCore and interacts with a DelegationManager.
 
 ### Delegations
 
@@ -125,6 +129,7 @@ Currently in Gated Alpha phase. Sign up to be an early partner [here](https://ga
 [Read more on "Style Guide" ->](/documents/StyleGuide.md)
 
 ### Core Contributors
+
 [Dan Finlay](https://github.com/danfinlay), [Ryan McPeck](https://github.com/McOso), [Dylan DesRosier](https://github.com/dylandesrosier), [Aditya Sharma](https://github.com/destroyersrt), [Hanzel Anchia Mena](https://github.com/hanzel98), [Idris Bowman](https://github.com/V00D00-child), [Jeff Smale](https://github.com/jeffsmale90), [Kevin Bluer](https://github.com/kevinbluer)
 
 ## Relevant Documents
@@ -137,3 +142,4 @@ Currently in Gated Alpha phase. Sign up to be an early partner [here](https://ga
 - [EIP-4337](https://eips.ethereum.org/EIPS/eip-4337)
 - [EIP-7201](https://eips.ethereum.org/EIPS/eip-7201)
 - [EIP-7212](https://eips.ethereum.org/EIPS/eip-7212)
+- [EIP-7579](https://eips.ethereum.org/EIPS/eip-7579)
