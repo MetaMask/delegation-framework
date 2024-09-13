@@ -55,74 +55,67 @@ contract DeployEnvironmentSetUp is Script {
         console2.log("~~~");
         vm.startBroadcast();
 
+        address deployedAddress;
+
         // Deploy Delegation Environment Contracts
         address delegationManager = address(new DelegationManager{ salt: salt }(deployer));
         console2.log("DelegationManager: %s", address(delegationManager));
-        {
-            address multiSigDeleGatorImpl_ =
-                address(new MultiSigDeleGator{ salt: salt }(IDelegationManager(delegationManager), entryPoint));
-            console2.log("MultiSigDeleGatorImpl: %s", address(multiSigDeleGatorImpl_));
+        deployedAddress = address(new MultiSigDeleGator{ salt: salt }(IDelegationManager(delegationManager), entryPoint));
+        console2.log("MultiSigDeleGatorImpl: %s", deployedAddress);
 
-            address hybridDeleGatorImpl_ =
-                address(new HybridDeleGator{ salt: salt }(IDelegationManager(delegationManager), entryPoint));
-            console2.log("HybridDeleGatorImpl: %s", address(hybridDeleGatorImpl_));
-        }
+        deployedAddress = address(new HybridDeleGator{ salt: salt }(IDelegationManager(delegationManager), entryPoint));
+        console2.log("HybridDeleGatorImpl: %s", address(deployedAddress));
         console2.log("~~~");
 
-        {
-            // Caveat Enforcers
-            address allowedCalldataEnforcer = address(new AllowedCalldataEnforcer{ salt: salt }());
-            console2.log("AllowedCalldataEnforcer: %s", address(allowedCalldataEnforcer));
+        // Caveat Enforcers
+        deployedAddress = address(new AllowedCalldataEnforcer{ salt: salt }());
+        console2.log("AllowedCalldataEnforcer: %s", deployedAddress);
 
-            address allowedMethodsEnforcer = address(new AllowedMethodsEnforcer{ salt: salt }());
-            console2.log("AllowedMethodsEnforcer: %s", address(allowedMethodsEnforcer));
+        deployedAddress = address(new AllowedMethodsEnforcer{ salt: salt }());
+        console2.log("AllowedMethodsEnforcer: %s", deployedAddress);
 
-            address allowedTargetsEnforcer = address(new AllowedTargetsEnforcer{ salt: salt }());
-            console2.log("AllowedTargetsEnforcer: %s", address(allowedTargetsEnforcer));
+        deployedAddress = address(new AllowedTargetsEnforcer{ salt: salt }());
+        console2.log("AllowedTargetsEnforcer: %s", deployedAddress);
 
-            address blockNumberEnforcer = address(new BlockNumberEnforcer{ salt: salt }());
-            console2.log("BlockNumberEnforcer: %s", address(blockNumberEnforcer));
+        deployedAddress = address(new BlockNumberEnforcer{ salt: salt }());
+        console2.log("BlockNumberEnforcer: %s", deployedAddress);
 
-            address deployedEnforcer = address(new DeployedEnforcer{ salt: salt }());
-            console2.log("DeployedEnforcer: %s", address(deployedEnforcer));
+        deployedAddress = address(new DeployedEnforcer{ salt: salt }());
+        console2.log("DeployedEnforcer: %s", deployedAddress);
 
-            address erc20BalanceGteEnforcer = address(new ERC20BalanceGteEnforcer{ salt: salt }());
-            console2.log("ERC20BalanceGteEnforcer: %s", address(erc20BalanceGteEnforcer));
+        deployedAddress = address(new ERC20BalanceGteEnforcer{ salt: salt }());
+        console2.log("ERC20BalanceGteEnforcer: %s", deployedAddress);
 
-            address erc20TransferAmountEnforcer = address(new ERC20TransferAmountEnforcer{ salt: salt }());
-            console2.log("ERC20TransferAmountEnforcer: %s", address(erc20TransferAmountEnforcer));
+        deployedAddress = address(new ERC20TransferAmountEnforcer{ salt: salt }());
+        console2.log("ERC20TransferAmountEnforcer: %s", deployedAddress);
 
-            address idEnforcer = address(new IdEnforcer{ salt: salt }());
-            console2.log("IdEnforcer: %s", address(idEnforcer));
+        deployedAddress = address(new IdEnforcer{ salt: salt }());
+        console2.log("IdEnforcer: %s", deployedAddress);
 
-            address limitedCallsEnforcer = address(new LimitedCallsEnforcer{ salt: salt }());
-            console2.log("LimitedCallsEnforcer: %s", address(limitedCallsEnforcer));
+        deployedAddress = address(new LimitedCallsEnforcer{ salt: salt }());
+        console2.log("LimitedCallsEnforcer: %s", deployedAddress);
 
-            address nonceEnforcer = address(new NonceEnforcer{ salt: salt }());
-            console2.log("NonceEnforcer: %s", address(nonceEnforcer));
+        deployedAddress = address(new NonceEnforcer{ salt: salt }());
+        console2.log("NonceEnforcer: %s", deployedAddress);
 
-            address timestampEnforcer = address(new TimestampEnforcer{ salt: salt }());
-            console2.log("TimestampEnforcer: %s", address(timestampEnforcer));
+        deployedAddress = address(new TimestampEnforcer{ salt: salt }());
+        console2.log("TimestampEnforcer: %s", deployedAddress);
 
-            address valueLteEnfocer = address(new ValueLteEnforcer{ salt: salt }());
-            console2.log("ValueLteEnforcer: %s", address(valueLteEnfocer));
+        deployedAddress = address(new ValueLteEnforcer{ salt: salt }());
+        console2.log("ValueLteEnforcer: %s", deployedAddress);
 
-            address nativeTokenTransferAmountEnforcer = address(new NativeTokenTransferAmountEnforcer{ salt: salt }());
-            console2.log("NativeTokenTransferAmountEnforcer: %s", address(nativeTokenTransferAmountEnforcer));
+        deployedAddress = address(new NativeTokenTransferAmountEnforcer{ salt: salt }());
+        console2.log("NativeTokenTransferAmountEnforcer: %s", deployedAddress);
 
-            address nativeBalanceGteEnforcer = address(new NativeBalanceGteEnforcer{ salt: salt }());
-            console2.log("NativeBalanceGteEnforcer: %s", address(nativeBalanceGteEnforcer));
+        deployedAddress = address(new NativeBalanceGteEnforcer{ salt: salt }());
+        console2.log("NativeBalanceGteEnforcer: %s", deployedAddress);
 
-            address argsEqualityCheckEnforcer = address(new ArgsEqualityCheckEnforcer{ salt: salt }());
-            console2.log("ArgsEqualityCheckEnforcer: %s", address(argsEqualityCheckEnforcer));
+        deployedAddress = address(new ArgsEqualityCheckEnforcer{ salt: salt }());
+        console2.log("ArgsEqualityCheckEnforcer: %s", deployedAddress);
 
-            address nativeTokenPaymentEnforcer = address(
-                new NativeTokenPaymentEnforcer{ salt: salt }(
-                    IDelegationManager(delegationManager), address(argsEqualityCheckEnforcer)
-                )
-            );
-            console2.log("NativeTokenPaymentEnforcer: %s", address(nativeTokenPaymentEnforcer));
-        }
+        deployedAddress =
+            address(new NativeTokenPaymentEnforcer{ salt: salt }(IDelegationManager(delegationManager), deployedAddress));
+        console2.log("NativeTokenPaymentEnforcer: %s", deployedAddress);
 
         vm.stopBroadcast();
     }

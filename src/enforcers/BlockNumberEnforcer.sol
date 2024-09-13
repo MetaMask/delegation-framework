@@ -49,7 +49,9 @@ contract BlockNumberEnforcer is CaveatEnforcer {
      * @return blockAfterThreshold_ The earliest block number before which the delegation can be used.
      * @return blockBeforeThreshold_ The latest block number after which the delegation can be used.
      */
-    function getTermsInfo(bytes calldata _terms)
+    function getTermsInfo(
+        bytes calldata _terms
+    )
         public
         pure
         returns (uint128 blockAfterThreshold_, uint128 blockBeforeThreshold_)

@@ -81,7 +81,9 @@ contract DeployedEnforcer is CaveatEnforcer {
      * @return salt_ The salt to use for create2.
      * @return bytecode_ The bytecode of the contract to deploy.
      */
-    function getTermsInfo(bytes calldata _terms)
+    function getTermsInfo(
+        bytes calldata _terms
+    )
         public
         pure
         returns (address expectedAddress_, bytes32 salt_, bytes memory bytecode_)
