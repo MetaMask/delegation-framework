@@ -79,7 +79,9 @@ library P256VerifierLib {
      * @param _signature The signature to be decoded
      * @return decodedSig the decoded signature
      */
-    function _decodeWebAuthnP256Signature(bytes memory _signature)
+    function _decodeWebAuthnP256Signature(
+        bytes memory _signature
+    )
         internal
         pure
         returns (DecodedWebAuthnSignature memory decodedSig)
