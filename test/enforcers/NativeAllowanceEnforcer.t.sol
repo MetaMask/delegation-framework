@@ -9,6 +9,7 @@ import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { NativeTokenTransferAmountEnforcer } from "../../src/enforcers/NativeTokenTransferAmountEnforcer.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
+import { Caveats } from "../../src/libraries/Caveats.sol";
 
 contract NativeAllowanceEnforcerTest is CaveatEnforcerBaseTest {
     using ModeLib for ModeCode;
@@ -131,7 +132,7 @@ contract NativeAllowanceEnforcerTest is CaveatEnforcerBaseTest {
 
     function _getExampleDelegation(bytes memory inputTerms_) internal view returns (bytes32 delegationHash_) {
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(nativeTokenTransferAmountEnforcer), terms: inputTerms_ });
+        caveats_[0] = Caveats.createNativeAllowanceCaveat(address(nativeTokenTransferAmountEnforcer), abi.decode(inputTerms_, (uint256)));
 
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),

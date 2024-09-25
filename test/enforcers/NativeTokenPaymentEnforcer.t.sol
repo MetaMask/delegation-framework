@@ -15,6 +15,7 @@ import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 import { Counter } from "../utils/Counter.t.sol";
+import { Caveats } from "../../src/libraries/Caveats.sol";
 
 contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
     using ModeLib for ModeCode;
@@ -133,7 +134,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
 
         argsEnforcerTerms = abi.encodePacked(delegationHash_, address(users.bob.deleGator));
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(argsEqualityCheckEnforcer), terms: argsEnforcerTerms });
+        caveats_[0] = Caveats.createArgsEqualityCheckCaveat(address(argsEqualityCheckEnforcer), argsEnforcerTerms);
 
         allowanceDelegations_[0] = Delegation({
             delegate: address(nativeTokenPaymentEnforcer),
@@ -181,15 +182,12 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         // The args of the nativeTokenTransferAmountEnforcer will be overwritten
         // The limitedCallsEnforcer and allowedTargetsEnforcer should stay the same
         Caveat[] memory allowanceCaveats_ = new Caveat[](4);
-        allowanceCaveats_[0] = Caveat({ args: hex"", enforcer: address(argsEqualityCheckEnforcer), terms: argsEnforcerTerms });
-        allowanceCaveats_[1] = Caveat({ args: hex"", enforcer: address(nativeTokenTransferAmountEnforcer), terms: allowanceTerms });
-        allowanceCaveats_[2] =
-            Caveat({ args: hex"", enforcer: address(limitedCallsEnforcer), terms: abi.encodePacked(uint256(10)) });
-        allowanceCaveats_[3] = Caveat({
-            args: hex"",
-            enforcer: address(allowedTargetsEnforcer),
-            terms: abi.encodePacked(address(users.alice.deleGator))
-        });
+        allowanceCaveats_[0] = Caveats.createArgsEqualityCheckCaveat(address(argsEqualityCheckEnforcer), argsEnforcerTerms);
+        allowanceCaveats_[1] = Caveats.createNativeAllowanceCaveat(address(nativeTokenTransferAmountEnforcer), paymentAmount);
+        allowanceCaveats_[2] = Caveats.createLimitedCallsCaveat(address(limitedCallsEnforcer), 10);
+        address[] memory allowedTargets = new address[](1);
+        allowedTargets[0] = address(users.alice.deleGator);
+        allowanceCaveats_[3] = Caveats.createAllowedTargetsCaveat(address(allowedTargetsEnforcer), allowedTargets);
 
         // Create allowance delegation from Bob to NativeTokenPaymentEnforcer
         Delegation[] memory allowanceDelegations_ = new Delegation[](1);
@@ -237,14 +235,11 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
 
         // Even with other enforcers it should revert if it does not include the args enforcer
         Caveat[] memory allowanceCaveats_ = new Caveat[](3);
-        allowanceCaveats_[0] = Caveat({ args: hex"", enforcer: address(nativeTokenTransferAmountEnforcer), terms: allowanceTerms });
-        allowanceCaveats_[1] =
-            Caveat({ args: hex"", enforcer: address(limitedCallsEnforcer), terms: abi.encodePacked(uint256(10)) });
-        allowanceCaveats_[2] = Caveat({
-            args: hex"",
-            enforcer: address(allowedTargetsEnforcer),
-            terms: abi.encodePacked(address(users.alice.deleGator))
-        });
+        allowanceCaveats_[0] = Caveats.createNativeAllowanceCaveat(address(nativeTokenTransferAmountEnforcer), paymentAmount);
+        allowanceCaveats_[1] = Caveats.createLimitedCallsCaveat(address(limitedCallsEnforcer), 10);
+        address[] memory allowedTargets = new address[](1);
+        allowedTargets[0] = address(users.alice.deleGator);
+        allowanceCaveats_[2] = Caveats.createAllowedTargetsCaveat(address(allowedTargetsEnforcer), allowedTargets);
 
         // Create allowance delegation from Bob to NativeTokenPaymentEnforcer
         Delegation[] memory allowanceDelegations_ = new Delegation[](1);
@@ -337,8 +332,8 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         Caveat[] memory caveats_ = new Caveat[](2);
         allowanceTerms = abi.encode(paymentAmount);
         argsEnforcerTerms = abi.encodePacked(delegationHash_, address(users.bob.deleGator));
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(nativeTokenTransferAmountEnforcer), terms: allowanceTerms });
-        caveats_[1] = Caveat({ args: hex"", enforcer: address(argsEqualityCheckEnforcer), terms: argsEnforcerTerms });
+        caveats_[0] = Caveats.createNativeAllowanceCaveat(address(nativeTokenTransferAmountEnforcer), paymentAmount);
+        caveats_[1] = Caveats.createArgsEqualityCheckCaveat(address(argsEqualityCheckEnforcer), argsEnforcerTerms);
 
         Delegation[] memory allowanceDelegations_ = new Delegation[](1);
         allowanceDelegations_[0] = Delegation({
@@ -420,8 +415,8 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         argsEnforcerTerms = abi.encodePacked(delegationHash_, address(users.bob.deleGator));
 
         Caveat[] memory caveats_ = new Caveat[](2);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(argsEqualityCheckEnforcer), terms: argsEnforcerTerms });
-        caveats_[1] = Caveat({ args: hex"", enforcer: address(nativeTokenTransferAmountEnforcer), terms: allowanceTerms });
+        caveats_[0] = Caveats.createArgsEqualityCheckCaveat(address(argsEqualityCheckEnforcer), argsEnforcerTerms);
+        caveats_[1] = Caveats.createNativeAllowanceCaveat(address(nativeTokenTransferAmountEnforcer), paymentAmount);
 
         // Create allowance delegation from Bob to NativeTokenPaymentEnforcer
         Delegation[] memory allowanceDelegations_ = new Delegation[](1);
@@ -457,13 +452,9 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
     function test_allowsRedelegationAddingExtraCosts() public {
         // Creating paid delegation
         Caveat[] memory caveatsAlice_ = new Caveat[](1);
-        caveatsAlice_[0] = Caveat({ args: hex"", enforcer: address(nativeTokenPaymentEnforcer), terms: paymentTerms });
+        caveatsAlice_[0] = Caveats.createNativeTokenPaymentCaveat(address(nativeTokenPaymentEnforcer), paymentRecipient, paymentAmount);
         Caveat[] memory caveatsBob_ = new Caveat[](1);
-        caveatsBob_[0] = Caveat({
-            args: hex"",
-            enforcer: address(nativeTokenPaymentEnforcer),
-            terms: abi.encodePacked(address(users.bob.deleGator), paymentAmount / 2)
-        });
+        caveatsBob_[0] = Caveats.createNativeTokenPaymentCaveat(address(nativeTokenPaymentEnforcer), address(users.bob.deleGator), paymentAmount / 2);
 
         Delegation[] memory paidDelegations_ = new Delegation[](2);
         paidDelegations_[1] = Delegation({
@@ -490,22 +481,12 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
 
         // Creating allowance delegation
         Caveat[] memory caveatsToAlice_ = new Caveat[](2);
-        caveatsToAlice_[0] = Caveat({
-            args: hex"",
-            enforcer: address(argsEqualityCheckEnforcer),
-            terms: abi.encodePacked(delegationHashAlice_, address(users.carol.deleGator))
-        });
-        caveatsToAlice_[1] =
-            Caveat({ args: hex"", enforcer: address(nativeTokenTransferAmountEnforcer), terms: abi.encode(paymentAmount) });
+        caveatsToAlice_[0] = Caveats.createArgsEqualityCheckCaveat(address(argsEqualityCheckEnforcer), abi.encodePacked(delegationHashAlice_, address(users.carol.deleGator)));
+        caveatsToAlice_[1] = Caveats.createNativeAllowanceCaveat(address(nativeTokenTransferAmountEnforcer), paymentAmount);
 
         Caveat[] memory caveatsToBob_ = new Caveat[](2);
-        caveatsToBob_[0] = Caveat({
-            args: hex"",
-            enforcer: address(argsEqualityCheckEnforcer),
-            terms: abi.encodePacked(delegationHashBob_, address(users.carol.deleGator))
-        });
-        caveatsToBob_[1] =
-            Caveat({ args: hex"", enforcer: address(nativeTokenTransferAmountEnforcer), terms: abi.encode(paymentAmount / 2) });
+        caveatsToBob_[0] = Caveats.createArgsEqualityCheckCaveat(address(argsEqualityCheckEnforcer), abi.encodePacked(delegationHashBob_, address(users.carol.deleGator)));
+        caveatsToBob_[1] = Caveats.createNativeAllowanceCaveat(address(nativeTokenTransferAmountEnforcer), paymentAmount / 2);
 
         // Create allowance delegation from Bob to NativeTokenPaymentEnforcer
         Delegation[] memory allowanceDelegationsToAlice_ = new Delegation[](1);

@@ -13,6 +13,7 @@ import { AllowedMethodsEnforcer } from "../../src/enforcers/AllowedMethodsEnforc
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
+import { Caveats } from "../../src/libraries/Caveats.sol";
 
 contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
     using ModeLib for ModeCode;
@@ -139,8 +140,9 @@ contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
         });
 
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] =
-            Caveat({ args: hex"", enforcer: address(allowedMethodsEnforcer), terms: abi.encodePacked(Counter.increment.selector) });
+        string[] memory approvedMethods = new string[](1);
+        approvedMethods[0] = "increment()";
+        caveats_[0] = Caveats.createAllowedMethodsCaveat(address(allowedMethodsEnforcer), approvedMethods);
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
@@ -183,11 +185,11 @@ contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
         });
 
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({
-            args: hex"",
-            enforcer: address(allowedMethodsEnforcer),
-            terms: abi.encodePacked(Counter.setCount.selector, Ownable.renounceOwnership.selector, Ownable.owner.selector)
-        });
+        string[] memory approvedMethods = new string[](3);
+        approvedMethods[0] = "setCount(uint256)";
+        approvedMethods[1] = "renounceOwnership()";
+        approvedMethods[2] = "owner()";
+        caveats_[0] = Caveats.createAllowedMethodsCaveat(address(allowedMethodsEnforcer), approvedMethods);
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),

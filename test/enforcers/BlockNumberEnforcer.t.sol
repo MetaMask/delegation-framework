@@ -13,6 +13,7 @@ import { BlockNumberEnforcer } from "../../src/enforcers/BlockNumberEnforcer.sol
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
+import { Caveats } from "../../src/libraries/Caveats.sol";
 
 contract BlockNumberEnforcerTest is CaveatEnforcerBaseTest {
     ////////////////////// State //////////////////////
@@ -43,9 +44,9 @@ contract BlockNumberEnforcerTest is CaveatEnforcerBaseTest {
         vm.roll(10000);
         uint128 blockAfterThreshold_ = 1;
         uint128 blockBeforeThreshold_ = 0; // Not using before threshold
-        bytes memory inputTerms_ = abi.encodePacked(blockAfterThreshold_, blockBeforeThreshold_);
+        Caveat memory caveat = Caveats.createBlockNumberCaveat(address(blockNumberEnforcer), blockAfterThreshold_, blockBeforeThreshold_);
         vm.prank(address(delegationManager));
-        blockNumberEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        blockNumberEnforcer.beforeHook(caveat.terms, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     //should SUCCEED to INVOKE method BEFORE blockNumber reached
@@ -60,9 +61,9 @@ contract BlockNumberEnforcerTest is CaveatEnforcerBaseTest {
 
         uint128 blockAfterThreshold_ = 0; //  Not using after threshold
         uint128 blockBeforeThreshold_ = uint128(block.number + 10000);
-        bytes memory inputTerms_ = abi.encodePacked(blockAfterThreshold_, blockBeforeThreshold_);
+        Caveat memory caveat = Caveats.createBlockNumberCaveat(address(blockNumberEnforcer), blockAfterThreshold_, blockBeforeThreshold_);
         vm.prank(address(delegationManager));
-        blockNumberEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        blockNumberEnforcer.beforeHook(caveat.terms, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     // should SUCCEED to INVOKE method inside blockNumber RANGE
@@ -78,9 +79,9 @@ contract BlockNumberEnforcerTest is CaveatEnforcerBaseTest {
         uint128 blockAfterThreshold_ = 1;
         uint128 blockBeforeThreshold_ = uint128(block.number + 10000);
         vm.roll(1000); // making block number between 1 and 10001
-        bytes memory inputTerms_ = abi.encodePacked(blockAfterThreshold_, blockBeforeThreshold_);
+        Caveat memory caveat = Caveats.createBlockNumberCaveat(address(blockNumberEnforcer), blockAfterThreshold_, blockBeforeThreshold_);
         vm.prank(address(delegationManager));
-        blockNumberEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        blockNumberEnforcer.beforeHook(caveat.terms, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     ////////////////////// Invalid cases //////////////////////
@@ -103,11 +104,11 @@ contract BlockNumberEnforcerTest is CaveatEnforcerBaseTest {
 
         uint128 blockAfterThreshold_ = uint128(block.number + 10000);
         uint128 blockBeforeThreshold_ = 0; // Not using before threshold
-        bytes memory inputTerms_ = abi.encodePacked(blockAfterThreshold_, blockBeforeThreshold_);
+        Caveat memory caveat = Caveats.createBlockNumberCaveat(address(blockNumberEnforcer), blockAfterThreshold_, blockBeforeThreshold_);
         vm.prank(address(delegationManager));
         vm.expectRevert("BlockNumberEnforcer:early-delegation");
 
-        blockNumberEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        blockNumberEnforcer.beforeHook(caveat.terms, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     // should FAIL to INVOKE method AFTER blockNumber reached
@@ -123,11 +124,11 @@ contract BlockNumberEnforcerTest is CaveatEnforcerBaseTest {
         uint128 blockAfterThreshold_ = 0; //  Not using after threshold
         uint128 blockBeforeThreshold_ = uint128(block.number);
         vm.roll(10000);
-        bytes memory inputTerms_ = abi.encodePacked(blockAfterThreshold_, blockBeforeThreshold_);
+        Caveat memory caveat = Caveats.createBlockNumberCaveat(address(blockNumberEnforcer), blockAfterThreshold_, blockBeforeThreshold_);
         vm.prank(address(delegationManager));
         vm.expectRevert("BlockNumberEnforcer:expired-delegation");
 
-        blockNumberEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        blockNumberEnforcer.beforeHook(caveat.terms, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     // should FAIL to INVOKE method BEFORE blocknumber RANGE
@@ -142,11 +143,11 @@ contract BlockNumberEnforcerTest is CaveatEnforcerBaseTest {
 
         uint128 blockAfterThreshold_ = uint128(block.number + 10000);
         uint128 blockBeforeThreshold_ = uint128(block.number + 20000);
-        bytes memory inputTerms_ = abi.encodePacked(blockAfterThreshold_, blockBeforeThreshold_);
+        Caveat memory caveat = Caveats.createBlockNumberCaveat(address(blockNumberEnforcer), blockAfterThreshold_, blockBeforeThreshold_);
         vm.prank(address(delegationManager));
         vm.expectRevert("BlockNumberEnforcer:early-delegation");
 
-        blockNumberEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        blockNumberEnforcer.beforeHook(caveat.terms, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     // should FAIL to INVOKE method AFTER blocknumber RANGE"
@@ -162,11 +163,11 @@ contract BlockNumberEnforcerTest is CaveatEnforcerBaseTest {
         uint128 blockAfterThreshold_ = uint128(block.number + 10000);
         uint128 blockBeforeThreshold_ = uint128(block.number + 20000);
         vm.roll(30000);
-        bytes memory inputTerms_ = abi.encodePacked(blockAfterThreshold_, blockBeforeThreshold_);
+        Caveat memory caveat = Caveats.createBlockNumberCaveat(address(blockNumberEnforcer), blockAfterThreshold_, blockBeforeThreshold_);
         vm.prank(address(delegationManager));
         vm.expectRevert("BlockNumberEnforcer:expired-delegation");
 
-        blockNumberEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        blockNumberEnforcer.beforeHook(caveat.terms, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     ////////////////////// Integration //////////////////////
@@ -182,10 +183,10 @@ contract BlockNumberEnforcerTest is CaveatEnforcerBaseTest {
         });
         vm.roll(10);
         // Not using before threshold (blockAfterThreshold_ = 1, blockBeforeThreshold_ = 100)
-        bytes memory inputTerms_ = abi.encodePacked(uint128(1), uint128(100));
+        Caveat memory caveat = Caveats.createBlockNumberCaveat(address(blockNumberEnforcer), 1, 100);
 
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(blockNumberEnforcer), terms: inputTerms_ });
+        caveats_[0] = caveat;
         Delegation memory delegation = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),

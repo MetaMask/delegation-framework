@@ -13,6 +13,7 @@ import { BasicERC20, IERC20 } from "../utils/BasicERC20.t.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
+import { Caveats } from "../../src/libraries/Caveats.sol";
 
 contract ERC20TransferAmountEnforcerTest is CaveatEnforcerBaseTest {
     using ModeLib for ModeCode;
@@ -53,7 +54,7 @@ contract ERC20TransferAmountEnforcerTest is CaveatEnforcerBaseTest {
 
         bytes memory inputTerms_ = abi.encodePacked(address(basicERC20), spendingLimit_);
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(erc20TransferAmountEnforcer), terms: inputTerms_ });
+        caveats_[0] = Caveats.createERC20TransferAmountCaveat(address(erc20TransferAmountEnforcer), address(basicERC20), spendingLimit_);
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
@@ -91,7 +92,7 @@ contract ERC20TransferAmountEnforcerTest is CaveatEnforcerBaseTest {
 
         bytes memory inputTerms_ = abi.encodePacked(address(basicERC20), spendingLimit_);
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(erc20TransferAmountEnforcer), terms: inputTerms_ });
+        caveats_[0] = Caveats.createERC20TransferAmountCaveat(address(erc20TransferAmountEnforcer), address(basicERC20), spendingLimit_);
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
@@ -129,7 +130,7 @@ contract ERC20TransferAmountEnforcerTest is CaveatEnforcerBaseTest {
 
         bytes memory inputTerms_ = abi.encodePacked(address(invalidERC20), spendingLimit_);
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(erc20TransferAmountEnforcer), terms: inputTerms_ });
+        caveats_[0] = Caveats.createERC20TransferAmountCaveat(address(erc20TransferAmountEnforcer), address(invalidERC20), spendingLimit_);
 
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
@@ -167,7 +168,7 @@ contract ERC20TransferAmountEnforcerTest is CaveatEnforcerBaseTest {
 
         bytes memory inputTerms_ = abi.encodePacked(address(basicERC20), spendingLimit_);
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(erc20TransferAmountEnforcer), terms: inputTerms_ });
+        caveats_[0] = Caveats.createERC20TransferAmountCaveat(address(erc20TransferAmountEnforcer), address(basicERC20), spendingLimit_);
 
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
@@ -203,7 +204,7 @@ contract ERC20TransferAmountEnforcerTest is CaveatEnforcerBaseTest {
 
         bytes memory inputTerms_ = abi.encodePacked(address(basicERC20), spendingLimit_);
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(erc20TransferAmountEnforcer), terms: inputTerms_ });
+        caveats_[0] = Caveats.createERC20TransferAmountCaveat(address(erc20TransferAmountEnforcer), address(basicERC20), spendingLimit_);
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
@@ -239,7 +240,7 @@ contract ERC20TransferAmountEnforcerTest is CaveatEnforcerBaseTest {
 
         bytes memory inputTerms_ = abi.encodePacked(address(basicERC20));
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(erc20TransferAmountEnforcer), terms: inputTerms_ });
+        caveats_[0] = Caveats.createERC20TransferAmountCaveat(address(erc20TransferAmountEnforcer), address(basicERC20), spendingLimit_);
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
@@ -276,7 +277,7 @@ contract ERC20TransferAmountEnforcerTest is CaveatEnforcerBaseTest {
 
         bytes memory inputTerms_ = abi.encodePacked(address(basicERC20), spendingLimit_);
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(erc20TransferAmountEnforcer), terms: inputTerms_ });
+        caveats_[0] = Caveats.createERC20TransferAmountCaveat(address(erc20TransferAmountEnforcer), address(basicERC20), spendingLimit_);
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
