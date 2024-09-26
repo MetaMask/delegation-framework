@@ -12,8 +12,8 @@ import { IDelegationManager } from "../src/interfaces/IDelegationManager.sol";
 
 import { AllowedCalldataEnforcer } from "../src/enforcers/AllowedCalldataEnforcer.sol";
 import { AllowedMethodsEnforcer } from "../src/enforcers/AllowedMethodsEnforcer.sol";
-import { NativeTokenTransferAmountEnforcer } from "../src/enforcers/NativeTokenTransferAmountEnforcer.sol";
 import { AllowedTargetsEnforcer } from "../src/enforcers/AllowedTargetsEnforcer.sol";
+import { NativeTokenTransferAmountEnforcer } from "../src/enforcers/NativeTokenTransferAmountEnforcer.sol";
 import { BlockNumberEnforcer } from "../src/enforcers/BlockNumberEnforcer.sol";
 import { DeployedEnforcer } from "../src/enforcers/DeployedEnforcer.sol";
 import { ERC20BalanceGteEnforcer } from "../src/enforcers/ERC20BalanceGteEnforcer.sol";
@@ -27,6 +27,9 @@ import { RedeemerEnforcer } from "../src/enforcers/RedeemerEnforcer.sol";
 import { NativeBalanceGteEnforcer } from "../src/enforcers/NativeBalanceGteEnforcer.sol";
 import { NativeTokenPaymentEnforcer } from "../src/enforcers/NativeTokenPaymentEnforcer.sol";
 import { ArgsEqualityCheckEnforcer } from "../src/enforcers/ArgsEqualityCheckEnforcer.sol";
+import { RedeemerEnforcer } from "../src/enforcers/RedeemerEnforcer.sol";
+import { ERC721BalanceGteEnforcer } from "../src/enforcers/ERC721BalanceGteEnforcer.sol";
+import { ERC1155BalanceGteEnforcer } from "../src/enforcers/ERC1155BalanceGteEnforcer.sol";
 
 /**
  * @title DeployEnvironmentSetUp
@@ -122,6 +125,12 @@ contract DeployEnvironmentSetUp is Script {
         deployedAddress =
             address(new NativeTokenPaymentEnforcer{ salt: salt }(IDelegationManager(delegationManager), deployedAddress));
         console2.log("NativeTokenPaymentEnforcer: %s", deployedAddress);
+
+        deployedAddress = address(new ERC721BalanceGteEnforcer{ salt: salt }());
+        console2.log("ERC721BalanceGteEnforcer: %s", deployedAddress);
+
+        deployedAddress = address(new ERC1155BalanceGteEnforcer{ salt: salt }());
+        console2.log("ERC1155BalanceGteEnforcer: %s", deployedAddress);
 
         vm.stopBroadcast();
     }
