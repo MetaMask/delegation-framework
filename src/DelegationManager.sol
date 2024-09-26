@@ -29,7 +29,7 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
     string public constant NAME = "DelegationManager";
 
     /// @dev The full version of the contract
-    string public constant VERSION = "1.1.0";
+    string public constant VERSION = "1.2.0";
 
     /// @dev The version used in the domainSeparator for EIP712
     string public constant DOMAIN_VERSION = "1";
@@ -108,18 +108,20 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
     }
 
     /**
-     * @notice This method validates the provided permission contexts and executes the execution if the caller has authority to do
-     * so.
-     * @dev The structure of the _permissionContexts array is determined by the specific Delegation Manager implementation
-     * If an entry in _permissionsContexts is empty (i.e., its length is 0), it is treated as a self-authorized execution.
-     * @dev The length of _permissionsContexts must match the length of _executionCallDatas.
-     * @dev The afterHook calls of all the caveat enforcers are called after the execution of all the executions in the batch.
-     * @dev If any afterHook fails, the entire transaction will revert.
-     * @param _permissionContexts An array of bytes where each element is made up of an array
-     * of `Delegation` structs that are used to validate the authority given to execute the corresponding execution on the
-     * root delegator, ordered from leaf to root.
-     * @param _modes the array of modes to execute the related execution callData
-     * @param _executionCallDatas the array of encoded executions to be executed
+     * @notice Validates permission contexts and executes batch actions if the caller is authorized.
+     * @dev For each execution in the batch:
+     *      - Calls `beforeAllHook` before any actions begin.
+     *      - For each delegation, calls `beforeHook` before its execution.
+     *      - Executes the call data.
+     *      - For each delegation, calls `afterHook` after execution.
+     *      - Calls `afterAllHook` after all actions are completed.
+     *      If any hook fails, the entire transaction reverts.
+     *
+     * @dev The lengths of `_permissionContexts`, `_modes`, and `_executionCallDatas` must be equal.
+     * @param _permissionContexts An array where each element is an array of `Delegation` structs used for
+     * authority validation ordered from leaf to root. An empty entry denotes self-authorization.
+     * @param _modes An array specifying modes to execute the corresponding `_executionCallDatas`.
+     * @param _executionCallDatas An array of encoded actions to be executed.
      */
     function redeemDelegations(
         bytes[] calldata _permissionContexts,
@@ -207,9 +209,33 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
             }
         }
 
-        // beforeHook (leaf to root)
+        // beforeAllHook (leaf to root)
         for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
             if (batchDelegations_[batchIndex_].length > 0) {
+                // Execute beforeAllHooks
+                for (uint256 delegationsIndex_; delegationsIndex_ < batchDelegations_[batchIndex_].length; ++delegationsIndex_) {
+                    Caveat[] memory caveats_ = batchDelegations_[batchIndex_][delegationsIndex_].caveats;
+                    for (uint256 caveatsIndex_; caveatsIndex_ < caveats_.length; ++caveatsIndex_) {
+                        ICaveatEnforcer enforcer_ = ICaveatEnforcer(caveats_[caveatsIndex_].enforcer);
+                        enforcer_.beforeAllHook(
+                            caveats_[caveatsIndex_].terms,
+                            caveats_[caveatsIndex_].args,
+                            _modes[batchIndex_],
+                            _executionCallDatas[batchIndex_],
+                            batchDelegationHashes_[batchIndex_][delegationsIndex_],
+                            batchDelegations_[batchIndex_][delegationsIndex_].delegator,
+                            msg.sender
+                        );
+                    }
+                }
+            }
+        }
+
+        for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
+            if (batchDelegations_[batchIndex_].length == 0) {
+                // Special case: If there are no delegations, defer the call to the caller.
+                IDeleGatorCore(msg.sender).executeFromExecutor(_modes[batchIndex_], _executionCallDatas[batchIndex_]);
+            } else {
                 // Execute beforeHooks
                 for (uint256 delegationsIndex_; delegationsIndex_ < batchDelegations_[batchIndex_].length; ++delegationsIndex_) {
                     Caveat[] memory caveats_ = batchDelegations_[batchIndex_][delegationsIndex_].caveats;
@@ -226,31 +252,43 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
                         );
                     }
                 }
-            }
-        }
 
-        for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
-            if (batchDelegations_[batchIndex_].length == 0) {
-                // special case: If there are no delegations, defer the call to the caller.
-                IDeleGatorCore(msg.sender).executeFromExecutor(_modes[batchIndex_], _executionCallDatas[batchIndex_]);
-            } else {
+                // Perform execution
                 IDeleGatorCore(batchDelegations_[batchIndex_][batchDelegations_[batchIndex_].length - 1].delegator)
                     .executeFromExecutor(_modes[batchIndex_], _executionCallDatas[batchIndex_]);
-            }
-        }
 
-        // afterHook (root to leaf)
-        for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
-            if (batchDelegations_[batchIndex_].length > 0) {
                 // Execute afterHooks
                 for (uint256 delegationsIndex_ = batchDelegations_[batchIndex_].length; delegationsIndex_ > 0; --delegationsIndex_)
                 {
                     Caveat[] memory caveats_ = batchDelegations_[batchIndex_][delegationsIndex_ - 1].caveats;
-                    for (uint256 caveatsIndex_; caveatsIndex_ < caveats_.length; ++caveatsIndex_) {
-                        ICaveatEnforcer enforcer_ = ICaveatEnforcer(caveats_[caveatsIndex_].enforcer);
+                    for (uint256 caveatsIndex_ = caveats_.length; caveatsIndex_ > 0; --caveatsIndex_) {
+                        ICaveatEnforcer enforcer_ = ICaveatEnforcer(caveats_[caveatsIndex_ - 1].enforcer);
                         enforcer_.afterHook(
-                            caveats_[caveatsIndex_].terms,
-                            caveats_[caveatsIndex_].args,
+                            caveats_[caveatsIndex_ - 1].terms,
+                            caveats_[caveatsIndex_ - 1].args,
+                            _modes[batchIndex_],
+                            _executionCallDatas[batchIndex_],
+                            batchDelegationHashes_[batchIndex_][delegationsIndex_ - 1],
+                            batchDelegations_[batchIndex_][delegationsIndex_ - 1].delegator,
+                            msg.sender
+                        );
+                    }
+                }
+            }
+        }
+
+        // afterAllHook (root to leaf)
+        for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
+            if (batchDelegations_[batchIndex_].length > 0) {
+                // Execute afterAllHooks
+                for (uint256 delegationsIndex_ = batchDelegations_[batchIndex_].length; delegationsIndex_ > 0; --delegationsIndex_)
+                {
+                    Caveat[] memory caveats_ = batchDelegations_[batchIndex_][delegationsIndex_ - 1].caveats;
+                    for (uint256 caveatsIndex_ = caveats_.length; caveatsIndex_ > 0; --caveatsIndex_) {
+                        ICaveatEnforcer enforcer_ = ICaveatEnforcer(caveats_[caveatsIndex_ - 1].enforcer);
+                        enforcer_.afterAllHook(
+                            caveats_[caveatsIndex_ - 1].terms,
+                            caveats_[caveatsIndex_ - 1].args,
                             _modes[batchIndex_],
                             _executionCallDatas[batchIndex_],
                             batchDelegationHashes_[batchIndex_][delegationsIndex_ - 1],

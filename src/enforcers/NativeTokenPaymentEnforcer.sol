@@ -61,7 +61,7 @@ contract NativeTokenPaymentEnforcer is CaveatEnforcer {
      * @param _delegator The address of the delegator.
      * @param _redeemer The address that is redeeming the delegation.
      */
-    function afterHook(
+    function afterAllHook(
         bytes calldata _terms,
         bytes calldata _args,
         ModeCode,
