@@ -170,7 +170,7 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
                             MessageHashUtils.toTypedDataHash(getDomainHash(), delegationHashes_[delegationsIndex_]),
                             delegation_.signature
                         );
-                        if (result_ != delegation_.delegator) revert InvalidSignature();
+                        if (result_ != delegation_.delegator) revert InvalidEOASignature();
                     } else {
                         // Validate delegation if it's a contract
                         bytes32 typedDataHash_ =
@@ -178,7 +178,7 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
 
                         bytes32 result_ = IERC1271(delegation_.delegator).isValidSignature(typedDataHash_, delegation_.signature);
                         if (result_ != ERC1271Lib.EIP1271_MAGIC_VALUE) {
-                            revert InvalidSignature();
+                            revert InvalidERC1271Signature();
                         }
                     }
                 }

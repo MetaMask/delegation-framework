@@ -206,7 +206,7 @@ contract DelegationManagerTest is BaseTest {
         });
 
         // Validate the signature
-        vm.expectRevert(abi.encodeWithSelector(IDelegationManager.InvalidSignature.selector));
+        vm.expectRevert(abi.encodeWithSelector(IDelegationManager.InvalidERC1271Signature.selector));
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation_;
 

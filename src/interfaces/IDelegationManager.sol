@@ -42,8 +42,11 @@ interface IDelegationManager {
     /// @dev Error thrown when the delegator of a delegation doesn't match the caller
     error InvalidDelegator();
 
-    /// @dev Error thrown when the signature provided is invalid
-    error InvalidSignature();
+    /// @dev Error thrown when the EOA signature provided is invalid
+    error InvalidEOASignature();
+
+    /// @dev Error thrown when the ERC1271 signature provided is invalid
+    error InvalidERC1271Signature();
 
     /// @dev Error thrown when the signature is empty
     error EmptySignature();
