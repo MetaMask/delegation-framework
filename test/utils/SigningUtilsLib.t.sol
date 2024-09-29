@@ -4,7 +4,7 @@ pragma solidity 0.8.23;
 import { Vm } from "forge-std/Vm.sol";
 import { BytesLib } from "@bytes-utils/BytesLib.sol";
 
-import { P256FCLVerifierLib } from "../../src/libraries/P256FCLVerifierLib.sol";
+import { P256SCLVerifierLib } from "../../src/libraries/P256SCLVerifierLib.sol";
 
 import { TestUser, SignatureType } from "./Types.t.sol";
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
@@ -52,7 +52,7 @@ library SigningUtilsLib {
     {
         (bytes32 r_, bytes32 s_) = vm.signP256(_privateKey, sha256(abi.encodePacked(_hash)));
 
-        if (uint256(s_) > P256FCLVerifierLib.P256_N_DIV_2) {
+        if (uint256(s_) > P256SCLVerifierLib.P256_N_DIV_2) {
             s_ = bytes32(P256_N - uint256(s_));
         }
 

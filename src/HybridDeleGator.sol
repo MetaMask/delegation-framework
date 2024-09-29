@@ -8,7 +8,7 @@ import { DeleGatorCore } from "./DeleGatorCore.sol";
 import { IDelegationManager } from "./interfaces/IDelegationManager.sol";
 import { ERC1271Lib } from "./libraries/ERC1271Lib.sol";
 import { P256VerifierLib } from "./libraries/P256VerifierLib.sol";
-import { P256FCLVerifierLib } from "./libraries/P256FCLVerifierLib.sol";
+import { P256SCLVerifierLib } from "./libraries/P256SCLVerifierLib.sol";
 import { P256PublicKey } from "./utils/Types.sol";
 import { IERC173 } from "./interfaces/IERC173.sol";
 
@@ -267,7 +267,7 @@ contract HybridDeleGator is DeleGatorCore, IERC173 {
      * @param _y Public key's Y coordinate
      */
     function _addKey(string calldata _keyId, uint256 _x, uint256 _y) internal {
-        if (!P256FCLVerifierLib.isValidPublicKey(_x, _y)) revert KeyNotOnCurve(_x, _y);
+        if (!P256SCLVerifierLib.isValidPublicKey(_x, _y)) revert KeyNotOnCurve(_x, _y);
         bytes32 keyIdHash_ = keccak256(abi.encodePacked(_keyId));
 
         if (bytes(_keyId).length == 0) revert InvalidEmptyKey();

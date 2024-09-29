@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 
 import { Base64URL } from "./utils/Base64URL.sol";
-import { P256FCLVerifierLib } from "./P256FCLVerifierLib.sol";
+import { P256SCLVerifierLib } from "./P256SCLVerifierLib.sol";
 
 /**
  * Helper library for external contracts to verify WebAuthn signatures.
@@ -145,6 +145,6 @@ library WebAuthn {
         bytes32 clientDataJSONHash = sha256(bytes(clientDataJSON));
         bytes32 messageHash = sha256(abi.encodePacked(authenticatorData, clientDataJSONHash));
 
-        return P256FCLVerifierLib.verifySignature(messageHash, r, s, x, y);
+        return P256SCLVerifierLib.verifySignature(messageHash, r, s, x, y);
     }
 }

@@ -3,7 +3,7 @@ pragma solidity 0.8.23;
 
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import { FCL_ecdsa_utils } from "@freshCryptoLib/FCL_ecdsa_utils.sol";
+import { FCL_ecdsa_utils } from "@FCL/FCL_ecdsa_utils.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { BytesLib } from "@bytes-utils/BytesLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
@@ -19,8 +19,8 @@ import { DeleGatorCore } from "../src/DeleGatorCore.sol";
 import { IERC173 } from "../src/interfaces/IERC173.sol";
 import { IDelegationManager } from "../src/interfaces/IDelegationManager.sol";
 import { EncoderLib } from "../src/libraries/EncoderLib.sol";
-import { FCL_all_wrapper } from "./utils/FCLWrapperLib.sol";
-import { P256FCLVerifierLib } from "../src/libraries/P256FCLVerifierLib.sol";
+import { SCL_Wrapper } from "./utils/SCLWrapperLib.sol";
+import { P256SCLVerifierLib } from "../src/libraries/P256SCLVerifierLib.sol";
 import { ERC1271Lib } from "../src/libraries/ERC1271Lib.sol";
 import { EXECUTE_SINGULAR_SIGNATURE } from "./utils/Constants.sol";
 
@@ -259,7 +259,6 @@ contract HybridDeleGator_Test is BaseTest {
     // Should allow to initialize with 1+ p256 owners, 0 EOA owners
     function test_initialize_multipleP256ZeroEOA() public {
         (uint256 x_, uint256 y_) = FCL_ecdsa_utils.ecdsa_derivKpub(users.carol.privateKey);
-
         string[] memory keyIds_ = new string[](2);
         uint256[] memory xValues_ = new uint256[](2);
         uint256[] memory yValues_ = new uint256[](2);

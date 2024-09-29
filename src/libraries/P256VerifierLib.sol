@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 
 import { WebAuthn } from "./WebAuthn.sol";
-import { P256FCLVerifierLib } from "./P256FCLVerifierLib.sol";
+import { P256SCLVerifierLib } from "./P256SCLVerifierLib.sol";
 import { DecodedWebAuthnSignature } from "../utils/Types.sol";
 
 /**
@@ -22,7 +22,7 @@ library P256VerifierLib {
     function _verifyRawP256Signature(bytes32 _hash, bytes memory _signature, uint256 _x, uint256 _y) internal view returns (bool) {
         (uint256 r_, uint256 s_) = _decodeRawP256Signature(_signature);
         bytes32 messageHash_ = sha256(abi.encodePacked(_hash));
-        return P256FCLVerifierLib.verifySignature(messageHash_, r_, s_, _x, _y);
+        return P256SCLVerifierLib.verifySignature(messageHash_, r_, s_, _x, _y);
     }
 
     /**
