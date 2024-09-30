@@ -20,6 +20,7 @@ import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { TestUser, TestUsers, Implementation, SignatureType } from "./Types.t.sol";
 import { SigningUtilsLib } from "./SigningUtilsLib.t.sol";
 import { StorageUtilsLib } from "./StorageUtilsLib.t.sol";
+import { UserOperationLib } from "./UserOperationLib.t.sol";
 import { Execution, PackedUserOperation, Delegation, ModeCode } from "../../src/utils/Types.sol";
 import { SimpleFactory } from "../../src/utils/SimpleFactory.sol";
 import { DelegationManager } from "../../src/DelegationManager.sol";
@@ -213,6 +214,14 @@ abstract contract BaseTest is Test {
         return createUserOp(_sender, _callData, _initCode, accountGasLimits_, 30000000, gasFees_, _paymasterAndData, hex"");
     }
 
+    // NOTE: This is a big assumption about how signatures for DeleGators are made. The hash to sign could come in many forms
+    // depending on the implementation.
+    function getPackedUserOperationTypedDataHash(PackedUserOperation memory _userOp) public view returns (bytes32) {
+        return HybridDeleGator(payable(_userOp.sender)).getPackedUserOperationTypedDataHash(_userOp);
+    }
+
+    // NOTE: This method assumes the signature is an EIP712 signature of the UserOperation with a domain provided by the Signer. It
+    // expects the hash to be signed to be returned by the method `getPackedUserOperationTypedDataHash`.
     function signUserOp(
         TestUser memory _user,
         PackedUserOperation memory _userOp
@@ -221,20 +230,7 @@ abstract contract BaseTest is Test {
         view
         returns (PackedUserOperation memory)
     {
-        return signUserOp(_user, _userOp, entryPoint);
-    }
-
-    function signUserOp(
-        TestUser memory _user,
-        PackedUserOperation memory _userOp,
-        IEntryPoint _entryPoint
-    )
-        public
-        view
-        returns (PackedUserOperation memory)
-    {
-        bytes32 userOpHash_ = _entryPoint.getUserOpHash(_userOp);
-        _userOp.signature = signHash(_user, userOpHash_.toEthSignedMessageHash());
+        _userOp.signature = signHash(_user, getPackedUserOperationTypedDataHash(_userOp));
         return _userOp;
     }
 
@@ -298,11 +294,13 @@ abstract contract BaseTest is Test {
             ExecutionLib.encodeSingle(_execution.target, _execution.value, _execution.callData)
         );
         PackedUserOperation memory userOp_ = createUserOp(address(_user.deleGator), userOpCallData_, hex"", _paymasterAndData);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = signHash(_user, userOpHash_.toEthSignedMessageHash());
+        userOp_.signature = signHash(_user, getPackedUserOperationTypedDataHash(userOp_));
         submitUserOp_Bundler(userOp_, _shouldFail);
     }
 
+    /**
+     * @dev Executes the calldata on self.
+     */
     function execute_UserOp(TestUser memory _user, bytes memory _callData) public {
         Execution memory execution_ = Execution({ target: address(_user.deleGator), value: 0, callData: _callData });
         execute_UserOp(_user, execution_);
@@ -312,8 +310,7 @@ abstract contract BaseTest is Test {
         bytes memory userOpCallData_ =
             abi.encodeWithSignature(EXECUTE_SIGNATURE, ModeLib.encodeSimpleBatch(), abi.encode(_executions));
         PackedUserOperation memory userOp_ = createUserOp(address(_user.deleGator), userOpCallData_);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = signHash(_user, userOpHash_.toEthSignedMessageHash());
+        userOp_.signature = signHash(_user, getPackedUserOperationTypedDataHash(userOp_));
         submitUserOp_Bundler(userOp_, false);
     }
 
@@ -341,8 +338,7 @@ abstract contract BaseTest is Test {
         bytes memory userOpCallData_ =
             abi.encodeWithSelector(DeleGatorCore.redeemDelegations.selector, permissionContexts_, modes_, executionCallDatas_);
         PackedUserOperation memory userOp_ = createUserOp(address(_user.deleGator), userOpCallData_, _initCode);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = signHash(_user, userOpHash_.toEthSignedMessageHash());
+        userOp_.signature = signHash(_user, getPackedUserOperationTypedDataHash(userOp_));
         submitUserOp_Bundler(userOp_, false);
     }
 

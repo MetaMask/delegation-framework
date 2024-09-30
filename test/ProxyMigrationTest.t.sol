@@ -67,7 +67,9 @@ contract HybridDeleGator_Test is BaseTest {
         bytes memory userOpCallData_ = abi.encodeWithSignature(EXECUTE_SINGULAR_SIGNATURE, execution_);
         PackedUserOperation memory userOp_ = createUserOp(address(deleGator_), userOpCallData_);
         bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = signHash(SignatureType.MultiSig, users.alice, userOpHash_.toEthSignedMessageHash());
+        userOp_.signature = signHash(
+            SignatureType.MultiSig, users.alice, MultiSigDeleGator(deleGator_).getPackedUserOperationTypedDataHash(userOp_)
+        );
 
         vm.expectEmit();
         emit ClearedStorage();
@@ -110,7 +112,8 @@ contract HybridDeleGator_Test is BaseTest {
         userOpCallData_ = abi.encodeWithSignature(EXECUTE_SINGULAR_SIGNATURE, execution_);
         userOp_ = createUserOp(address(deleGator_), userOpCallData_);
         userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = signHash(SignatureType.EOA, users.alice, userOpHash_.toEthSignedMessageHash());
+        userOp_.signature =
+            signHash(SignatureType.EOA, users.alice, MultiSigDeleGator(deleGator_).getPackedUserOperationTypedDataHash(userOp_));
 
         vm.expectEmit();
         emit ClearedStorage();
@@ -167,8 +170,9 @@ contract HybridDeleGator_Test is BaseTest {
         });
         bytes memory userOpCallData_ = abi.encodeWithSignature(EXECUTE_SINGULAR_SIGNATURE, execution_);
         PackedUserOperation memory userOp_ = createUserOp(address(deleGator_), userOpCallData_);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = signHash(SignatureType.MultiSig, users.alice, userOpHash_.toEthSignedMessageHash());
+        userOp_.signature = signHash(
+            SignatureType.MultiSig, users.alice, MultiSigDeleGator(deleGator_).getPackedUserOperationTypedDataHash(userOp_)
+        );
 
         submitUserOp_Bundler(userOp_);
 

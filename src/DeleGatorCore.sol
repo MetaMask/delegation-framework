@@ -4,7 +4,6 @@ pragma solidity 0.8.23;
 import { IEntryPoint } from "@account-abstraction/interfaces/IEntryPoint.sol";
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
-import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import { IERC1155Receiver } from "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
 import { IERC721Receiver } from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
@@ -13,6 +12,8 @@ import { ERC1967Utils } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 import { ExecutionHelper } from "@erc7579/core/ExecutionHelper.sol";
+import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import { ERC1271Lib } from "./libraries/ERC1271Lib.sol";
 import { IDeleGatorCore } from "./interfaces/IDeleGatorCore.sol";
@@ -34,9 +35,9 @@ abstract contract DeleGatorCore is
     IERC165,
     IDeleGatorCore,
     IERC721Receiver,
-    IERC1155Receiver
+    IERC1155Receiver,
+    EIP712
 {
-    using MessageHashUtils for bytes32;
     using ModeLib for ModeCode;
     using ExecutionLib for bytes;
 
@@ -47,6 +48,11 @@ abstract contract DeleGatorCore is
 
     /// @dev The EntryPoint contract that has root access to this contract
     IEntryPoint public immutable entryPoint;
+
+    /// @dev The typehash for the PackedUserOperation struct
+    bytes32 public constant PACKED_USER_OP_TYPEHASH = keccak256(
+        "PackedUserOperation(address sender,uint256 nonce,bytes initCode,bytes callData,bytes32 accountGasLimits,uint256 preVerificationGas,bytes32 gasFees,bytes paymasterAndData)"
+    );
 
     ////////////////////////////// Events //////////////////////////////
 
@@ -117,8 +123,18 @@ abstract contract DeleGatorCore is
      * @notice Initializes the DeleGatorCore contract
      * @custom:oz-upgrades-unsafe-allow constructor
      * @param _delegationManager the address of the trusted DelegationManager contract that will have root access to this contract
+     * @param _entryPoint the address of entry point
+     * @param _name Name of the contract
+     * @param _domainVersion Domain version of the contract
      */
-    constructor(IDelegationManager _delegationManager, IEntryPoint _entryPoint) {
+    constructor(
+        IDelegationManager _delegationManager,
+        IEntryPoint _entryPoint,
+        string memory _name,
+        string memory _domainVersion
+    )
+        EIP712(_name, _domainVersion)
+    {
         _disableInitializers();
         delegationManager = _delegationManager;
         entryPoint = _entryPoint;
@@ -245,13 +261,12 @@ abstract contract DeleGatorCore is
      * @notice Validates a UserOp signature and sends any necessary funds to the EntryPoint
      * @dev Related: ERC4337
      * @param _userOp The UserOp struct to validate
-     * @param _userOpHash The hash of the UserOp struct
      * @param _missingAccountFunds The missing funds from the account
      * @return validationData_ The validation data
      */
     function validateUserOp(
         PackedUserOperation calldata _userOp,
-        bytes32 _userOpHash,
+        bytes32, // Ignore UserOpHash from the Entry Point
         uint256 _missingAccountFunds
     )
         external
@@ -259,7 +274,7 @@ abstract contract DeleGatorCore is
         onlyProxy
         returns (uint256 validationData_)
     {
-        validationData_ = _validateUserOpSignature(_userOp, _userOpHash);
+        validationData_ = _validateUserOpSignature(_userOp, getPackedUserOperationTypedDataHash(_userOp));
         _payPrefund(_missingAccountFunds);
     }
 
@@ -436,6 +451,23 @@ abstract contract DeleGatorCore is
     }
 
     /**
+     * @notice This method returns the domain hash used for signing typed data
+     * @return bytes32 The domain hash
+     */
+    function getDomainHash() external view returns (bytes32) {
+        return _domainSeparatorV4();
+    }
+
+    /**
+     * @notice Returns the formatted hash to sign for an EIP712 typed data signature
+     * @param _userOp the UserOp to hash
+     * @notice Returns an EIP712 typed data hash for a given UserOp
+     */
+    function getPackedUserOperationTypedDataHash(PackedUserOperation calldata _userOp) public view returns (bytes32) {
+        return MessageHashUtils.toTypedDataHash(_domainSeparatorV4(), getPackedUserOperationHash(_userOp));
+    }
+
+    /**
      * @inheritdoc IERC165
      * @dev Supports the following interfaces: IDeleGatorCore, IERC721Receiver, IERC1155Receiver, IERC165, IERC1271
      */
@@ -443,6 +475,26 @@ abstract contract DeleGatorCore is
         return _interfaceId == type(IDeleGatorCore).interfaceId || _interfaceId == type(IERC721Receiver).interfaceId
             || _interfaceId == type(IERC1155Receiver).interfaceId || _interfaceId == type(IERC165).interfaceId
             || _interfaceId == type(IERC1271).interfaceId;
+    }
+
+    /**
+     * Provides the typed data hash for a PackedUserOperation
+     * @param _userOp the PackedUserOperation to hash
+     */
+    function getPackedUserOperationHash(PackedUserOperation calldata _userOp) public pure returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                PACKED_USER_OP_TYPEHASH,
+                _userOp.sender,
+                _userOp.nonce,
+                keccak256(_userOp.initCode),
+                keccak256(_userOp.callData),
+                _userOp.accountGasLimits,
+                _userOp.preVerificationGas,
+                _userOp.gasFees,
+                keccak256(_userOp.paymasterAndData)
+            )
+        );
     }
 
     ////////////////////////////// Internal Methods //////////////////////////////
@@ -479,7 +531,7 @@ abstract contract DeleGatorCore is
      * @dev Returns 0 if the signature is valid, 1 if the signature is invalid.
      * @dev Related: ERC4337
      * @param _userOp The UserOp
-     * @param _userOpHash The hash of the UserOp
+     * @param _userOpHash UserOp hash produced with typed data
      * @return validationData_ A code indicating if the signature is valid or not
      */
     function _validateUserOpSignature(
@@ -490,7 +542,7 @@ abstract contract DeleGatorCore is
         view
         returns (uint256 validationData_)
     {
-        bytes4 result_ = _isValidSignature(_userOpHash.toEthSignedMessageHash(), _userOp.signature);
+        bytes4 result_ = _isValidSignature(_userOpHash, _userOp.signature);
         if (result_ == ERC1271Lib.EIP1271_MAGIC_VALUE) {
             return 0;
         } else {

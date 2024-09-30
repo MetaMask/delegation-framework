@@ -29,8 +29,14 @@ struct HybridDeleGatorStorage {
 contract HybridDeleGator is DeleGatorCore, IERC173 {
     ////////////////////////////// State //////////////////////////////
 
+    /// @dev The name of the contract
+    string public constant NAME = "HybridDeleGator";
+
+    /// @dev The version used in the domainSeparator for EIP712
+    string public constant DOMAIN_VERSION = "1";
+
     /// @dev The version of the contract
-    string public constant VERSION = "1.1.0";
+    string public constant VERSION = "1.2.0";
 
     /// @dev The storage location used for state
     /// @dev keccak256(abi.encode(uint256(keccak256("DeleGator.HybridDeleGator")) - 1)) & ~bytes32(uint256(0xff))
@@ -74,7 +80,12 @@ contract HybridDeleGator is DeleGatorCore, IERC173 {
      * @param _delegationManager the address of the trusted DelegationManager contract that will have root access to this contract
      * @param _entryPoint The entry point contract address
      */
-    constructor(IDelegationManager _delegationManager, IEntryPoint _entryPoint) DeleGatorCore(_delegationManager, _entryPoint) { }
+    constructor(
+        IDelegationManager _delegationManager,
+        IEntryPoint _entryPoint
+    )
+        DeleGatorCore(_delegationManager, _entryPoint, NAME, DOMAIN_VERSION)
+    { }
 
     /**
      * @notice Initializes the HybridDeleGator state by setting the owners.
