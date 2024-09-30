@@ -6,7 +6,17 @@ import { ModeCode } from "../utils/Types.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
+/**
+ * @title ERC721TransferEnforcer
+ * @notice This enforcer restricts the action of a UserOp to the transfer of a specific ERC721 token.
+ */
 contract ERC721TransferEnforcer is CaveatEnforcer {
+    /**
+     * @notice Enforces that the contract and tokenId are permitted for transfer
+     * @param _terms the encoded contract and tokenId
+     * @param _mode the execution mode of the transaction
+     * @param _executionCallData the call data of the transferFrom call
+     */
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
@@ -26,14 +36,13 @@ contract ERC721TransferEnforcer is CaveatEnforcer {
         bytes4 selector_ = bytes4(callData_[0:4]);
 
         // Decode the remaining callData into NFT transfer parameters
+        // The calldata should be at least 100 bytes (4 bytes for the selector + 96 bytes for the parameters)
         if (callData_.length < 100) {
             revert("ERC721TransferEnforcer:invalid-calldata-length");
         }
 
-        address from_;
-        address to_;
-        uint256 transferTokenId_;
-        (from_, to_, transferTokenId_) = abi.decode(callData_[4:], (address, address, uint256));
+        // Decode the remaining callData into NFT transfer parameters
+        (address from_, address to_, uint256 transferTokenId_) = abi.decode(callData_[4:], (address, address, uint256));
 
         if (from_ == address(0) || to_ == address(0)) {
             revert("ERC721TransferEnforcer:invalid-address");
