@@ -4,11 +4,12 @@ pragma solidity 0.8.23;
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
-import { Execution, ModeCode } from "../../src/utils/Types.sol";
+import { Execution, ModeCode, Caveat } from "../../src/utils/Types.sol";
 import { Counter } from "../utils/Counter.t.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { RedeemerEnforcer } from "../../src/enforcers/RedeemerEnforcer.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
+import { Caveats } from "../../src/libraries/Caveats.sol";
 
 contract RedeemerEnforcerTest is CaveatEnforcerBaseTest {
     using ModeLib for ModeCode;
@@ -29,10 +30,13 @@ contract RedeemerEnforcerTest is CaveatEnforcerBaseTest {
 
     // should SUCCEED to get terms info when passing valid terms
     function test_decodeTermsInfo() public {
-        bytes memory terms_ = abi.encodePacked(address(users.alice.deleGator), address(users.bob.deleGator));
-        address[] memory allowedRedeemers_ = redeemerEnforcer.getTermsInfo(terms_);
-        assertEq(allowedRedeemers_[0], address(users.alice.deleGator));
-        assertEq(allowedRedeemers_[1], address(users.bob.deleGator));
+        address[] memory allowedRedeemers = new address[](2);
+        allowedRedeemers[0] = address(users.alice.deleGator);
+        allowedRedeemers[1] = address(users.bob.deleGator);
+        Caveat memory caveat = Caveats.createRedeemerCaveat(address(redeemerEnforcer), allowedRedeemers);
+        address[] memory decodedRedeemers = redeemerEnforcer.getTermsInfo(caveat.terms);
+        assertEq(decodedRedeemers[0], address(users.alice.deleGator));
+        assertEq(decodedRedeemers[1], address(users.bob.deleGator));
     }
 
     // should pass if called from a single valid redeemer
@@ -44,10 +48,12 @@ contract RedeemerEnforcerTest is CaveatEnforcerBaseTest {
         });
         bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
-        bytes memory terms_ = abi.encodePacked(address(users.bob.deleGator));
+        address[] memory allowedRedeemers = new address[](1);
+        allowedRedeemers[0] = address(users.bob.deleGator);
+        Caveat memory caveat = Caveats.createRedeemerCaveat(address(redeemerEnforcer), allowedRedeemers);
         vm.prank(address(delegationManager));
         redeemerEnforcer.beforeHook(
-            terms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(users.bob.deleGator)
+            caveat.terms, hex"", mode, executionCallData_, keccak256(""), address(0), address(users.bob.deleGator)
         );
     }
 
@@ -60,13 +66,16 @@ contract RedeemerEnforcerTest is CaveatEnforcerBaseTest {
         });
         bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
-        bytes memory terms_ = abi.encodePacked(address(users.alice.deleGator), address(users.bob.deleGator));
+        address[] memory allowedRedeemers = new address[](2);
+        allowedRedeemers[0] = address(users.alice.deleGator);
+        allowedRedeemers[1] = address(users.bob.deleGator);
+        Caveat memory caveat = Caveats.createRedeemerCaveat(address(redeemerEnforcer), allowedRedeemers);
         vm.startPrank(address(delegationManager));
         redeemerEnforcer.beforeHook(
-            terms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(users.alice.deleGator)
+            caveat.terms, hex"", mode, executionCallData_, keccak256(""), address(0), address(users.alice.deleGator)
         );
         redeemerEnforcer.beforeHook(
-            terms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(users.bob.deleGator)
+            caveat.terms, hex"", mode, executionCallData_, keccak256(""), address(0), address(users.bob.deleGator)
         );
     }
 
@@ -87,12 +96,14 @@ contract RedeemerEnforcerTest is CaveatEnforcerBaseTest {
         });
         bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
-        bytes memory terms_ = abi.encodePacked(address(users.bob.deleGator));
+        address[] memory allowedRedeemers = new address[](1);
+        allowedRedeemers[0] = address(users.bob.deleGator);
+        Caveat memory caveat = Caveats.createRedeemerCaveat(address(redeemerEnforcer), allowedRedeemers);
         vm.prank(address(delegationManager));
         // Dave is not a valid redeemer
         vm.expectRevert("RedeemerEnforcer:unauthorized-redeemer");
         redeemerEnforcer.beforeHook(
-            terms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(users.dave.deleGator)
+            caveat.terms, hex"", mode, executionCallData_, keccak256(""), address(0), address(users.dave.deleGator)
         );
     }
 

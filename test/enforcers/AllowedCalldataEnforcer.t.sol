@@ -16,6 +16,7 @@ import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { BasicERC20, IERC20 } from "../utils/BasicERC20.t.sol";
 import { BasicCF721 } from "../utils/BasicCF721.t.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
+import { Caveats } from "../../src/libraries/Caveats.sol";
 
 contract DummyContract {
     function stringFn(uint256[] calldata _str) public { }
@@ -209,7 +210,7 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory inputTerms_ = abi.encodePacked(paramStart_, paramValue_);
 
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(allowedCalldataEnforcer), terms: inputTerms_ });
+        caveats_[0] = Caveats.createAllowedCalldataCaveat(address(allowedCalldataEnforcer), paramStart_, abi.encode(paramValue_));
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
@@ -248,14 +249,12 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
             value: 0,
             callData: abi.encodeWithSelector(IERC20.transfer.selector, address(users.bob.deleGator), uint256(2))
         });
-
         // create terms for the enforcer
-        uint256 paramStart_ = abi.encodeWithSelector(IERC20.transfer.selector, address(0)).length;
-        uint256 paramValue_ = 1;
-        bytes memory inputTerms_ = abi.encodePacked(paramStart_, paramValue_);
+        uint256 dataStart = abi.encodeWithSelector(IERC20.transfer.selector, address(0)).length;
+        bytes memory expectedValue = abi.encode(uint256(1));
 
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(allowedCalldataEnforcer), terms: inputTerms_ });
+        caveats_[0] = Caveats.createAllowedCalldataCaveat(address(allowedCalldataEnforcer), dataStart, expectedValue);
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),

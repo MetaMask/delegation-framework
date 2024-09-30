@@ -10,6 +10,7 @@ import { Execution } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { NonceEnforcer } from "../../src/enforcers/NonceEnforcer.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
+import { Caveats } from "../../src/libraries/Caveats.sol";
 
 contract NonceEnforcerTest is CaveatEnforcerBaseTest {
     using ModeLib for ModeCode;
@@ -39,19 +40,19 @@ contract NonceEnforcerTest is CaveatEnforcerBaseTest {
     // Validates the terms get decoded correctly
     function test_decodedTheTerms() public {
         // 0
-        uint256 nonce_;
-        bytes memory terms_ = abi.encode(nonce_);
-        assertEq(enforcer.getTermsInfo(terms_), nonce_);
+        uint256 nonce_ = 0;
+        Caveat memory caveat = Caveats.createNonceCaveat(address(enforcer), nonce_);
+        assertEq(enforcer.getTermsInfo(caveat.terms), nonce_);
 
         // boring integer
         nonce_ = 100;
-        terms_ = abi.encode(nonce_);
-        assertEq(enforcer.getTermsInfo(terms_), nonce_);
+        caveat = Caveats.createNonceCaveat(address(enforcer), nonce_);
+        assertEq(enforcer.getTermsInfo(caveat.terms), nonce_);
 
         // uint256 max
         nonce_ = type(uint256).max;
-        terms_ = abi.encode(nonce_);
-        assertEq(enforcer.getTermsInfo(terms_), nonce_);
+        caveat = Caveats.createNonceCaveat(address(enforcer), nonce_);
+        assertEq(enforcer.getTermsInfo(caveat.terms), nonce_);
     }
 
     // Validates that the delegator can increment the ID
@@ -67,19 +68,18 @@ contract NonceEnforcerTest is CaveatEnforcerBaseTest {
     // Validates that a valid ID doesn't revert
     function test_allow_validId() public {
         uint256 nonce_ = enforcer.currentNonce(dm, delegator);
-        bytes memory terms_ = abi.encode(nonce_);
+        Caveat memory caveat = Caveats.createNonceCaveat(address(enforcer), nonce_);
 
         vm.startPrank(dm);
 
         // Should not revert
-        enforcer.beforeHook(terms_, hex"", mode, executionCallData, bytes32(0), delegator, address(0));
+        enforcer.beforeHook(caveat.terms, hex"", mode, executionCallData, bytes32(0), delegator, address(0));
     }
 
     ////////////////////// Errors //////////////////////
 
     // Validates the terms are enforced
     function test_invalid_decodedTheTerms() public {
-        uint256 nonce_;
         bytes memory terms_ = hex"";
 
         // Too small
@@ -87,7 +87,7 @@ contract NonceEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.getTermsInfo(terms_);
 
         // Too large
-        nonce_ = 100;
+        uint256 nonce_ = 100;
         terms_ = abi.encode(nonce_, nonce_);
         vm.expectRevert(bytes("NonceEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
@@ -97,10 +97,10 @@ contract NonceEnforcerTest is CaveatEnforcerBaseTest {
     function test_notAllow_invalidId() public {
         // Higher ID should revert
         uint256 nonce_ = enforcer.currentNonce(dm, delegator);
-        bytes memory terms_ = abi.encode(nonce_ + 1);
+        Caveat memory caveat = Caveats.createNonceCaveat(address(enforcer), nonce_ + 1);
         vm.startPrank(dm);
         vm.expectRevert(bytes("NonceEnforcer:invalid-nonce"));
-        enforcer.beforeHook(terms_, hex"", mode, executionCallData, bytes32(0), delegator, address(0));
+        enforcer.beforeHook(caveat.terms, hex"", mode, executionCallData, bytes32(0), delegator, address(0));
 
         // Increment ID so the current ID is high enough to check a lower ID
         vm.startPrank(dm);
@@ -108,10 +108,10 @@ contract NonceEnforcerTest is CaveatEnforcerBaseTest {
         nonce_ = enforcer.currentNonce(dm, delegator);
 
         // Lower ID should also revert
-        terms_ = abi.encode(nonce_ - 1);
+        caveat = Caveats.createNonceCaveat(address(enforcer), nonce_ - 1);
         vm.startPrank(dm);
         vm.expectRevert(bytes("NonceEnforcer:invalid-nonce"));
-        enforcer.beforeHook(terms_, hex"", mode, executionCallData, bytes32(0), delegator, address(0));
+        enforcer.beforeHook(caveat.terms, hex"", mode, executionCallData, bytes32(0), delegator, address(0));
     }
 
     //////////////////////  Integration  //////////////////////

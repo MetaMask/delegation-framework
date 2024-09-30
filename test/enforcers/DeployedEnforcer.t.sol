@@ -11,6 +11,7 @@ import { DeployedEnforcer } from "../../src/enforcers/DeployedEnforcer.sol";
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
+import { Caveats } from "../../src/libraries/Caveats.sol";
 
 contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
     using ModeLib for ModeCode;
@@ -269,13 +270,13 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
         // Check that the contract hasn't been deployed yet
         bytes memory initialCode_ = predictedAddr_.code;
         assertEq(initialCode_, bytes(""));
-
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({
-            args: hex"",
-            enforcer: address(deployedEnforcer),
-            terms: abi.encodePacked(predictedAddr_, salt, abi.encodePacked(type(Counter).creationCode))
-        });
+        caveats_[0] = Caveats.createDeployedEnforcerCaveat(
+            address(deployedEnforcer),
+            predictedAddr_,
+            salt,
+            type(Counter).creationCode
+        );
         Delegation memory delegation = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
@@ -284,7 +285,6 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
             salt: 0,
             signature: hex""
         });
-
         delegation = signDelegation(users.alice, delegation);
 
         // Execute Bob's UserOp

@@ -14,6 +14,7 @@ import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 import { BasicERC20, IERC20 } from "../utils/BasicERC20.t.sol";
+import { Caveats } from "../../src/libraries/Caveats.sol";
 
 contract IdEnforcerEnforcerTest is CaveatEnforcerBaseTest {
     using ModeLib for ModeCode;
@@ -95,10 +96,10 @@ contract IdEnforcerEnforcerTest is CaveatEnforcerBaseTest {
             callData: abi.encodeWithSelector(Counter.increment.selector)
         });
 
-        bytes memory inputTerms_ = abi.encode(uint256(12345));
+        uint256 id_ = 12345;
 
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(idEnforcer), terms: inputTerms_ });
+        caveats_[0] = Caveats.createIdCaveat(address(idEnforcer), id_);
         Delegation memory delegation = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),

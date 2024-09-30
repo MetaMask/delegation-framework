@@ -7,10 +7,11 @@ import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import "../../src/utils/Types.sol";
-import { Execution, ModeCode } from "../../src/utils/Types.sol";
+import { Execution, ModeCode, Caveat } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { ValueLteEnforcer } from "../../src/enforcers/ValueLteEnforcer.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
+import { Caveats } from "../../src/libraries/Caveats.sol";
 
 contract ValueLteEnforcerTest is CaveatEnforcerBaseTest {
     using ModeLib for ModeCode;
@@ -36,29 +37,29 @@ contract ValueLteEnforcerTest is CaveatEnforcerBaseTest {
 
     // Validates the terms get decoded correctly
     function test_allow_decodeTerms() public {
-        bytes memory terms_;
+        Caveat memory caveat;
         uint256 amount_;
 
         // 0
-        terms_ = abi.encodePacked(uint256(0));
-        amount_ = enforcer.getTermsInfo(terms_);
+        caveat = Caveats.createValueLteCaveat(address(enforcer), 0);
+        amount_ = enforcer.getTermsInfo(caveat.terms);
         assertEq(amount_, 0);
 
         // 1 ether
-        terms_ = abi.encodePacked(uint256(1 ether));
-        amount_ = enforcer.getTermsInfo(terms_);
+        caveat = Caveats.createValueLteCaveat(address(enforcer), 1 ether);
+        amount_ = enforcer.getTermsInfo(caveat.terms);
         assertEq(amount_, uint256(1 ether));
 
         // Max
-        terms_ = abi.encodePacked(type(uint256).max);
-        amount_ = enforcer.getTermsInfo(terms_);
+        caveat = Caveats.createValueLteCaveat(address(enforcer), type(uint256).max);
+        amount_ = enforcer.getTermsInfo(caveat.terms);
         assertEq(amount_, type(uint256).max);
     }
 
     // Validates that valid values don't revert
     function test_allow_valueLte() public view {
         // Equal
-        bytes memory terms_ = abi.encode(uint256(1 ether));
+        Caveat memory caveat = Caveats.createValueLteCaveat(address(enforcer), 1 ether);
         Execution memory execution_ = Execution({
             target: address(users.alice.deleGator),
             value: 1 ether,
@@ -67,7 +68,7 @@ contract ValueLteEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // Should not revert
-        enforcer.beforeHook(terms_, "", mode, executionCallData_, bytes32(0), address(0), address(0));
+        enforcer.beforeHook(caveat.terms, "", mode, executionCallData_, bytes32(0), address(0), address(0));
 
         // Less than
         execution_ = Execution({
@@ -78,7 +79,7 @@ contract ValueLteEnforcerTest is CaveatEnforcerBaseTest {
         executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // Should not revert
-        enforcer.beforeHook(terms_, "", mode, executionCallData_, bytes32(0), address(0), address(0));
+        enforcer.beforeHook(caveat.terms, "", mode, executionCallData_, bytes32(0), address(0), address(0));
     }
 
     //////////////////////// Errors ////////////////////////
@@ -86,7 +87,7 @@ contract ValueLteEnforcerTest is CaveatEnforcerBaseTest {
     // Validates that invalid values revert
     function test_notAllow_valueGt() public {
         // Gt
-        bytes memory terms_ = abi.encodePacked(uint256(1 ether));
+        Caveat memory caveat = Caveats.createValueLteCaveat(address(enforcer), 1 ether);
         Execution memory execution_ = Execution({
             target: address(users.alice.deleGator),
             value: 2 ether,
@@ -96,7 +97,7 @@ contract ValueLteEnforcerTest is CaveatEnforcerBaseTest {
 
         // Should not revert
         vm.expectRevert(bytes("ValueLteEnforcer:value-too-high"));
-        enforcer.beforeHook(terms_, "", mode, executionCallData_, bytes32(0), address(0), address(0));
+        enforcer.beforeHook(caveat.terms, "", mode, executionCallData_, bytes32(0), address(0), address(0));
     }
 
     // Validates the terms are well formed

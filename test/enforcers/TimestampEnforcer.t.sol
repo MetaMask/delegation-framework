@@ -13,6 +13,7 @@ import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol"
 import { DelegationManager } from "../../src/DelegationManager.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
+import { Caveats } from "../../src/libraries/Caveats.sol";
 
 contract TimestampEnforcerTest is CaveatEnforcerBaseTest {
     using ModeLib for ModeCode;
@@ -45,9 +46,9 @@ contract TimestampEnforcerTest is CaveatEnforcerBaseTest {
         skip(1 hours); // Increase time 1 hour
         uint128 timestampAfterThreshold_ = 1; // Minimum timestamp
         uint128 timestampBeforeThreshold_ = 0; // Not using before threshold
-        bytes memory inputTerms_ = abi.encodePacked(timestampAfterThreshold_, timestampBeforeThreshold_);
+        Caveat memory caveat = Caveats.createTimestampCaveat(address(timestampEnforcer), timestampAfterThreshold_, timestampBeforeThreshold_);
         vm.prank(address(delegationManager));
-        timestampEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        timestampEnforcer.beforeHook(caveat.terms, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     // should SUCCEED to INVOKE method BEFORE timestamp reached
@@ -62,9 +63,9 @@ contract TimestampEnforcerTest is CaveatEnforcerBaseTest {
 
         uint128 timestampAfterThreshold_ = 0; //  Not using after threshold
         uint128 timestampBeforeThreshold_ = uint128(block.timestamp + 1 hours);
-        bytes memory inputTerms_ = abi.encodePacked(timestampAfterThreshold_, timestampBeforeThreshold_);
+        Caveat memory caveat = Caveats.createTimestampCaveat(address(timestampEnforcer), timestampAfterThreshold_, timestampBeforeThreshold_);
         vm.prank(address(delegationManager));
-        timestampEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        timestampEnforcer.beforeHook(caveat.terms, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     // should SUCCEED to INVOKE method inside of timestamp RANGE
@@ -80,9 +81,9 @@ contract TimestampEnforcerTest is CaveatEnforcerBaseTest {
         uint128 timestampAfterThreshold_ = 1; // Minimum timestamp
         uint128 timestampBeforeThreshold_ = uint128(block.timestamp + 1 hours);
         skip(1 minutes); // Increase time 1 minute
-        bytes memory inputTerms_ = abi.encodePacked(timestampAfterThreshold_, timestampBeforeThreshold_);
+        Caveat memory caveat = Caveats.createTimestampCaveat(address(timestampEnforcer), timestampAfterThreshold_, timestampBeforeThreshold_);
         vm.prank(address(delegationManager));
-        timestampEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        timestampEnforcer.beforeHook(caveat.terms, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     ////////////////////// Invalid cases //////////////////////
@@ -99,11 +100,11 @@ contract TimestampEnforcerTest is CaveatEnforcerBaseTest {
 
         uint128 timestampAfterThreshold_ = uint128(block.timestamp + 1 hours);
         uint128 timestampBeforeThreshold_ = 0; // Not using before threshold
-        bytes memory inputTerms_ = abi.encodePacked(timestampAfterThreshold_, timestampBeforeThreshold_);
+        Caveat memory caveat = Caveats.createTimestampCaveat(address(timestampEnforcer), timestampAfterThreshold_, timestampBeforeThreshold_);
         vm.prank(address(delegationManager));
         vm.expectRevert("TimestampEnforcer:early-delegation");
 
-        timestampEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        timestampEnforcer.beforeHook(caveat.terms, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     // should FAIL to INVOKE method AFTER timestamp reached
@@ -119,10 +120,10 @@ contract TimestampEnforcerTest is CaveatEnforcerBaseTest {
         uint128 timestampAfterThreshold_ = 0; //  Not using after threshold
         uint128 timestampBeforeThreshold_ = uint128(block.timestamp);
         skip(1 hours); // Increase time 1 hour
-        bytes memory inputTerms_ = abi.encodePacked(timestampAfterThreshold_, timestampBeforeThreshold_);
+        Caveat memory caveat = Caveats.createTimestampCaveat(address(timestampEnforcer), timestampAfterThreshold_, timestampBeforeThreshold_);
         vm.prank(address(delegationManager));
         vm.expectRevert("TimestampEnforcer:expired-delegation");
-        timestampEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        timestampEnforcer.beforeHook(caveat.terms, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     // should FAIL to INVOKE method BEFORE timestamp RANGE
@@ -137,10 +138,10 @@ contract TimestampEnforcerTest is CaveatEnforcerBaseTest {
 
         uint128 timestampAfterThreshold_ = uint128(block.timestamp + 1 hours);
         uint128 timestampBeforeThreshold_ = uint128(block.timestamp + 2 hours);
-        bytes memory inputTerms_ = abi.encodePacked(timestampAfterThreshold_, timestampBeforeThreshold_);
+        Caveat memory caveat = Caveats.createTimestampCaveat(address(timestampEnforcer), timestampAfterThreshold_, timestampBeforeThreshold_);
         vm.prank(address(delegationManager));
         vm.expectRevert("TimestampEnforcer:early-delegation");
-        timestampEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        timestampEnforcer.beforeHook(caveat.terms, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     // should FAIL to INVOKE method AFTER timestamp RANGE
@@ -156,10 +157,10 @@ contract TimestampEnforcerTest is CaveatEnforcerBaseTest {
         uint128 timestampAfterThreshold_ = uint128(block.timestamp + 1 hours);
         uint128 timestampBeforeThreshold_ = uint128(block.timestamp + 2 hours);
         skip(3 hours); // Increase time 3 hours
-        bytes memory inputTerms_ = abi.encodePacked(timestampAfterThreshold_, timestampBeforeThreshold_);
+        Caveat memory caveat = Caveats.createTimestampCaveat(address(timestampEnforcer), timestampAfterThreshold_, timestampBeforeThreshold_);
         vm.prank(address(delegationManager));
         vm.expectRevert("TimestampEnforcer:expired-delegation");
-        timestampEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        timestampEnforcer.beforeHook(caveat.terms, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
     }
 
     // should FAIL to INVOKE with invalid input terms
@@ -188,10 +189,10 @@ contract TimestampEnforcerTest is CaveatEnforcerBaseTest {
         });
         skip(10); // Increase time 10 seconds
         // Not using before threshold (timestampAfterThreshold_ = 1, timestampBeforeThreshold_ = 100)
-        bytes memory inputTerms_ = abi.encodePacked(uint128(1), uint128(100));
+        Caveat memory caveat = Caveats.createTimestampCaveat(address(timestampEnforcer), 1, 100);
 
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(timestampEnforcer), terms: inputTerms_ });
+        caveats_[0] = caveat;
         Delegation memory delegation = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
