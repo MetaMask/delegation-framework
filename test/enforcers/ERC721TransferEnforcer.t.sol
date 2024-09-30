@@ -70,6 +70,21 @@ contract ERC721TransferEnforcerTest is CaveatEnforcerBaseTest {
         );
     }
 
+    function test_unauthorizedSelector_wrongMethod() public {
+        Execution memory execution_ = Execution({
+            target: NFT_CONTRACT,
+            value: 0,
+            callData: abi.encodeWithSignature("safeTransferFrom(address,address,uint256)", address(this), address(0xBEEF), TOKEN_ID)
+        });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
+
+        vm.prank(address(delegationManager));
+        vm.expectRevert("ERC721TransferEnforcer:unauthorized-selector");
+        erc721TransferEnforcer.beforeHook(
+            abi.encodePacked(NFT_CONTRACT, TOKEN_ID), hex"", mode, executionCallData_, keccak256(""), address(0), address(0)
+        );
+    }
+
     function test_unauthorizedTransfer_wrongTokenId() public {
         Execution memory execution_ = Execution({
             target: NFT_CONTRACT,
