@@ -13,7 +13,7 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 contract ERC721TransferEnforcer is CaveatEnforcer {
     /**
      * @notice Enforces that the contract and tokenId are permitted for transfer
-     * @param _terms the encoded contract and tokenId
+     * @param _terms abi encoded address of the contract and uint256 of the tokenId
      * @param _mode the execution mode of the transaction
      * @param _executionCallData the call data of the transferFrom call
      */
