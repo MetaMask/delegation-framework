@@ -8,7 +8,7 @@ import { DeleGatorCore } from "./DeleGatorCore.sol";
 import { IDelegationManager } from "./interfaces/IDelegationManager.sol";
 import { ERC1271Lib } from "./libraries/ERC1271Lib.sol";
 import { P256VerifierLib } from "./libraries/P256VerifierLib.sol";
-import { P256FCLVerifierLib } from "./libraries/P256FCLVerifierLib.sol";
+import { P256SCLVerifierLib } from "./libraries/P256SCLVerifierLib.sol";
 import { P256PublicKey } from "./utils/Types.sol";
 import { IERC173 } from "./interfaces/IERC173.sol";
 
@@ -29,8 +29,14 @@ struct HybridDeleGatorStorage {
 contract HybridDeleGator is DeleGatorCore, IERC173 {
     ////////////////////////////// State //////////////////////////////
 
+    /// @dev The name of the contract
+    string public constant NAME = "HybridDeleGator";
+
+    /// @dev The version used in the domainSeparator for EIP712
+    string public constant DOMAIN_VERSION = "1";
+
     /// @dev The version of the contract
-    string public constant VERSION = "1.1.0";
+    string public constant VERSION = "1.2.0";
 
     /// @dev The storage location used for state
     /// @dev keccak256(abi.encode(uint256(keccak256("DeleGator.HybridDeleGator")) - 1)) & ~bytes32(uint256(0xff))
@@ -74,7 +80,12 @@ contract HybridDeleGator is DeleGatorCore, IERC173 {
      * @param _delegationManager the address of the trusted DelegationManager contract that will have root access to this contract
      * @param _entryPoint The entry point contract address
      */
-    constructor(IDelegationManager _delegationManager, IEntryPoint _entryPoint) DeleGatorCore(_delegationManager, _entryPoint) { }
+    constructor(
+        IDelegationManager _delegationManager,
+        IEntryPoint _entryPoint
+    )
+        DeleGatorCore(_delegationManager, _entryPoint, NAME, DOMAIN_VERSION)
+    { }
 
     /**
      * @notice Initializes the HybridDeleGator state by setting the owners.
@@ -256,7 +267,7 @@ contract HybridDeleGator is DeleGatorCore, IERC173 {
      * @param _y Public key's Y coordinate
      */
     function _addKey(string calldata _keyId, uint256 _x, uint256 _y) internal {
-        if (!P256FCLVerifierLib.isValidPublicKey(_x, _y)) revert KeyNotOnCurve(_x, _y);
+        if (!P256SCLVerifierLib.isValidPublicKey(_x, _y)) revert KeyNotOnCurve(_x, _y);
         bytes32 keyIdHash_ = keccak256(abi.encodePacked(_keyId));
 
         if (bytes(_keyId).length == 0) revert InvalidEmptyKey();

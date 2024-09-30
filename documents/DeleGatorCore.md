@@ -13,6 +13,10 @@ There are two methods available to upgrade your account to a different implement
 - `upgradeToAndCall` - This method is exposed by the UUPSUpgradable contract and upgrades the account to a different implementation defaulting to clearing the storage associated to the account.
 - `upgradeToAndCallAndRetainStorage` - This method upgrades the account to a different implementation and retains the storage associated to the account.
 
+# Signing a UserOperation
+
+Contracts that extend the DeleGatorCore contract MUST use [EIP712](https://eips.ethereum.org/EIPS/eip-712) typed data signatures for User Operations to provide legibility when signing. The typed data to be signed is a [PackedUserOperation](https://github.com/eth-infinitism/account-abstraction/blob/releases/v0.7/contracts/interfaces/PackedUserOperation.sol).
+
 ## Rules
 
 - DeleGator Implementations MUST use namespaced storage.

@@ -887,7 +887,7 @@ abstract contract DeleGatorTestSuite is BaseTest {
         delegations_[1] = delegation1_;
 
         vm.prank(users.carol.addr);
-        vm.expectRevert(abi.encodeWithSelector(IDelegationManager.InvalidSignature.selector));
+        vm.expectRevert(abi.encodeWithSelector(IDelegationManager.InvalidEOASignature.selector));
 
         bytes[] memory permissionContexts_ = new bytes[](1);
         permissionContexts_[0] = abi.encode(delegations_);
@@ -1203,8 +1203,9 @@ abstract contract DeleGatorTestSuite is BaseTest {
             ExecutionLib.encodeSingle(address(aliceDeleGatorCounter), 0, abi.encodeWithSelector(Counter.increment.selector))
         );
         PackedUserOperation memory userOp_ = createUserOp(address(users.alice.deleGator), userOpCallData_);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = signHash(users.alice, userOpHash_.toEthSignedMessageHash());
+        bytes32 userOpHash_ = getPackedUserOperationTypedDataHash(userOp_);
+        userOp_.signature = signHash(users.alice, userOpHash_);
+
         submitUserOp_Bundler(userOp_, false);
 
         // Get final count
@@ -1239,8 +1240,8 @@ abstract contract DeleGatorTestSuite is BaseTest {
             abi.encode(executionCallDatas_)
         );
         PackedUserOperation memory userOp_ = createUserOp(address(users.alice.deleGator), userOpCallData_);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = signHash(users.alice, userOpHash_.toEthSignedMessageHash());
+        bytes32 userOpHash_ = getPackedUserOperationTypedDataHash(userOp_);
+        userOp_.signature = signHash(users.alice, userOpHash_);
         submitUserOp_Bundler(userOp_, false);
 
         // Get final count
@@ -1262,8 +1263,8 @@ abstract contract DeleGatorTestSuite is BaseTest {
             ExecutionLib.encodeSingle(address(aliceDeleGatorCounter), 0, abi.encodeWithSelector(Counter.increment.selector))
         );
         PackedUserOperation memory userOp_ = createUserOp(address(users.alice.deleGator), userOpCallData_);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = signHash(users.alice, userOpHash_.toEthSignedMessageHash());
+        bytes32 userOpHash_ = getPackedUserOperationTypedDataHash(userOp_);
+        userOp_.signature = signHash(users.alice, userOpHash_);
         submitUserOp_Bundler(userOp_, false);
 
         // Get final count
@@ -1298,8 +1299,8 @@ abstract contract DeleGatorTestSuite is BaseTest {
             abi.encode(executionCallDatas_)
         );
         PackedUserOperation memory userOp_ = createUserOp(address(users.alice.deleGator), userOpCallData_);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = signHash(users.alice, userOpHash_.toEthSignedMessageHash());
+        bytes32 userOpHash_ = getPackedUserOperationTypedDataHash(userOp_);
+        userOp_.signature = signHash(users.alice, userOpHash_);
         submitUserOp_Bundler(userOp_, false);
 
         // Get final count
@@ -1318,8 +1319,8 @@ abstract contract DeleGatorTestSuite is BaseTest {
             ExecutionLib.encodeSingle(address(aliceDeleGatorCounter), 0, abi.encodeWithSelector(Counter.increment.selector))
         );
         PackedUserOperation memory userOp_ = createUserOp(address(users.alice.deleGator), userOpCallData_);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = signHash(users.alice, userOpHash_.toEthSignedMessageHash());
+        bytes32 userOpHash_ = getPackedUserOperationTypedDataHash(userOp_);
+        userOp_.signature = signHash(users.alice, userOpHash_);
 
         // Expect a revert event
         vm.expectEmit(false, false, false, true, address(entryPoint));
@@ -1342,8 +1343,8 @@ abstract contract DeleGatorTestSuite is BaseTest {
             ExecutionLib.encodeSingle(address(aliceDeleGatorCounter), 0, abi.encodeWithSelector(Counter.increment.selector))
         );
         PackedUserOperation memory userOp_ = createUserOp(address(users.alice.deleGator), userOpCallData_);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = signHash(users.alice, userOpHash_.toEthSignedMessageHash());
+        bytes32 userOpHash_ = getPackedUserOperationTypedDataHash(userOp_);
+        userOp_.signature = signHash(users.alice, userOpHash_);
 
         // Expect a revert event
         vm.expectEmit(false, false, false, true, address(entryPoint));
@@ -1378,8 +1379,8 @@ abstract contract DeleGatorTestSuite is BaseTest {
             abi.encode(executionCallDatas_)
         );
         PackedUserOperation memory userOp_ = createUserOp(address(users.alice.deleGator), userOpCallData_);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = signHash(users.alice, userOpHash_.toEthSignedMessageHash());
+        bytes32 userOpHash_ = getPackedUserOperationTypedDataHash(userOp_);
+        userOp_.signature = signHash(users.alice, userOpHash_);
 
         // Expect a revert event
         vm.expectEmit(false, false, false, true, address(entryPoint));
@@ -1768,7 +1769,7 @@ abstract contract DeleGatorTestSuite is BaseTest {
 
         // Create Alice's UserOp (with invalid EntryPoint)
         userOp_ = createUserOp(address(users.alice.deleGator), userOpCallData_);
-        userOp_ = signUserOp(users.alice, userOp_, newEntryPoint_);
+        userOp_ = signUserOp(users.alice, userOp_);
 
         // Submit the UserOp through the Bundler
         vm.prank(bundler);
@@ -2060,7 +2061,10 @@ abstract contract DeleGatorTestSuite is BaseTest {
         vm.expectEmit(true, true, false, true, address(entryPoint));
         // expect an event containing InvalidSignature error
         emit UserOperationRevertReason(
-            userOpHash_, address(users.bob.deleGator), 0, abi.encodeWithSelector(IDelegationManager.InvalidSignature.selector)
+            userOpHash_,
+            address(users.bob.deleGator),
+            0,
+            abi.encodeWithSelector(IDelegationManager.InvalidERC1271Signature.selector)
         );
 
         entryPoint.handleOps(userOps_, bundler);
@@ -2113,7 +2117,10 @@ abstract contract DeleGatorTestSuite is BaseTest {
         vm.expectEmit(true, true, false, true, address(entryPoint));
         // expect an event containing InvalidDelegationSignature error
         emit UserOperationRevertReason(
-            userOpHash_, address(users.bob.deleGator), 0, abi.encodeWithSelector(IDelegationManager.InvalidSignature.selector)
+            userOpHash_,
+            address(users.bob.deleGator),
+            0,
+            abi.encodeWithSelector(IDelegationManager.InvalidERC1271Signature.selector)
         );
 
         entryPoint.handleOps(userOps_, bundler);

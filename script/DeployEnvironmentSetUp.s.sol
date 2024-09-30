@@ -12,8 +12,8 @@ import { IDelegationManager } from "../src/interfaces/IDelegationManager.sol";
 
 import { AllowedCalldataEnforcer } from "../src/enforcers/AllowedCalldataEnforcer.sol";
 import { AllowedMethodsEnforcer } from "../src/enforcers/AllowedMethodsEnforcer.sol";
-import { NativeTokenTransferAmountEnforcer } from "../src/enforcers/NativeTokenTransferAmountEnforcer.sol";
 import { AllowedTargetsEnforcer } from "../src/enforcers/AllowedTargetsEnforcer.sol";
+import { NativeTokenTransferAmountEnforcer } from "../src/enforcers/NativeTokenTransferAmountEnforcer.sol";
 import { BlockNumberEnforcer } from "../src/enforcers/BlockNumberEnforcer.sol";
 import { DeployedEnforcer } from "../src/enforcers/DeployedEnforcer.sol";
 import { ERC20BalanceGteEnforcer } from "../src/enforcers/ERC20BalanceGteEnforcer.sol";
@@ -23,9 +23,13 @@ import { LimitedCallsEnforcer } from "../src/enforcers/LimitedCallsEnforcer.sol"
 import { NonceEnforcer } from "../src/enforcers/NonceEnforcer.sol";
 import { TimestampEnforcer } from "../src/enforcers/TimestampEnforcer.sol";
 import { ValueLteEnforcer } from "../src/enforcers/ValueLteEnforcer.sol";
+import { RedeemerEnforcer } from "../src/enforcers/RedeemerEnforcer.sol";
 import { NativeBalanceGteEnforcer } from "../src/enforcers/NativeBalanceGteEnforcer.sol";
 import { NativeTokenPaymentEnforcer } from "../src/enforcers/NativeTokenPaymentEnforcer.sol";
 import { ArgsEqualityCheckEnforcer } from "../src/enforcers/ArgsEqualityCheckEnforcer.sol";
+import { RedeemerEnforcer } from "../src/enforcers/RedeemerEnforcer.sol";
+import { ERC721BalanceGteEnforcer } from "../src/enforcers/ERC721BalanceGteEnforcer.sol";
+import { ERC1155BalanceGteEnforcer } from "../src/enforcers/ERC1155BalanceGteEnforcer.sol";
 
 /**
  * @title DeployEnvironmentSetUp
@@ -60,11 +64,13 @@ contract DeployEnvironmentSetUp is Script {
         // Deploy Delegation Environment Contracts
         address delegationManager = address(new DelegationManager{ salt: salt }(deployer));
         console2.log("DelegationManager: %s", address(delegationManager));
+
         deployedAddress = address(new MultiSigDeleGator{ salt: salt }(IDelegationManager(delegationManager), entryPoint));
         console2.log("MultiSigDeleGatorImpl: %s", deployedAddress);
 
         deployedAddress = address(new HybridDeleGator{ salt: salt }(IDelegationManager(delegationManager), entryPoint));
-        console2.log("HybridDeleGatorImpl: %s", address(deployedAddress));
+        console2.log("HybridDeleGatorImpl: %s", deployedAddress);
+
         console2.log("~~~");
 
         // Caveat Enforcers
@@ -104,6 +110,9 @@ contract DeployEnvironmentSetUp is Script {
         deployedAddress = address(new ValueLteEnforcer{ salt: salt }());
         console2.log("ValueLteEnforcer: %s", deployedAddress);
 
+        deployedAddress = address(new RedeemerEnforcer{ salt: salt }());
+        console2.log("RedeemerEnforcer: %s", deployedAddress);
+
         deployedAddress = address(new NativeTokenTransferAmountEnforcer{ salt: salt }());
         console2.log("NativeTokenTransferAmountEnforcer: %s", deployedAddress);
 
@@ -116,6 +125,12 @@ contract DeployEnvironmentSetUp is Script {
         deployedAddress =
             address(new NativeTokenPaymentEnforcer{ salt: salt }(IDelegationManager(delegationManager), deployedAddress));
         console2.log("NativeTokenPaymentEnforcer: %s", deployedAddress);
+
+        deployedAddress = address(new ERC721BalanceGteEnforcer{ salt: salt }());
+        console2.log("ERC721BalanceGteEnforcer: %s", deployedAddress);
+
+        deployedAddress = address(new ERC1155BalanceGteEnforcer{ salt: salt }());
+        console2.log("ERC1155BalanceGteEnforcer: %s", deployedAddress);
 
         vm.stopBroadcast();
     }

@@ -18,6 +18,7 @@ import { IDelegationManager } from "../src/interfaces/IDelegationManager.sol";
 import { DeleGatorCore } from "../src/DeleGatorCore.sol";
 import { EncoderLib } from "../src/libraries/EncoderLib.sol";
 import { Counter } from "./utils/Counter.t.sol";
+import { UserOperationLib } from "./utils/UserOperationLib.t.sol";
 import { SimpleFactory } from "../src/utils/SimpleFactory.sol";
 
 /**
@@ -134,13 +135,19 @@ contract MultiSigDeleGatorTest is BaseTest {
         entryPoint.depositTo{ value: 5 ether }(predictedAddr_);
 
         // Create and Sign UserOp with Bob's key
-        PackedUserOperation memory userOp_ = createAndSignUserOp(users.bob, predictedAddr_, hex"", initcode_);
+        PackedUserOperation memory userOperation_ = createUserOp(predictedAddr_, hex"", initcode_);
+        userOperation_.signature = signHash(
+            users.bob,
+            UserOperationLib.getPackedUserOperationTypedDataHash(
+                multiSigDeleGatorImpl.NAME(), multiSigDeleGatorImpl.DOMAIN_VERSION(), block.chainid, predictedAddr_, userOperation_
+            )
+        );
 
         // Validate the contract hasn't been deployed yet
         assertEq(predictedAddr_.code, hex"");
 
         // Submit the UserOp through the Bundler
-        submitUserOp_Bundler(userOp_);
+        submitUserOp_Bundler(userOperation_);
     }
 
     ////////////////////// Redeeming delegations //////////////////////
@@ -812,13 +819,13 @@ contract MultiSigDeleGatorTest is BaseTest {
         bytes memory userOpCallData_ =
             abi.encodeWithSelector(MultiSigDeleGator.updateMultiSigParameters.selector, sharedDeleGatorSigners, 3, true);
         PackedUserOperation memory userOp_ = createUserOp(address(deleGator_), userOpCallData_);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
 
         // Create a subset of private keys to ensure signature length is accurate
         uint256[] memory privateKeysSubset_ = new uint256[](2);
         privateKeysSubset_[0] = sharedDeleGatorPrivateKeys[0];
         privateKeysSubset_[1] = sharedDeleGatorPrivateKeys[1];
-        userOp_.signature = SigningUtilsLib.signHash_MultiSig(privateKeysSubset_, userOpHash_.toEthSignedMessageHash());
+        userOp_.signature =
+            SigningUtilsLib.signHash_MultiSig(privateKeysSubset_, deleGator_.getPackedUserOperationTypedDataHash(userOp_));
 
         PackedUserOperation[] memory userOps_ = new PackedUserOperation[](1);
         userOps_[0] = userOp_;

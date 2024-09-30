@@ -15,10 +15,16 @@ abstract contract CaveatEnforcer is ICaveatEnforcer {
     using ModeLib for ModeCode;
 
     /// @inheritdoc ICaveatEnforcer
+    function beforeAllHook(bytes calldata, bytes calldata, ModeCode, bytes calldata, bytes32, address, address) public virtual { }
+
+    /// @inheritdoc ICaveatEnforcer
     function beforeHook(bytes calldata, bytes calldata, ModeCode, bytes calldata, bytes32, address, address) public virtual { }
 
     /// @inheritdoc ICaveatEnforcer
     function afterHook(bytes calldata, bytes calldata, ModeCode, bytes calldata, bytes32, address, address) public virtual { }
+
+    /// @inheritdoc ICaveatEnforcer
+    function afterAllHook(bytes calldata, bytes calldata, ModeCode, bytes calldata, bytes32, address, address) public virtual { }
 
     /**
      * @dev Require the function call to be in single execution mode

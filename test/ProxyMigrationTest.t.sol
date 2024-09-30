@@ -2,7 +2,6 @@
 pragma solidity 0.8.23;
 
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import { FCL_ecdsa_utils } from "@freshCryptoLib/FCL_ecdsa_utils.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { BytesLib } from "@bytes-utils/BytesLib.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
@@ -67,7 +66,9 @@ contract HybridDeleGator_Test is BaseTest {
         bytes memory userOpCallData_ = abi.encodeWithSignature(EXECUTE_SINGULAR_SIGNATURE, execution_);
         PackedUserOperation memory userOp_ = createUserOp(address(deleGator_), userOpCallData_);
         bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = signHash(SignatureType.MultiSig, users.alice, userOpHash_.toEthSignedMessageHash());
+        userOp_.signature = signHash(
+            SignatureType.MultiSig, users.alice, MultiSigDeleGator(deleGator_).getPackedUserOperationTypedDataHash(userOp_)
+        );
 
         vm.expectEmit();
         emit ClearedStorage();
@@ -110,7 +111,8 @@ contract HybridDeleGator_Test is BaseTest {
         userOpCallData_ = abi.encodeWithSignature(EXECUTE_SINGULAR_SIGNATURE, execution_);
         userOp_ = createUserOp(address(deleGator_), userOpCallData_);
         userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = signHash(SignatureType.EOA, users.alice, userOpHash_.toEthSignedMessageHash());
+        userOp_.signature =
+            signHash(SignatureType.EOA, users.alice, MultiSigDeleGator(deleGator_).getPackedUserOperationTypedDataHash(userOp_));
 
         vm.expectEmit();
         emit ClearedStorage();
@@ -167,8 +169,9 @@ contract HybridDeleGator_Test is BaseTest {
         });
         bytes memory userOpCallData_ = abi.encodeWithSignature(EXECUTE_SINGULAR_SIGNATURE, execution_);
         PackedUserOperation memory userOp_ = createUserOp(address(deleGator_), userOpCallData_);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = signHash(SignatureType.MultiSig, users.alice, userOpHash_.toEthSignedMessageHash());
+        userOp_.signature = signHash(
+            SignatureType.MultiSig, users.alice, MultiSigDeleGator(deleGator_).getPackedUserOperationTypedDataHash(userOp_)
+        );
 
         submitUserOp_Bundler(userOp_);
 

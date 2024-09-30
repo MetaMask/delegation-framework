@@ -12,8 +12,6 @@ import { ERC20BalanceGteEnforcer } from "../../src/enforcers/ERC20BalanceGteEnfo
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
 contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////////////// State //////////////////////////////
     ERC20BalanceGteEnforcer public enforcer;
     BasicERC20 public token;

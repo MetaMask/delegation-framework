@@ -70,7 +70,7 @@ contract DelegationManagerTest is BaseTest {
     // Should allow reading contract version
     function test_allow_contractVersionReads() public {
         string memory contractVersion_ = delegationManager.VERSION();
-        assertEq("1.1.0", contractVersion_);
+        assertEq("1.2.0", contractVersion_);
     }
 
     // Should allow reading contract version
@@ -206,7 +206,7 @@ contract DelegationManagerTest is BaseTest {
         });
 
         // Validate the signature
-        vm.expectRevert(abi.encodeWithSelector(IDelegationManager.InvalidSignature.selector));
+        vm.expectRevert(abi.encodeWithSelector(IDelegationManager.InvalidERC1271Signature.selector));
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation_;
 

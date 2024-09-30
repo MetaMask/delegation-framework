@@ -4,7 +4,15 @@
 
 > NOTE: Each `CaveatEnforcer` is called by the `DelegationManager` contract. This is important when storing data in the `CaveatEnforcer`, as `msg.sender` will always be the address of the `DelegationManager`.
 
-> NOTE: There is no guarantee that the action will be executed. Keep this in mind when designing Caveat Enforcers. If your logic depends on the action being performed, ensure you use the afterHook method to validate any expected state changes.
+> NOTE: There is no guarantee that the action will be executed. Keep this in mind when designing Caveat Enforcers. If your logic depends on the action being performed, ensure you use the afterHook and afterAllHook methods to validate any expected state changes.
+
+The execution order of the caveat hooks may vary depending on the delegation manager implementation, but they are designed to be used in the following sequence:
+
+1. `beforeAllHook`: Called for all delegations before any executions begin, proceeding from the leaf delegation to the root delegation.
+2. `beforeHook`: Called before each individual execution tied to a delegation, also proceeding from the leaf delegation to the root delegation.
+3. Execution: The specified execution is performed.
+4. `afterHook`: Called after each individual execution tied to a delegation, proceeding from the root delegation back to the leaf delegation.
+5. `afterAllHook`: Called for all delegations after all executions have been processed, proceeding from the root delegation back to the leaf delegation.
 
 ## Enforcer Details
 

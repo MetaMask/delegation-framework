@@ -104,7 +104,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
             1 ether
         );
 
-        nativeTokenPaymentEnforcer.afterHook(
+        nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
             modeSimpleSingle,
@@ -159,7 +159,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
             1 ether
         );
 
-        nativeTokenPaymentEnforcer.afterHook(
+        nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
             modeSimpleSingle,
@@ -217,7 +217,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         emit IDelegationManager.RedeemedDelegation(
             allowanceDelegations_[0].delegator, address(nativeTokenPaymentEnforcer), allowanceDelegations_[0]
         );
-        nativeTokenPaymentEnforcer.afterHook(
+        nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
             ModeLib.encodeSimpleSingle(),
@@ -265,7 +265,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         vm.startPrank(address(delegationManager));
 
         vm.expectRevert("NativeTokenPaymentEnforcer:missing-argsEqualityCheckEnforcer");
-        nativeTokenPaymentEnforcer.afterHook(
+        nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
             ModeLib.encodeSimpleSingle(),
@@ -289,7 +289,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         vm.startPrank(address(delegationManager));
 
         vm.expectRevert("NativeTokenPaymentEnforcer:invalid-allowance-delegations-length");
-        nativeTokenPaymentEnforcer.afterHook(
+        nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
             ModeLib.encodeSimpleSingle(),
@@ -319,7 +319,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.startPrank(address(delegationManager));
         vm.expectRevert("NativeTokenPaymentEnforcer:missing-argsEqualityCheckEnforcer");
-        nativeTokenPaymentEnforcer.afterHook(
+        nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
             modeSimpleSingle,
@@ -355,7 +355,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.startPrank(address(delegationManager));
         vm.expectRevert("NativeTokenPaymentEnforcer:missing-argsEqualityCheckEnforcer");
-        nativeTokenPaymentEnforcer.afterHook(
+        nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
             modeSimpleSingle,
@@ -386,7 +386,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.startPrank(mockDelegationManager_);
         vm.expectRevert("NativeTokenPaymentEnforcer:payment-not-received");
-        nativeTokenPaymentEnforcer.afterHook(
+        nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
             modeSimpleSingle,
@@ -402,7 +402,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         // Using an invalid sender, it must be the delegation manager
         vm.startPrank(address(users.bob.deleGator));
         vm.expectRevert("NativeTokenPaymentEnforcer:only-delegation-manager");
-        nativeTokenPaymentEnforcer.afterHook(
+        nativeTokenPaymentEnforcer.afterAllHook(
             hex"", hex"", ModeLib.encodeSimpleSingle(), new bytes(0), bytes32(0), address(0), address(0)
         );
     }
@@ -563,7 +563,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
 
         // The redeemer is Carol and not Bob who is the delegator of the allowance delegation
         vm.expectRevert("ArgsEqualityCheckEnforcer:different-args-and-terms");
-        nativeTokenPaymentEnforcer.afterHook(
+        nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
             ModeLib.encodeSimpleSingle(),
@@ -574,7 +574,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         );
 
         // The redeemer is Bob who is the delegator of the payment delegations
-        nativeTokenPaymentEnforcer.afterHook(
+        nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
             ModeLib.encodeSimpleSingle(),

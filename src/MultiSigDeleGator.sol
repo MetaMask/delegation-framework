@@ -7,6 +7,7 @@ import { IEntryPoint } from "@account-abstraction/interfaces/IEntryPoint.sol";
 import { DeleGatorCore } from "./DeleGatorCore.sol";
 import { IDelegationManager } from "./interfaces/IDelegationManager.sol";
 import { ERC1271Lib } from "./libraries/ERC1271Lib.sol";
+import { PackedUserOperation } from "./utils/Types.sol";
 
 /// @custom:storage-location erc7201:DeleGator.MultiSigDeleGator
 struct MultiSigDeleGatorStorage {
@@ -24,8 +25,14 @@ struct MultiSigDeleGatorStorage {
 contract MultiSigDeleGator is DeleGatorCore {
     ////////////////////////////// State //////////////////////////////
 
+    /// @dev The name of the contract
+    string public constant NAME = "MultiSigDeleGator";
+
+    /// @dev The version used in the domainSeparator for EIP712
+    string public constant DOMAIN_VERSION = "1";
+
     /// @dev The version of the contract
-    string public constant VERSION = "1.1.0";
+    string public constant VERSION = "1.2.0";
 
     /// @dev The storage slot for the MultiSig DeleGator
     /// @dev keccak256(abi.encode(uint256(keccak256("DeleGator.MultiSigDeleGator")) - 1)) & ~bytes32(uint256(0xff))
@@ -78,7 +85,12 @@ contract MultiSigDeleGator is DeleGatorCore {
      * @param _delegationManager the address of the trusted DelegationManager contract that will have root access to this contract
      * @param _entryPoint the address of the EntryPoint contract that will have root access to this contract
      */
-    constructor(IDelegationManager _delegationManager, IEntryPoint _entryPoint) DeleGatorCore(_delegationManager, _entryPoint) {
+    constructor(
+        IDelegationManager _delegationManager,
+        IEntryPoint _entryPoint
+    )
+        DeleGatorCore(_delegationManager, _entryPoint, NAME, DOMAIN_VERSION)
+    {
         MultiSigDeleGatorStorage storage s_ = _getDeleGatorStorage();
         s_.threshold = type(uint256).max;
         emit UpdatedThreshold(s_.threshold);
@@ -250,6 +262,7 @@ contract MultiSigDeleGator is DeleGatorCore {
         MultiSigDeleGatorStorage storage s_ = _getDeleGatorStorage();
         return s_.signers.length;
     }
+
     ////////////////////////////// Internal Methods //////////////////////////////
 
     /**

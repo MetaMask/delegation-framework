@@ -42,9 +42,11 @@ Our `DelegationManager` implementation:
 3. Validates the signatures of offchain delegations.
 4. Checks if any of the delegations being redeemed are disabled
 5. Ensures each delegation has sufficient authority to execute, given by the previous delegation or by being a root delegation
-6. Calls `beforeHook` for all delegations (from leaf to root delegation)
-7. Executes the `Execution` provided
-8. Calls `afterHook` for all delegations (from root to leaf delegation)
+6. Calls `beforeAllHook` for all delegations before processing any of the executions (from leaf to root delegation)
+7. Calls `beforeHook` before each individual execution tied to a delegation (from leaf to root delegation)
+8. Performs the `Execution` provided
+9. Calls `afterHook` after each individual execution tied to a delegation (from root to leaf delegation)
+10. Calls `afterAllHook` for all delegations before processing all the executions (from root to leaf delegation)
 
 > NOTE: Ensure to double check that the delegation is valid before submitting a UserOp. A delegation can be revoked or a signature can be invalidated at any time.
 > Validate a delegation redemption by either simulating the transaction or by reading the storage on our implementation `disabledDelegations(delegationHash)`.
