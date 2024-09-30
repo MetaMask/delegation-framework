@@ -1,0 +1,326 @@
+# Developing Smart Contracts for Delegation Systems
+
+This guide focuses on creating smart contracts that work seamlessly with the MetaMask Delegation Toolkit. The key principle is to keep your contracts simple, focused on core functionality, and completely unaware of the delegation system itself.
+
+## Core Principles
+
+1. **Simplicity**: Contracts should focus solely on their core business logic.
+2. **Owner-centric**: Use `onlyOwner` modifiers for privileged functions.
+3. **Delegation-agnostic**: Contracts should not reference Delegation, DelegationManager, or mode encoding.
+4. **Extensibility**: Design core functions to be easily extended through the delegation framework.
+
+## Contract Structure
+
+Here's an example of a basic contract structure:
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+contract MyContract is ERC721, Ownable {
+    constructor(string memory name, string memory symbol) ERC721(name, symbol) Ownable(msg.sender) {}
+
+    function mint(address to, uint256 tokenId) public onlyOwner {
+        _mint(to, tokenId);
+    }
+}
+```
+
+## Core Functions
+
+### Minting
+
+The `mint` function is a simple example of a core function that can be easily extended through the delegation framework.
+
+## Using Caveat Enforcers
+
+Caveat enforcers allow you to add specific conditions or restrictions to delegations. The MetaMask Delegation Toolkit provides several out-of-the-box caveat enforcers:
+
+- `AllowedCalldataEnforcer.sol`
+- `AllowedMethodsEnforcer.sol`
+- `AllowedTargetsEnforcer.sol`
+- `BlockNumberEnforcer.sol`
+- `DeployedEnforcer.sol`
+- `ERC20TransferAmountEnforcer.sol`
+- `ERC20BalanceGteEnforcer.sol`
+- `NonceEnforcer.sol`
+- `LimitedCallsEnforcer.sol`
+- `IdEnforcer.sol`
+- `TimestampEnforcer.sol`
+- `ValueLteEnforcer.sol`
+
+So any policy that is composed of those can be assumed provided already.
+
+In the case that you need to create a custom enforcer, you can use the `CaveatEnforcer.sol` base class and write your own like this:
+
+```solidity
+// SPDX-License-Identifier: MIT AND Apache-2.0
+pragma solidity 0.8.23;
+
+import "forge-std/Test.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { ModeLib } from "@erc7579/lib/ModeLib.sol";
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
+
+import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
+import { Counter } from "../utils/Counter.t.sol";
+import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
+import { AllowedMethodsEnforcer } from "../../src/enforcers/AllowedMethodsEnforcer.sol";
+import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
+
+contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
+
+    ////////////////////// State //////////////////////
+
+    AllowedMethodsEnforcer public allowedMethodsEnforcer;
+    ModeCode public mode = ModeLib.encodeSimpleSingle();
+
+    ////////////////////// Set up //////////////////////
+
+    function setUp() public override {
+        super.setUp();
+        allowedMethodsEnforcer = new AllowedMethodsEnforcer();
+        vm.label(address(allowedMethodsEnforcer), "Allowed Methods Enforcer");
+    }
+
+    ////////////////////// Valid cases //////////////////////
+
+    // should allow a method to be called when a single method is allowed
+    function test_singleMethodCanBeCalled() public {
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
+
+        // beforeHook, mimicking the behavior of Alice's DeleGator
+        vm.prank(address(delegationManager));
+        allowedMethodsEnforcer.beforeHook(
+            abi.encodePacked(Counter.increment.selector), hex"", mode, executionCallData_, keccak256(""), address(0), address(0)
+        );
+    }
+
+    // should allow a method to be called when a multiple methods are allowed
+    function test_multiMethodCanBeCalled() public {
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
+
+        // beforeHook, mimicking the behavior of Alice's DeleGator
+        vm.prank(address(delegationManager));
+        allowedMethodsEnforcer.beforeHook(
+            abi.encodePacked(Counter.setCount.selector, Ownable.renounceOwnership.selector, Counter.increment.selector),
+            hex"",
+            mode,
+            executionCallData_,
+            keccak256(""),
+            address(0),
+            address(0)
+        );
+    }
+
+    ////////////////////// Invalid cases //////////////////////
+
+    // should FAIL to get terms info when passing an invalid terms length
+    function test_getTermsInfoFailsForInvalidLength() public {
+        vm.expectRevert("AllowedMethodsEnforcer:invalid-terms-length");
+        allowedMethodsEnforcer.getTermsInfo(bytes("1"));
+    }
+
+    // should FAIL if execution.callData length < 4
+    function test_notAllow_invalidExecutionLength() public {
+        // Create the execution that would be executed
+        Execution memory execution_ =
+            Execution({ target: address(aliceDeleGatorCounter), value: 0, callData: abi.encodePacked(true) });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
+
+        // beforeHook, mimicking the behavior of Alice's DeleGator
+        vm.prank(address(delegationManager));
+        vm.expectRevert("AllowedMethodsEnforcer:invalid-execution-data-length");
+        allowedMethodsEnforcer.beforeHook(
+            abi.encodePacked(Counter.setCount.selector, Ownable.renounceOwnership.selector, Ownable.owner.selector),
+            hex"",
+            mode,
+            executionCallData_,
+            keccak256(""),
+            address(0),
+            address(0)
+        );
+    }
+
+    // should NOT allow a method to be called when the method is not allowed
+    function test_onlyApprovedMethodsCanBeCalled() public {
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
+
+        // beforeHook, mimicking the behavior of Alice's DeleGator
+        vm.prank(address(delegationManager));
+        vm.expectRevert("AllowedMethodsEnforcer:method-not-allowed");
+        allowedMethodsEnforcer.beforeHook(
+            abi.encodePacked(Counter.setCount.selector, Ownable.renounceOwnership.selector, Ownable.owner.selector),
+            hex"",
+            mode,
+            executionCallData_,
+            keccak256(""),
+            address(0),
+            address(0)
+        );
+    }
+
+    ////////////////////// Integration //////////////////////
+
+    // should allow a method to be called when a single method is allowed Integration
+    function test_methodCanBeSingleMethodIntegration() public {
+        uint256 initialValue_ = aliceDeleGatorCounter.count();
+
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
+
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] =
+            Caveat({ args: hex"", enforcer: address(allowedMethodsEnforcer), terms: abi.encodePacked(Counter.increment.selector) });
+        Delegation memory delegation_ = Delegation({
+            delegate: address(users.bob.deleGator),
+            delegator: address(users.alice.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: caveats_,
+            salt: 0,
+            signature: hex""
+        });
+
+        delegation_ = signDelegation(users.alice, delegation_);
+
+        // Execute Bob's UserOp
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation_;
+
+        // Enforcer allows the delegation
+        invokeDelegation_UserOp(users.bob, delegations_, execution_);
+        // Get count
+        uint256 valueAfter_ = aliceDeleGatorCounter.count();
+        // Validate that the count has increased by 1
+        assertEq(valueAfter_, initialValue_ + 1);
+
+        // Enforcer allows to reuse the delegation
+        invokeDelegation_UserOp(users.bob, delegations_, execution_);
+        // Get final count
+        uint256 finalValue_ = aliceDeleGatorCounter.count();
+        // Validate that the count has increased again
+        assertEq(finalValue_, initialValue_ + 2);
+    }
+
+    // should NOT allow a method to be called when the method is not allowed Integration
+    function test_onlyApprovedMethodsCanBeCalledIntegration() public {
+        uint256 initialValue_ = aliceDeleGatorCounter.count();
+
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
+
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] = Caveat({
+            args: hex"",
+            enforcer: address(allowedMethodsEnforcer),
+            terms: abi.encodePacked(Counter.setCount.selector, Ownable.renounceOwnership.selector, Ownable.owner.selector)
+        });
+        Delegation memory delegation_ = Delegation({
+            delegate: address(users.bob.deleGator),
+            delegator: address(users.alice.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: caveats_,
+            salt: 0,
+            signature: hex""
+        });
+
+        delegation_ = signDelegation(users.alice, delegation_);
+
+        // Execute Bob's UserOp
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation_;
+
+        // Enforcer allows the delegation
+        invokeDelegation_UserOp(users.bob, delegations_, execution_);
+        // Get final count
+        uint256 valueAfter_ = aliceDeleGatorCounter.count();
+        // Validate that the count has not changed
+        assertEq(valueAfter_, initialValue_);
+    }
+
+    function _getEnforcer() internal view override returns (ICaveatEnforcer) {
+        return ICaveatEnforcer(address(allowedMethodsEnforcer));
+    }
+}
+
+```
+
+This example demonstrates a custom caveat enforcer that only permits approved methods to be called on. Here are some additional tips for working with the MetaMask Delegation Toolkit:
+
+1. Simplify contract logic: The delegation framework allows you to move complex permission logic out of your main contracts. For example, instead of implementing complex access control in your main contract, you can use `onlyOwner` modifiers and handle permissions through delegations.
+
+2. Leverage existing enforcers: Before creating a custom enforcer, check if any of the existing caveat enforcers (like AllowedCalldataEnforcer, BlockNumberEnforcer, ERC20TransferAmountEnforcer, etc.) can meet your needs.
+
+3. Intent-based applications: When building intent-based apps:
+   a. Identify the resource being offered (e.g., NFT minting rights)
+   b. Determine the terms for offering the resource (e.g., payment, time limits)
+   c. Use or create appropriate caveat enforcers
+
+4. Handle payments via delegations: NEVER use ERC20 allowances, `payable` functions, or permit() signatures. ONLY use delegations for receiving payments.
+
+Assume that payments are usually handled by delegation managers (enforced outside of primary application logic), and that the primary application logic is focused on the intent to share a resource, without needing to consider the payment mechanics. As a result, it should be rare that a payment is required directly in a non-CaveatEnforcer contract. If payment is required by a contract (usually a CaveatEnforcer contract), never use ERC20 allowances, or token permit() signatures. The delegation framework is meant to be a general purpose alternative to these more constrained mechanisms. If a payment is required in exchange for something, have the payment be paid as a `Delegation` + a `delegationManager address`, which can then be redeemed using the ERC-7710 `redeemDelegations()` function on that `delegationManager`:
+
+```solidity
+function redeemDelegations(
+        bytes[] calldata _permissionContexts,
+        ModeCode[] calldata _modes,
+        bytes[] calldata _executionCallDatas
+    )
+```
+
+Where `_modes` is an array of `ModeCode` values, which are used to determine the behavior of the `redeemDelegations()` function (and mode 1 is a normal internal message call).
+
+Calling a function using a permission context and delegation manager to performa simple send looks like this:
+
+```solidity
+import { ModeLib } from "@erc7579/lib/ModeLib.sol";
+using ModeLib for ModeCode;
+
+// Redeem ERC-7710 delegation
+bytes[] memory permissionContexts_ = new bytes[](1);
+permissionContexts_[0] = abi.encode(delegations_);
+
+bytes[] memory executionCallDatas_ = new bytes[](1);
+executionCallDatas_[0] = ExecutionLib.encodeSingle(recipient_, amount_, hex"");
+
+ModeCode[] memory encodedModes_ = new ModeCode[](1);
+encodedModes_[0] = ModeLib.encodeSimpleSingle();
+
+// Attempt to redeem the delegation and make the payment
+delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
+```
+
+5. Always use the delegation framework for invitations. Assume the owner can always let others use their account on their behalf with arbitrary terms.
+
+6. Always ensure you use the `onlyOwner` modifier on any sensitive functions that should only be available to the owner. It's ok to leave this modifier off the transfer functions of a token or NFT contract. It's also ok to leave it off any function that is meant to be exposed as a public service.
+
+7. After auto-generating a super simple contract, provide comments above each `onlyOwner` function that describes some expected/recommended delegation types for that function.
