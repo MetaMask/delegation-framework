@@ -49,9 +49,7 @@ contract TimestampEnforcer is CaveatEnforcer {
      * @return timestampAfterThreshold_ The earliest timestamp before which the delegation can be used.
      * @return timestampBeforeThreshold_ The latest timestamp after which the delegation can be used.
      */
-    function getTermsInfo(
-        bytes calldata _terms
-    )
+    function getTermsInfo(bytes calldata _terms)
         public
         pure
         returns (uint128 timestampAfterThreshold_, uint128 timestampBeforeThreshold_)

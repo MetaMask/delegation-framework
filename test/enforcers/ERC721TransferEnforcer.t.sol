@@ -44,13 +44,7 @@ contract ERC721TransferEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         erc721TransferEnforcer.beforeHook(
-            abi.encodePacked(NFT_CONTRACT, TOKEN_ID),
-            hex"",
-            mode,
-            executionCallData_,
-            keccak256(""),
-            address(0),
-            address(0)
+            abi.encodePacked(NFT_CONTRACT, TOKEN_ID), hex"", mode, executionCallData_, keccak256(""), address(0), address(0)
         );
     }
 
@@ -72,13 +66,7 @@ contract ERC721TransferEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectRevert("ERC721TransferEnforcer:unauthorized-contract-target");
         erc721TransferEnforcer.beforeHook(
-            abi.encodePacked(NFT_CONTRACT, TOKEN_ID),
-            hex"",
-            mode,
-            executionCallData_,
-            keccak256(""),
-            address(0),
-            address(0)
+            abi.encodePacked(NFT_CONTRACT, TOKEN_ID), hex"", mode, executionCallData_, keccak256(""), address(0), address(0)
         );
     }
 
@@ -93,13 +81,7 @@ contract ERC721TransferEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectRevert("ERC721TransferEnforcer:unauthorized-token-id");
         erc721TransferEnforcer.beforeHook(
-            abi.encodePacked(NFT_CONTRACT, TOKEN_ID),
-            hex"",
-            mode,
-            executionCallData_,
-            keccak256(""),
-            address(0),
-            address(0)
+            abi.encodePacked(NFT_CONTRACT, TOKEN_ID), hex"", mode, executionCallData_, keccak256(""), address(0), address(0)
         );
     }
 
@@ -114,13 +96,7 @@ contract ERC721TransferEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectRevert("ERC721TransferEnforcer:invalid-calldata-length");
         erc721TransferEnforcer.beforeHook(
-            abi.encodePacked(NFT_CONTRACT, TOKEN_ID),
-            hex"",
-            mode,
-            executionCallData_,
-            keccak256(""),
-            address(0),
-            address(0)
+            abi.encodePacked(NFT_CONTRACT, TOKEN_ID), hex"", mode, executionCallData_, keccak256(""), address(0), address(0)
         );
     }
 
@@ -130,15 +106,14 @@ contract ERC721TransferEnforcerTest is CaveatEnforcerBaseTest {
         Execution memory execution_ = Execution({
             target: NFT_CONTRACT,
             value: 0,
-            callData: abi.encodeWithSelector(IERC721.transferFrom.selector, address(users.alice.deleGator), address(users.bob.deleGator), TOKEN_ID)
+            callData: abi.encodeWithSelector(
+                IERC721.transferFrom.selector, address(users.alice.deleGator), address(users.bob.deleGator), TOKEN_ID
+            )
         });
 
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({
-            args: hex"",
-            enforcer: address(erc721TransferEnforcer),
-            terms: abi.encodePacked(NFT_CONTRACT, TOKEN_ID)
-        });
+        caveats_[0] =
+            Caveat({ args: hex"", enforcer: address(erc721TransferEnforcer), terms: abi.encodePacked(NFT_CONTRACT, TOKEN_ID) });
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
