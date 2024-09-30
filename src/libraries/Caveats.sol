@@ -20,6 +20,8 @@ import { NonceEnforcer } from "../enforcers/NonceEnforcer.sol";
 import { RedeemerEnforcer } from "../enforcers/RedeemerEnforcer.sol";
 import { TimestampEnforcer } from "../enforcers/TimestampEnforcer.sol";
 import { ValueLteEnforcer } from "../enforcers/ValueLteEnforcer.sol";
+import { SwapOfferEnforcer } from "../enforcers/SwapOfferEnforcer.sol";
+
 /**
   @title Caveats
   @notice This library aims to export the easier way to create caveats for tests. Its parameters should always be provided in the easiest creator-readable way, even at the cost of gas.
@@ -279,6 +281,23 @@ library Caveats {
         uint256 maxAmount
     ) internal pure returns (Caveat memory) {
         bytes memory terms = abi.encodePacked(token, maxAmount);
+        
+        return Caveat({
+            enforcer: enforcerAddress,
+            terms: terms,
+            args: ""
+        });
+    }
+
+    function createSwapOfferCaveat(
+        address enforcerAddress,
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        uint256 amountOut,
+        address recipient
+    ) internal pure returns (Caveat memory) {
+        bytes memory terms = abi.encodePacked(tokenIn, tokenOut, amountIn, amountOut, recipient);
         
         return Caveat({
             enforcer: enforcerAddress,
