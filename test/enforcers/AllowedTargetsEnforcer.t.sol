@@ -13,6 +13,7 @@ import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol"
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 import { BasicERC20, IERC20 } from "../utils/BasicERC20.t.sol";
+import { Caveats } from "../../src/libraries/Caveats.sol";
 
 contract AllowedTargetsEnforcerTest is CaveatEnforcerBaseTest {
     using ModeLib for ModeCode;
@@ -129,11 +130,10 @@ contract AllowedTargetsEnforcerTest is CaveatEnforcerBaseTest {
         });
 
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({
-            args: hex"",
-            enforcer: address(allowedTargetsEnforcer),
-            terms: abi.encodePacked(address(aliceDeleGatorCounter), address(testFToken1))
-        });
+        address[] memory allowedTargets = new address[](2);
+        allowedTargets[0] = address(aliceDeleGatorCounter);
+        allowedTargets[1] = address(testFToken1);
+        caveats_[0] = Caveats.createAllowedTargetsCaveat(address(allowedTargetsEnforcer), allowedTargets);
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
@@ -180,8 +180,9 @@ contract AllowedTargetsEnforcerTest is CaveatEnforcerBaseTest {
 
         // Approving the user to use the FToken1
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] =
-            Caveat({ args: hex"", enforcer: address(allowedTargetsEnforcer), terms: abi.encodePacked(address(testFToken1)) });
+        address[] memory allowedTargets = new address[](1);
+        allowedTargets[0] = address(testFToken1);
+        caveats_[0] = Caveats.createAllowedTargetsCaveat(address(allowedTargetsEnforcer), allowedTargets);
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
