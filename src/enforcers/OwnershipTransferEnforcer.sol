@@ -5,6 +5,7 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";
+import { IERC173 } from "../interfaces/IERC173.sol";
 
 /**
  * @title OwnershipTransferEnforcer
@@ -42,7 +43,7 @@ contract OwnershipTransferEnforcer is CaveatEnforcer {
         override
         onlySingleExecutionMode(_mode)
     {
-        (address targetContract, address newOwner) = _validateAndEnforce(_terms, _executionCallData);
+        address newOwner = _validateAndEnforce(_terms, _executionCallData);
         emit OwnershipTransferEnforced(msg.sender, _redeemer, _delegationHash, newOwner);
     }
 
@@ -59,24 +60,24 @@ contract OwnershipTransferEnforcer is CaveatEnforcer {
      * @notice Validates the ownership transfer and enforces the terms.
      * @param _terms The address of the contract whose ownership is being transferred.
      * @param _executionCallData The transaction the delegate might try to perform.
-     * @return targetContract_ The address of the ERC-173 compliant contract.
      * @return newOwner_ The address of the new owner.
      */
+
     function _validateAndEnforce(
         bytes calldata _terms,
         bytes calldata _executionCallData
     )
         internal
         pure
-        returns (address targetContract_, address newOwner_)
+        returns (address newOwner_)
     {
         (address target_,, bytes calldata callData_) = _executionCallData.decodeSingle();
         bytes4 selector = bytes4(callData_[0:4]);
-        require(selector == bytes4(keccak256("transferOwnership(address)")), "OwnershipTransferEnforcer:invalid-method");
+        require(selector == IERC173.transferOwnership.selector, "OwnershipTransferEnforcer:invalid-method");
 
         require(callData_.length == 36, "OwnershipTransferEnforcer:invalid-execution-length");
 
-        targetContract_ = getTermsInfo(_terms);
+        address targetContract_ = getTermsInfo(_terms);
         require(targetContract_ == target_, "OwnershipTransferEnforcer:invalid-contract");
 
         newOwner_ = address(uint160(uint256(bytes32(callData_[4:36]))));

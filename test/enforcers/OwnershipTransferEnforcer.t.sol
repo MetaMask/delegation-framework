@@ -6,14 +6,11 @@ import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import "../../src/utils/Types.sol";
-import { Execution } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { OwnershipTransferEnforcer } from "../../src/enforcers/OwnershipTransferEnforcer.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
 contract OwnershipTransferEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////////////// State //////////////////////////////
     OwnershipTransferEnforcer public enforcer;
     address public mockContract;
@@ -56,9 +53,7 @@ contract OwnershipTransferEnforcerTest is CaveatEnforcerBaseTest {
             callData: abi.encodeWithSelector(bytes4(keccak256("transferOwnership(address)")), newOwner)
         });
         transferOwnershipExecutionCallData = ExecutionLib.encodeSingle(
-            transferOwnershipExecution.target,
-            transferOwnershipExecution.value,
-            transferOwnershipExecution.callData
+            transferOwnershipExecution.target, transferOwnershipExecution.value, transferOwnershipExecution.callData
         );
 
         vm.prank(dm);
@@ -84,9 +79,7 @@ contract OwnershipTransferEnforcerTest is CaveatEnforcerBaseTest {
             callData: abi.encodeWithSelector(bytes4(keccak256("transferOwnership(address)")), newOwner)
         });
         transferOwnershipExecutionCallData = ExecutionLib.encodeSingle(
-            transferOwnershipExecution.target,
-            transferOwnershipExecution.value,
-            transferOwnershipExecution.callData
+            transferOwnershipExecution.target, transferOwnershipExecution.value, transferOwnershipExecution.callData
         );
 
         vm.prank(dm);
@@ -97,15 +90,10 @@ contract OwnershipTransferEnforcerTest is CaveatEnforcerBaseTest {
     // Reverts if the method called is not transferOwnership
     function test_notAllow_invalidMethod() public {
         bytes memory terms_ = abi.encodePacked(mockContract);
-        transferOwnershipExecution = Execution({
-            target: mockContract,
-            value: 0,
-            callData: abi.encodeWithSelector(bytes4(keccak256("someOtherMethod()")))
-        });
+        transferOwnershipExecution =
+            Execution({ target: mockContract, value: 0, callData: abi.encodeWithSelector(bytes4(keccak256("someOtherMethod()"))) });
         transferOwnershipExecutionCallData = ExecutionLib.encodeSingle(
-            transferOwnershipExecution.target,
-            transferOwnershipExecution.value,
-            transferOwnershipExecution.callData
+            transferOwnershipExecution.target, transferOwnershipExecution.value, transferOwnershipExecution.callData
         );
 
         vm.prank(dm);
@@ -120,11 +108,9 @@ contract OwnershipTransferEnforcerTest is CaveatEnforcerBaseTest {
             target: mockContract,
             value: 0,
             callData: abi.encodeWithSelector(bytes4(keccak256("transferOwnership(address)"))) // Missing the address parameter
-        });
+         });
         transferOwnershipExecutionCallData = ExecutionLib.encodeSingle(
-            transferOwnershipExecution.target,
-            transferOwnershipExecution.value,
-            transferOwnershipExecution.callData
+            transferOwnershipExecution.target, transferOwnershipExecution.value, transferOwnershipExecution.callData
         );
 
         vm.prank(dm);
