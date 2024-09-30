@@ -69,12 +69,9 @@ import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.s
 import { Counter } from "../utils/Counter.t.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { AllowedMethodsEnforcer } from "../../src/enforcers/AllowedMethodsEnforcer.sol";
-import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
-import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
 contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
 
     ////////////////////// State //////////////////////
 
