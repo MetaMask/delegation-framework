@@ -29,6 +29,20 @@ contract SwapOfferEnforcer is CaveatEnforcer {
         address recipient;
     }
 
+    struct SwapOfferTerms {
+        address tokenIn;
+        address tokenOut;
+        uint256 amountIn;
+        uint256 amountOut;
+        address recipient;
+    }
+
+    struct SwapOfferArgs {
+        uint256 claimedAmount;
+        IDelegationManager delegationManager;
+        bytes permissionContext;
+    }
+
     ////////////////////////////// State //////////////////////////////
 
     mapping(address delegationManager => mapping(bytes32 delegationHash => SwapOffer)) public swapOffers;
@@ -65,18 +79,17 @@ contract SwapOfferEnforcer is CaveatEnforcer {
         override
         onlySingleExecutionMode(_mode)
     {
-        (uint256 claimedAmount, IDelegationManager delegationManager,) = abi.decode(_args, (uint256, IDelegationManager, bytes));
+        SwapOfferArgs memory args = abi.decode(_args, (SwapOfferArgs));
         
-        (uint256 amountInFilled_, uint256 amountOutFilled_) = _validateAndUpdate(_terms, _executionCallData, _delegationHash, claimedAmount);
+        (uint256 amountInFilled_, uint256 amountOutFilled_) = _validateAndUpdate(_terms, _executionCallData, _delegationHash, args.claimedAmount);
         
         // Store the payment info for the afterHook
-        SwapOffer storage offer = swapOffers[address(delegationManager)][_delegationHash];
+        SwapOffer storage offer = swapOffers[address(args.delegationManager)][_delegationHash];
         offer.amountInFilled = amountInFilled_;
         offer.amountOutFilled = amountOutFilled_;
 
         emit SwapOfferUpdated(msg.sender, _redeemer, _delegationHash, amountInFilled_, amountOutFilled_);
     }
-
     /**
      * @notice Enforces the conditions that should hold after a transaction is performed.
      * @param _terms The encoded swap offer terms.
@@ -95,30 +108,33 @@ contract SwapOfferEnforcer is CaveatEnforcer {
         public
         override
     {
-        (uint256 claimedAmount, IDelegationManager delegationManager, bytes memory permissionContext) = abi.decode(_args, (uint256, IDelegationManager, bytes));
-        
-        (address tokenIn,,,,address recipient) = getTermsInfo(_terms);
-
+        SwapOfferArgs memory args = abi.decode(_args, (SwapOfferArgs));
+        SwapOfferTerms memory terms = abi.decode(_terms, (SwapOfferTerms));
+        address tokenIn = terms.tokenIn;
+        address recipient = terms.recipient;
         bytes[] memory permissionContexts = new bytes[](1);
-        permissionContexts[0] = permissionContext;
+        permissionContexts[0] = args.permissionContext;
+
+        uint256 balanceBefore = IERC20(tokenIn).balanceOf(recipient);
+
+        SwapOffer storage offer = swapOffers[address(args.delegationManager)][_delegationHash];
+        uint256 amountToTransfer = offer.amountInFilled;
 
         bytes[] memory executionCallDatas = new bytes[](1);
-        executionCallDatas[0] = ExecutionLib.encodeSingle(tokenIn, claimedAmount, abi.encodeWithSelector(IERC20.transfer.selector, address(this), claimedAmount));
+        executionCallDatas[0] = ExecutionLib.encodeSingle(tokenIn, 0, abi.encodeWithSelector(IERC20.transfer.selector, recipient, amountToTransfer));
 
         ModeCode[] memory encodedModes = new ModeCode[](1);
         encodedModes[0] = ModeLib.encodeSimpleSingle();
 
-        uint256 balanceBefore = IERC20(tokenIn).balanceOf(address(this));
+        // Attempt to redeem the delegation and make the payment directly to the recipient
+        args.delegationManager.redeemDelegations(permissionContexts, encodedModes, executionCallDatas);
 
-        // Attempt to redeem the delegation and make the payment
-        delegationManager.redeemDelegations(permissionContexts, encodedModes, executionCallDatas);
+        // Ensure the recipient received the payment
+        uint256 balanceAfter = IERC20(tokenIn).balanceOf(recipient);
+        require(balanceAfter >= balanceBefore + amountToTransfer, "SwapOfferEnforcer:payment-not-received");
 
-        // Ensure the contract received the payment
-        uint256 balanceAfter = IERC20(tokenIn).balanceOf(address(this));
-        require(balanceAfter >= balanceBefore + claimedAmount, "SwapOfferEnforcer:payment-not-received");
-
-        // Transfer the received tokens to the recipient
-        require(IERC20(tokenIn).transfer(recipient, claimedAmount), "SwapOfferEnforcer:transfer-to-recipient-failed");
+        // Reset the swap offer
+        delete swapOffers[address(args.delegationManager)][_delegationHash];
     }
 
     /**
@@ -131,13 +147,8 @@ contract SwapOfferEnforcer is CaveatEnforcer {
      * @return recipient_ The address to receive the input tokens.
      */
     function getTermsInfo(bytes calldata _terms) public pure returns (address tokenIn_, address tokenOut_, uint256 amountIn_, uint256 amountOut_, address recipient_) {
-        require(_terms.length == 148, "SwapOfferEnforcer:invalid-terms-length");
-
-        tokenIn_ = address(bytes20(_terms[:20]));
-        tokenOut_ = address(bytes20(_terms[20:40]));
-        amountIn_ = uint256(bytes32(_terms[40:72]));
-        amountOut_ = uint256(bytes32(_terms[72:104]));
-        recipient_ = address(bytes20(_terms[104:124]));
+        SwapOfferTerms memory terms = abi.decode(_terms, (SwapOfferTerms));
+        return (terms.tokenIn, terms.tokenOut, terms.amountIn, terms.amountOut, terms.recipient);
     }
 
     /**
@@ -162,24 +173,23 @@ contract SwapOfferEnforcer is CaveatEnforcer {
 
         require(callData_.length == 68, "SwapOfferEnforcer:invalid-execution-length");
 
-        (address tokenIn_, address tokenOut_, uint256 amountIn_, uint256 amountOut_, address recipient_) = getTermsInfo(_terms);
-
+        SwapOfferTerms memory terms = abi.decode(_terms, (SwapOfferTerms));
         SwapOffer storage offer = swapOffers[msg.sender][_delegationHash];
         if (offer.tokenIn == address(0)) {
             // Initialize the offer if it doesn't exist
-            offer.tokenIn = tokenIn_;
-            offer.tokenOut = tokenOut_;
-            offer.amountIn = amountIn_;
-            offer.amountOut = amountOut_;
-            offer.recipient = recipient_;
+            offer.tokenIn = terms.tokenIn;
+            offer.tokenOut = terms.tokenOut;
+            offer.amountIn = terms.amountIn;
+            offer.amountOut = terms.amountOut;
+            offer.recipient = terms.recipient;
         } else {
-            require(offer.tokenIn == tokenIn_ && offer.tokenOut == tokenOut_ &&
-                    offer.amountIn == amountIn_ && offer.amountOut == amountOut_ &&
-                    offer.recipient == recipient_,
+            require(offer.tokenIn == terms.tokenIn && offer.tokenOut == terms.tokenOut &&
+                    offer.amountIn == terms.amountIn && offer.amountOut == terms.amountOut &&
+                    offer.recipient == terms.recipient,
                     "SwapOfferEnforcer:terms-mismatch");
         }
 
-        require(target_ == tokenOut_, "SwapOfferEnforcer:invalid-token");
+        require(target_ == terms.tokenOut, "SwapOfferEnforcer:invalid-token");
 
         bytes4 selector = bytes4(callData_[0:4]);
         require(selector == IERC20.transfer.selector || selector == IERC20.transferFrom.selector, "SwapOfferEnforcer:invalid-method");

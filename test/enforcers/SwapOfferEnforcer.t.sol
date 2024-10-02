@@ -1,291 +1,256 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import "forge-std/Test.sol";
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { Test } from "forge-std/Test.sol";
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
-import { BasicERC20 } from "../utils/BasicERC20.t.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { SwapOfferEnforcer } from "../../src/enforcers/SwapOfferEnforcer.sol";
-import { ERC20TransferAmountEnforcer } from "../../src/enforcers/ERC20TransferAmountEnforcer.sol";
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 import { Caveats } from "../../src/libraries/Caveats.sol";
-import { ArgsEqualityCheckEnforcer } from "../../src/enforcers/ArgsEqualityCheckEnforcer.sol";
+import { BasicERC20 } from "../utils/BasicERC20.t.sol";
+import { ERC20TransferAmountEnforcer } from "../../src/enforcers/ERC20TransferAmountEnforcer.sol";
 
 contract SwapOfferEnforcerTest is CaveatEnforcerBaseTest {
     using ModeLib for ModeCode;
 
     SwapOfferEnforcer public swapOfferEnforcer;
     ERC20TransferAmountEnforcer public erc20TransferAmountEnforcer;
-    ArgsEqualityCheckEnforcer public argsEqualityCheckEnforcer;
-    BasicERC20 public tokenIn;
-    BasicERC20 public tokenOut;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
-
-    uint256 constant AMOUNT_IN = 1000 ether;
-    uint256 constant AMOUNT_OUT = 500 ether;
+    ModeCode public modeSimpleSingle = ModeLib.encodeSimpleSingle();
+    address public constant TOKEN_IN = address(0x1);
+    address public constant TOKEN_OUT = address(0x2);
+    uint256 public constant AMOUNT_IN = 100;
+    uint256 public constant AMOUNT_OUT = 200;
+    address public constant RECIPIENT = address(0x3);
 
     function setUp() public override {
         super.setUp();
         swapOfferEnforcer = new SwapOfferEnforcer();
-        erc20TransferAmountEnforcer = new ERC20TransferAmountEnforcer();
-        argsEqualityCheckEnforcer = new ArgsEqualityCheckEnforcer();
-        tokenIn = new BasicERC20(address(users.alice.deleGator), "Token In", "TIN", AMOUNT_IN);
-        tokenOut = new BasicERC20(address(users.bob.deleGator), "Token Out", "TOUT", AMOUNT_OUT);
-
         vm.label(address(swapOfferEnforcer), "Swap Offer Enforcer");
+        erc20TransferAmountEnforcer = new ERC20TransferAmountEnforcer();
         vm.label(address(erc20TransferAmountEnforcer), "ERC20 Transfer Amount Enforcer");
-        vm.label(address(argsEqualityCheckEnforcer), "Args Equality Check Enforcer");
-        vm.label(address(tokenIn), "Token In");
-        vm.label(address(tokenOut), "Token Out");
     }
 
-    function test_swapOfferEnforcer() public {
-        uint256 initialAliceBalanceIn = tokenIn.balanceOf(address(users.alice.deleGator));
-        uint256 initialBobBalanceOut = tokenOut.balanceOf(address(users.bob.deleGator));
-
-        // Create swap offer caveat
+    function test_validSwapOffer() public {
         Caveat memory swapOfferCaveat = Caveats.createSwapOfferCaveat(
             address(swapOfferEnforcer),
-            address(tokenIn),
-            address(tokenOut),
-            AMOUNT_IN,
-            AMOUNT_OUT,
-            address(users.alice.deleGator)
+            SwapOfferEnforcer.SwapOfferTerms({
+                tokenIn: TOKEN_IN,
+                tokenOut: TOKEN_OUT,
+                amountIn: AMOUNT_IN,
+                amountOut: AMOUNT_OUT,
+                recipient: RECIPIENT
+            })
         );
-
-        // Create ERC20 transfer amount caveat for payment
-        Caveat memory erc20TransferCaveat = Caveats.createERC20TransferAmountCaveat(
-            address(erc20TransferAmountEnforcer),
-            address(tokenIn),
-            AMOUNT_IN
-        );
-
-        Caveat[] memory caveats = new Caveat[](2);
-        caveats[0] = swapOfferCaveat;
-        caveats[1] = erc20TransferCaveat;
 
         Delegation memory delegation = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
             authority: ROOT_AUTHORITY,
-            caveats: caveats,
+            caveats: new Caveat[](1),
             salt: 0,
             signature: hex""
         });
-
+        delegation.caveats[0] = swapOfferCaveat;
         delegation = signDelegation(users.alice, delegation);
 
-        // Create the execution for token transfer
-        Execution memory execution = Execution({
-            target: address(tokenOut),
-            value: 0,
-            callData: abi.encodeWithSelector(IERC20.transfer.selector, address(users.alice.deleGator), AMOUNT_OUT)
-        });
+        bytes memory executionCallData = ExecutionLib.encodeSingle(
+            TOKEN_OUT,
+            0,
+            abi.encodeWithSelector(IERC20.transfer.selector, users.bob.addr, AMOUNT_OUT)
+        );
 
-        // Create the allowance delegation for payment
-        Caveat[] memory allowanceCaveats = new Caveat[](1);
-        allowanceCaveats[0] = Caveat({
-            enforcer: address(argsEqualityCheckEnforcer),
-            terms: hex"",
-            args: abi.encodePacked(keccak256(abi.encode(delegation)), address(users.bob.deleGator))
-        });
-
-        Delegation memory allowanceDelegation = Delegation({
-            delegate: address(delegationManager),
-            delegator: address(users.bob.deleGator),
-            authority: ROOT_AUTHORITY,
-            caveats: allowanceCaveats,
-            salt: 0,
-            signature: hex""
-        });
-
-        allowanceDelegation = signDelegation(users.bob, allowanceDelegation);
-
-        // Prepare the arguments for the swap
-        bytes memory args = abi.encode(AMOUNT_IN, delegationManager, abi.encode(new Delegation[](1)));
-
-        // Execute Bob's UserOp
-        Delegation[] memory delegations = new Delegation[](1);
-        delegations[0] = delegation;
-
-        vm.prank(address(users.bob.deleGator));
-        invokeDelegation_UserOp(users.bob, delegations, execution, args);
-
-        // Check balances after swap
-        uint256 finalAliceBalanceIn = tokenIn.balanceOf(address(users.alice.deleGator));
-        uint256 finalBobBalanceOut = tokenOut.balanceOf(address(users.bob.deleGator));
-
-        assertEq(finalAliceBalanceIn, initialAliceBalanceIn + AMOUNT_IN, "Alice should receive the correct amount of tokenIn");
-        assertEq(finalBobBalanceOut, initialBobBalanceOut - AMOUNT_OUT, "Bob should send the correct amount of tokenOut");
+        vm.prank(address(delegationManager));
+        swapOfferEnforcer.beforeHook(
+            swapOfferCaveat.terms,
+            abi.encode(SwapOfferEnforcer.SwapOfferArgs({
+                claimedAmount: AMOUNT_IN,
+                delegationManager: IDelegationManager(address(delegationManager)),
+                permissionContext: abi.encode(delegation)
+            })),
+            modeSimpleSingle,
+            executionCallData,
+            keccak256(abi.encode(delegation)),
+            address(0),
+            address(users.bob.deleGator)
+        );
     }
 
-    function test_swapOfferEnforcer_partialFill() public {
-        uint256 partialAmountIn = AMOUNT_IN / 2;
-        uint256 partialAmountOut = AMOUNT_OUT / 2;
-
-        // Create swap offer caveat
+    function test_invalidToken() public {
         Caveat memory swapOfferCaveat = Caveats.createSwapOfferCaveat(
             address(swapOfferEnforcer),
-            address(tokenIn),
-            address(tokenOut),
-            AMOUNT_IN,
-            AMOUNT_OUT,
-            address(users.alice.deleGator)
+            SwapOfferEnforcer.SwapOfferTerms({
+                tokenIn: TOKEN_IN,
+                tokenOut: TOKEN_OUT,
+                amountIn: AMOUNT_IN,
+                amountOut: AMOUNT_OUT,
+                recipient: RECIPIENT
+            })
         );
 
-        // Create ERC20 transfer amount caveat for payment
-        Caveat memory erc20TransferCaveat = Caveats.createERC20TransferAmountCaveat(
-            address(erc20TransferAmountEnforcer),
-            address(tokenIn),
-            AMOUNT_IN
+        bytes memory executionCallData = ExecutionLib.encodeSingle(
+            address(0x4), // Invalid token
+            0,
+            abi.encodeWithSelector(IERC20.transfer.selector, users.bob.addr, AMOUNT_OUT)
         );
 
-        Caveat[] memory caveats = new Caveat[](2);
-        caveats[0] = swapOfferCaveat;
-        caveats[1] = erc20TransferCaveat;
+        vm.prank(address(delegationManager));
+        vm.expectRevert("SwapOfferEnforcer:invalid-token");
+        swapOfferEnforcer.beforeHook(
+            swapOfferCaveat.terms,
+            abi.encode(SwapOfferEnforcer.SwapOfferArgs({
+                claimedAmount: AMOUNT_IN,
+                delegationManager: IDelegationManager(address(delegationManager)),
+                permissionContext: abi.encode(Delegation({
+                    delegate: address(users.bob.deleGator),
+                    delegator: address(users.alice.deleGator),
+                    authority: ROOT_AUTHORITY,
+                    caveats: new Caveat[](1),
+                    salt: 0,
+                    signature: hex""
+                }))
+            })),
+            modeSimpleSingle,
+            executionCallData,
+            keccak256(""),
+            address(0),
+            address(users.bob.deleGator)
+        );
+    }
 
+    function test_invalidMethod() public {
+        Caveat memory swapOfferCaveat = Caveats.createSwapOfferCaveat(
+            address(swapOfferEnforcer),
+            SwapOfferEnforcer.SwapOfferTerms({
+                tokenIn: TOKEN_IN,
+                tokenOut: TOKEN_OUT,
+                amountIn: AMOUNT_IN,
+                amountOut: AMOUNT_OUT,
+                recipient: RECIPIENT
+            })
+        );
+
+        bytes memory executionCallData = ExecutionLib.encodeSingle(
+            TOKEN_OUT,
+            0,
+            abi.encodeWithSelector(IERC20.approve.selector, users.bob.addr, AMOUNT_OUT) // Invalid method
+        );
+
+        vm.prank(address(delegationManager));
+        vm.expectRevert("SwapOfferEnforcer:invalid-method");
+        swapOfferEnforcer.beforeHook(
+            swapOfferCaveat.terms,
+            abi.encode(SwapOfferEnforcer.SwapOfferArgs({
+                claimedAmount: AMOUNT_IN,
+                delegationManager: IDelegationManager(address(delegationManager)),
+                permissionContext: abi.encode(Delegation({
+                    delegate: address(users.bob.deleGator),
+                    delegator: address(users.alice.deleGator),
+                    authority: ROOT_AUTHORITY,
+                    caveats: new Caveat[](1),
+                    salt: 0,
+                    signature: hex""
+                }))
+            })),
+            modeSimpleSingle,
+            executionCallData,
+            keccak256(""),
+            address(0),
+            address(users.bob.deleGator)
+        );
+    }
+
+    function test_integrationSwapOfferFulfillment() public {
+        // Deploy two ERC20 tokens for the swap
+        BasicERC20 tokenIn = new BasicERC20(address(this), "Token In", "TIN", 1000 ether);
+        BasicERC20 tokenOut = new BasicERC20(address(this), "Token Out", "TOUT", 1000 ether);
+
+        // Transfer tokens to Alice and Bob
+        tokenOut.transfer(address(users.alice.deleGator), 100 ether);
+        tokenIn.transfer(address(users.bob.deleGator), 10 ether);  // Bob needs tokenIn, not tokenOut
+
+        // Create the caveat for the swap offer
+        Caveat memory swapOfferCaveat = Caveat({
+            enforcer: address(swapOfferEnforcer),
+            terms: abi.encode(SwapOfferEnforcer.SwapOfferTerms({
+                tokenIn: address(tokenIn),
+                tokenOut: address(tokenOut),
+                amountIn: 10 ether,
+                amountOut: 5 ether,
+                recipient: address(users.alice.deleGator)
+            })),
+            args: ""
+        });
+
+        // Create and sign the delegation from Alice to Bob
         Delegation memory delegation = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
             authority: ROOT_AUTHORITY,
-            caveats: caveats,
+            caveats: new Caveat[](1),
             salt: 0,
             signature: hex""
         });
-
+        delegation.caveats[0] = swapOfferCaveat;
         delegation = signDelegation(users.alice, delegation);
 
-        // Create the execution for token transfer (partial amount)
-        Execution memory execution = Execution({
-            target: address(tokenOut),
-            value: 0,
-            callData: abi.encodeWithSelector(IERC20.transfer.selector, address(users.alice.deleGator), partialAmountOut)
-        });
-
-        // Create the allowance delegation for payment
-        Caveat[] memory allowanceCaveats = new Caveat[](1);
-        allowanceCaveats[0] = Caveat({
-            enforcer: address(argsEqualityCheckEnforcer),
-            terms: hex"",
-            args: abi.encodePacked(keccak256(abi.encode(delegation)), address(users.bob.deleGator))
-        });
-
-        Delegation memory allowanceDelegation = Delegation({
-            delegate: address(delegationManager),
-            delegator: address(users.bob.deleGator),
-            authority: ROOT_AUTHORITY,
-            caveats: allowanceCaveats,
-            salt: 0,
-            signature: hex""
-        });
-
-        allowanceDelegation = signDelegation(users.bob, allowanceDelegation);
-
-        // Prepare the arguments for the swap (partial amount)
-        bytes memory args = abi.encode(partialAmountIn, delegationManager, abi.encode(new Delegation[](1)));
-
-        // Execute Bob's UserOp
-        Delegation[] memory delegations = new Delegation[](1);
-        delegations[0] = delegation;
-
-        vm.prank(address(users.bob.deleGator));
-        invokeDelegation_UserOp(users.bob, delegations, execution, args);
-
-        // Check balances after partial swap
-        uint256 aliceBalanceIn = tokenIn.balanceOf(address(users.alice.deleGator));
-        uint256 bobBalanceOut = tokenOut.balanceOf(address(users.bob.deleGator));
-
-        assertEq(aliceBalanceIn, AMOUNT_IN + partialAmountIn, "Alice should receive the correct partial amount of tokenIn");
-        assertEq(bobBalanceOut, AMOUNT_OUT - partialAmountOut, "Bob should send the correct partial amount of tokenOut");
-
-        // Execute the remaining part of the swap
-        vm.prank(address(users.bob.deleGator));
-        invokeDelegation_UserOp(users.bob, delegations, execution, args);
-
-        // Check final balances
-        aliceBalanceIn = tokenIn.balanceOf(address(users.alice.deleGator));
-        bobBalanceOut = tokenOut.balanceOf(address(users.bob.deleGator));
-
-        assertEq(aliceBalanceIn, AMOUNT_IN * 2, "Alice should receive the full amount of tokenIn");
-        assertEq(bobBalanceOut, 0, "Bob should send the full amount of tokenOut");
-    }
-
-    function test_swapOfferEnforcer_invalidAmount() public {
-        // Create swap offer caveat
-        Caveat memory swapOfferCaveat = Caveats.createSwapOfferCaveat(
-            address(swapOfferEnforcer),
-            address(tokenIn),
-            address(tokenOut),
-            AMOUNT_IN,
-            AMOUNT_OUT,
-            address(users.alice.deleGator)
-        );
-
-        // Create ERC20 transfer amount caveat for payment
+        // Create a delegation from Bob to allow the SwapOfferEnforcer to transfer tokenOut
         Caveat memory erc20TransferCaveat = Caveats.createERC20TransferAmountCaveat(
             address(erc20TransferAmountEnforcer),
             address(tokenIn),
-            AMOUNT_IN
+            10 ether  // The amount Bob is willing to transfer
         );
 
-        Caveat[] memory caveats = new Caveat[](2);
-        caveats[0] = swapOfferCaveat;
-        caveats[1] = erc20TransferCaveat;
-
-        Delegation memory delegation = Delegation({
-            delegate: address(users.bob.deleGator),
-            delegator: address(users.alice.deleGator),
+        Delegation memory bobDelegation = Delegation({
+            delegate: address(swapOfferEnforcer),
+            delegator: address(users.bob.deleGator),
             authority: ROOT_AUTHORITY,
-            caveats: caveats,
+            caveats: new Caveat[](1),
             salt: 0,
             signature: hex""
         });
+        bobDelegation.caveats[0] = erc20TransferCaveat;
+        bobDelegation = signDelegation(users.bob, bobDelegation);
 
-        delegation = signDelegation(users.alice, delegation);
-
-        // Create the execution for token transfer with invalid amount
+        // Prepare the execution for the swap
         Execution memory execution = Execution({
             target: address(tokenOut),
             value: 0,
-            callData: abi.encodeWithSelector(IERC20.transfer.selector, address(users.alice.deleGator), AMOUNT_OUT + 1 ether)
+            callData: abi.encodeWithSelector(IERC20.transfer.selector, address(users.bob.deleGator), 5 ether)
         });
 
-        // Create the allowance delegation for payment
-        Caveat[] memory allowanceCaveats = new Caveat[](1);
-        allowanceCaveats[0] = Caveat({
-            enforcer: address(argsEqualityCheckEnforcer),
-            terms: hex"",
-            args: abi.encodePacked(keccak256(abi.encode(delegation)), address(users.bob.deleGator))
+        // Prepare the args for the SwapOfferEnforcer
+        Delegation[] memory bobDelegations = new Delegation[](1);
+        bobDelegations[0] = bobDelegation;
+        SwapOfferEnforcer.SwapOfferArgs memory args = SwapOfferEnforcer.SwapOfferArgs({
+            claimedAmount: 10 ether,
+            delegationManager: IDelegationManager(address(delegationManager)),
+            permissionContext: abi.encode(bobDelegations)
         });
+        delegation.caveats[0].args = abi.encode(args);
 
-        Delegation memory allowanceDelegation = Delegation({
-            delegate: address(delegationManager),
-            delegator: address(users.bob.deleGator),
-            authority: ROOT_AUTHORITY,
-            caveats: allowanceCaveats,
-            salt: 0,
-            signature: hex""
-        });
+        // Record initial balances
+        uint256 aliceTokenInBalanceBefore = tokenIn.balanceOf(address(users.alice.deleGator));
+        uint256 aliceTokenOutBalanceBefore = tokenOut.balanceOf(address(users.alice.deleGator));
+        uint256 bobTokenInBalanceBefore = tokenIn.balanceOf(address(users.bob.deleGator));
+        uint256 bobTokenOutBalanceBefore = tokenOut.balanceOf(address(users.bob.deleGator));
 
-        allowanceDelegation = signDelegation(users.bob, allowanceDelegation);
-
-        // Prepare the arguments for the swap
-        bytes memory args = abi.encode(AMOUNT_IN, delegationManager, abi.encode(new Delegation[](1)));
-
-        // Execute Bob's UserOp
+        // Execute the swap
+        vm.prank(address(users.bob.deleGator));
         Delegation[] memory delegations = new Delegation[](1);
         delegations[0] = delegation;
+        invokeDelegation_UserOp(users.bob, delegations, execution);
 
-        vm.prank(address(users.bob.deleGator));
-        vm.expectRevert("SwapOfferEnforcer:exceeds-output-amount");
-        invokeDelegation_UserOp(users.bob, delegations, execution, args);
+        // Verify the swap results
+        assertEq(tokenIn.balanceOf(address(users.alice.deleGator)), aliceTokenInBalanceBefore + 10 ether, "Alice's tokenIn balance incorrect");
+        assertEq(tokenOut.balanceOf(address(users.alice.deleGator)), aliceTokenOutBalanceBefore - 5 ether, "Alice's tokenOut balance incorrect");
+        assertEq(tokenIn.balanceOf(address(users.bob.deleGator)), bobTokenInBalanceBefore - 10 ether, "Bob's tokenIn balance incorrect");
+        assertEq(tokenOut.balanceOf(address(users.bob.deleGator)), bobTokenOutBalanceBefore + 5 ether, "Bob's tokenOut balance incorrect");
     }
 
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {

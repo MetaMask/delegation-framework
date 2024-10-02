@@ -288,16 +288,11 @@ library Caveats {
             args: ""
         });
     }
-
     function createSwapOfferCaveat(
         address enforcerAddress,
-        address tokenIn,
-        address tokenOut,
-        uint256 amountIn,
-        uint256 amountOut,
-        address recipient
+        SwapOfferEnforcer.SwapOfferTerms memory swapOfferTerms
     ) internal pure returns (Caveat memory) {
-        bytes memory terms = abi.encodePacked(tokenIn, tokenOut, amountIn, amountOut, recipient);
+        bytes memory terms = abi.encode(swapOfferTerms);
         
         return Caveat({
             enforcer: enforcerAddress,
