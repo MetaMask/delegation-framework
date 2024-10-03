@@ -13,6 +13,7 @@ import { LimitedCallsEnforcer } from "../../src/enforcers/LimitedCallsEnforcer.s
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
+import { Caveats } from "../../src/libraries/Caveats.sol";
 
 contract LimitedCallsEnforcerTest is CaveatEnforcerBaseTest {
     using ModeLib for ModeCode;
@@ -48,9 +49,9 @@ contract LimitedCallsEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         uint256 transactionsLimit_ = 1;
-        bytes memory inputTerms_ = abi.encodePacked(transactionsLimit_);
+        Caveat memory caveat_ = Caveats.createLimitedCallsCaveat(address(limitedCallsEnforcer), transactionsLimit_);
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(limitedCallsEnforcer), terms: inputTerms_ });
+        caveats_[0] = caveat_;
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
@@ -65,12 +66,12 @@ contract LimitedCallsEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectEmit(true, true, true, true, address(limitedCallsEnforcer));
         emit IncreasedCount(address(delegationManager), address(0), delegationHash_, 1, 1);
-        limitedCallsEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0));
+        limitedCallsEnforcer.beforeHook(caveat_.terms, hex"", mode, executionCallData_, delegationHash_, address(0), address(0));
 
         assertEq(limitedCallsEnforcer.callCounts(address(delegationManager), delegationHash_), transactionsLimit_);
     }
 
-    ////////////////////// Invalid cases //////////////////////
+    ////////////////////// Invalid cases //////////////////////////////
 
     // should FAIL to INVOKE method ABOVE limit number
     function test_methodFailsIfCalledAboveLimitNumber() public {
@@ -83,9 +84,9 @@ contract LimitedCallsEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         uint256 transactionsLimit_ = 1;
-        bytes memory inputTerms_ = abi.encodePacked(transactionsLimit_);
+        Caveat memory caveat_ = Caveats.createLimitedCallsCaveat(address(limitedCallsEnforcer), transactionsLimit_);
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(limitedCallsEnforcer), terms: inputTerms_ });
+        caveats_[0] = caveat_;
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
@@ -98,9 +99,9 @@ contract LimitedCallsEnforcerTest is CaveatEnforcerBaseTest {
         bytes32 delegationHash_ = EncoderLib._getDelegationHash(delegation_);
         assertEq(limitedCallsEnforcer.callCounts(address(delegationManager), delegationHash_), 0);
         vm.startPrank(address(delegationManager));
-        limitedCallsEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0));
+        limitedCallsEnforcer.beforeHook(caveat_.terms, hex"", mode, executionCallData_, delegationHash_, address(0), address(0));
         vm.expectRevert("LimitedCallsEnforcer:limit-exceeded");
-        limitedCallsEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0));
+        limitedCallsEnforcer.beforeHook(caveat_.terms, hex"", mode, executionCallData_, delegationHash_, address(0), address(0));
         assertEq(limitedCallsEnforcer.callCounts(address(delegationManager), delegationHash_), transactionsLimit_);
     }
 
@@ -118,7 +119,7 @@ contract LimitedCallsEnforcerTest is CaveatEnforcerBaseTest {
         limitedCallsEnforcer.beforeHook(terms_, hex"", mode, executionCallData_, bytes32(0), address(0), address(0));
     }
 
-    ////////////////////// Integration //////////////////////
+    ////////////////////// Integration //////////////////////////////
 
     // should FAIL to increment counter ABOVE limit number Integration
     function test_methodFailsAboveLimitIntegration() public {
@@ -130,9 +131,10 @@ contract LimitedCallsEnforcerTest is CaveatEnforcerBaseTest {
             value: 0,
             callData: abi.encodeWithSelector(Counter.increment.selector)
         });
-        bytes memory inputTerms_ = abi.encodePacked(uint256(1));
+        uint256 transactionsLimit_ = 1;
+        Caveat memory caveat_ = Caveats.createLimitedCallsCaveat(address(limitedCallsEnforcer), transactionsLimit_);
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(limitedCallsEnforcer), terms: inputTerms_ });
+        caveats_[0] = caveat_;
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),

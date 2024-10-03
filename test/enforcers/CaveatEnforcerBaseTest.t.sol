@@ -5,6 +5,7 @@ import { BaseTest } from "../utils/BaseTest.t.sol";
 import { Implementation, SignatureType } from "../utils/Types.t.sol";
 import { Counter } from "../utils/Counter.t.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
+import { Caveats } from "../../src/libraries/Caveats.sol";
 
 abstract contract CaveatEnforcerBaseTest is BaseTest {
     constructor() {
