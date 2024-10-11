@@ -21,6 +21,7 @@ import { RedeemerEnforcer } from "../enforcers/RedeemerEnforcer.sol";
 import { TimestampEnforcer } from "../enforcers/TimestampEnforcer.sol";
 import { ValueLteEnforcer } from "../enforcers/ValueLteEnforcer.sol";
 import { SwapOfferEnforcer } from "../enforcers/SwapOfferEnforcer.sol";
+import { MultiPointOfferEnforcer } from "../enforcers/MultiPointOfferEnforcer.sol";
 
 /**
   @title Caveats
@@ -293,6 +294,29 @@ library Caveats {
         SwapOfferEnforcer.SwapOfferTerms memory swapOfferTerms
     ) internal pure returns (Caveat memory) {
         bytes memory terms = abi.encode(swapOfferTerms);
+        
+        return Caveat({
+            enforcer: enforcerAddress,
+            terms: terms,
+            args: ""
+        });
+    }
+
+    function createMultiPointOfferCaveat(
+        address enforcerAddress,
+        address tokenIn,
+        address tokenOut,
+        MultiPointOfferEnforcer.Amount[] memory amounts,
+        address recipient
+    ) internal pure returns (Caveat memory) {
+        MultiPointOfferEnforcer.SwapOffer memory offer = MultiPointOfferEnforcer.SwapOffer({
+            tokenIn: tokenIn,
+            tokenOut: tokenOut,
+            amounts: amounts,
+            recipient: recipient
+        });
+        
+        bytes memory terms = abi.encode(offer);
         
         return Caveat({
             enforcer: enforcerAddress,
