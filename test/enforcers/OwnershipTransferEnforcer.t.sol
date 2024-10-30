@@ -90,8 +90,11 @@ contract OwnershipTransferEnforcerTest is CaveatEnforcerBaseTest {
     // Reverts if the method called is not transferOwnership
     function test_notAllow_invalidMethod() public {
         bytes memory terms_ = abi.encodePacked(mockContract);
-        transferOwnershipExecution =
-            Execution({ target: mockContract, value: 0, callData: abi.encodeWithSelector(bytes4(keccak256("someOtherMethod()"))) });
+        transferOwnershipExecution = Execution({
+            target: mockContract,
+            value: 0,
+            callData: abi.encodeWithSelector(bytes4(keccak256("someOtherMethod(address)")), address(0))
+        });
         transferOwnershipExecutionCallData = ExecutionLib.encodeSingle(
             transferOwnershipExecution.target, transferOwnershipExecution.value, transferOwnershipExecution.callData
         );
