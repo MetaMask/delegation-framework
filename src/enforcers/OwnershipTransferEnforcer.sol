@@ -72,10 +72,11 @@ contract OwnershipTransferEnforcer is CaveatEnforcer {
         returns (address newOwner_)
     {
         (address target_,, bytes calldata callData_) = _executionCallData.decodeSingle();
-        bytes4 selector = bytes4(callData_[0:4]);
-        require(selector == IERC173.transferOwnership.selector, "OwnershipTransferEnforcer:invalid-method");
 
         require(callData_.length == 36, "OwnershipTransferEnforcer:invalid-execution-length");
+
+        bytes4 selector_ = bytes4(callData_[0:4]);
+        require(selector_ == IERC173.transferOwnership.selector, "OwnershipTransferEnforcer:invalid-method");
 
         address targetContract_ = getTermsInfo(_terms);
         require(targetContract_ == target_, "OwnershipTransferEnforcer:invalid-contract");
