@@ -36,7 +36,7 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
     function setUp() public override {
         super.setUp();
         allowedCalldataEnforcer = new AllowedCalldataEnforcer();
-        vm.label(address(allowedCalldataEnforcer), "Equal Parameters Enforcer");
+        vm.label(address(allowedCalldataEnforcer), "Allowed Calldata Enforcer");
         basicCF20 = new BasicERC20(address(users.alice.deleGator), "TestToken1", "TestToken1", 100 ether);
         basicCF721 = new BasicCF721(address(users.alice.deleGator), "TestNFT", "TestNFT", "");
     }
