@@ -28,7 +28,7 @@ import { OwnershipTransferEnforcer } from "../src/enforcers/OwnershipTransferEnf
 import { RedeemerEnforcer } from "../src/enforcers/RedeemerEnforcer.sol";
 import { TimestampEnforcer } from "../src/enforcers/TimestampEnforcer.sol";
 import { ValueLteEnforcer } from "../src/enforcers/ValueLteEnforcer.sol";
-
+import { ERC20RoyaltyEnforcer } from "../src/enforcers/ERC20RoyaltyEnforcer.sol";
 /**
  * @title DeployCaveatEnforcers
  * @notice Deploys the suite of caveat enforcers to be used with the Delegation Framework.
@@ -36,6 +36,7 @@ import { ValueLteEnforcer } from "../src/enforcers/ValueLteEnforcer.sol";
  * @dev run the script with:
  * forge script script/DeployCaveatEnforcers.s.sol --rpc-url <your_rpc_url> --private-key $PRIVATE_KEY --broadcast
  */
+
 contract DeployCaveatEnforcers is Script {
     bytes32 salt;
     IEntryPoint entryPoint;
@@ -126,6 +127,9 @@ contract DeployCaveatEnforcers is Script {
 
         deployedAddress = address(new ValueLteEnforcer{ salt: salt }());
         console2.log("ValueLteEnforcer: %s", deployedAddress);
+
+        deployedAddress = address(new ERC20RoyaltyEnforcer{ salt: salt }());
+        console2.log("ERC20RoyaltyEnforcer: %s", deployedAddress);
 
         vm.stopBroadcast();
     }

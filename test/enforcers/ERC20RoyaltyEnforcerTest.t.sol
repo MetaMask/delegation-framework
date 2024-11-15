@@ -41,30 +41,26 @@ contract ERC20RoyaltyEnforcerTest is CaveatEnforcerBaseTest {
     /// @notice Validates that terms and args are decoded correctly
     /// @dev Tests the decoding of royalty recipients, amounts, and redeemer address
     function test_decodedTheTerms() public {
-        address redeemer = address(users.eve.deleGator);
         bytes memory terms = abi.encode(address(users.carol.deleGator), uint256(200), address(users.dave.deleGator), uint256(100));
-        bytes memory args = abi.encode(redeemer);
 
-        (ERC20RoyaltyEnforcer.RoyaltyInfo[] memory royalties, address decodedRedeemer) = enforcer.getTermsInfo(terms, args);
+        (ERC20RoyaltyEnforcer.RoyaltyInfo[] memory royalties) = enforcer.getTermsInfo(terms);
 
         assertEq(royalties.length, 2);
         assertEq(royalties[0].recipient, address(users.carol.deleGator));
         assertEq(royalties[0].amount, 200);
         assertEq(royalties[1].recipient, address(users.dave.deleGator));
         assertEq(royalties[1].amount, 100);
-        assertEq(decodedRedeemer, redeemer);
     }
 
     /// @notice Tests a complete valid royalty execution flow
     /// @dev Verifies token transfers and final balances for all parties
     function test_validRoyaltyExecution() public {
-        address redeemer = address(users.eve.deleGator);
         uint256 initialAmount = 1000;
 
         token.mint(address(users.alice.deleGator), initialAmount);
 
         bytes memory terms = abi.encode(address(users.carol.deleGator), uint256(200), address(users.dave.deleGator), uint256(100));
-        bytes memory args = abi.encode(redeemer);
+        bytes memory args = hex"";
 
         Execution memory execution = Execution({
             target: address(token),
@@ -88,19 +84,18 @@ contract ERC20RoyaltyEnforcerTest is CaveatEnforcerBaseTest {
 
         assertEq(token.balanceOf(address(users.carol.deleGator)), 200);
         assertEq(token.balanceOf(address(users.dave.deleGator)), 100);
-        assertEq(token.balanceOf(redeemer), 700);
+        assertEq(token.balanceOf(address(users.bob.deleGator)), 700);
     }
 
     /// @notice Tests the enforcer's locking mechanism
     /// @dev Verifies lock/unlock behavior and revert on locked state
     function test_enforcerLocking() public {
-        address redeemer = address(users.eve.deleGator);
         uint256 initialAmount = 1000;
 
         token.mint(address(users.alice.deleGator), initialAmount);
 
         bytes memory terms = abi.encode(address(users.carol.deleGator), uint256(200), address(users.dave.deleGator), uint256(100));
-        bytes memory args = abi.encode(redeemer);
+        bytes memory args = hex"";
 
         Execution memory execution = Execution({
             target: address(token),
@@ -138,13 +133,12 @@ contract ERC20RoyaltyEnforcerTest is CaveatEnforcerBaseTest {
     /// @notice Tests balance caching functionality
     /// @dev Verifies balances are properly cached in beforeHook
     function test_balanceCaching() public {
-        address redeemer = address(users.eve.deleGator);
         uint256 initialAmount = 1000;
 
         token.mint(address(users.alice.deleGator), initialAmount);
 
         bytes memory terms = abi.encode(address(users.carol.deleGator), uint256(200), address(users.dave.deleGator), uint256(100));
-        bytes memory args = abi.encode(redeemer);
+        bytes memory args = hex"";
 
         Execution memory execution = Execution({
             target: address(token),
@@ -185,20 +179,33 @@ contract ERC20RoyaltyEnforcerTest is CaveatEnforcerBaseTest {
     /// @dev Terms must be multiple of 64 bytes (address + uint256)
     function test_revertOnInvalidTermsLength() public {
         bytes memory invalidTerms = abi.encode(address(users.carol.deleGator), uint256(200), address(users.dave.deleGator));
-        bytes memory args = abi.encode(address(users.eve.deleGator));
 
         vm.expectRevert("ERC20RoyaltyEnforcer:invalid-terms-length");
-        enforcer.getTermsInfo(invalidTerms, args);
+        enforcer.getTermsInfo(invalidTerms);
     }
 
-    /// @notice Tests reversion on invalid redeemer address
-    /// @dev Should revert when redeemer is zero address
-    function test_revertOnInvalidRedeemer() public {
-        bytes memory terms = abi.encode(address(users.carol.deleGator), uint256(200), address(users.dave.deleGator), uint256(100));
-        bytes memory invalidArgs = abi.encode(address(0));
+    /// @notice Tests reversion on empty royalties array
+    /// @dev Should revert when no royalty recipients are specified
+    function test_revertOnEmptyRoyalties() public {
+        uint256 initialAmount = 1000;
+        token.mint(address(users.alice.deleGator), initialAmount);
 
-        vm.expectRevert("ERC20RoyaltyEnforcer:invalid-redeemer");
-        enforcer.getTermsInfo(terms, invalidArgs);
+        // Create empty terms (no royalty recipients)
+        bytes memory terms = bytes("");
+        bytes memory args = hex"";
+
+        Execution memory execution = Execution({
+            target: address(token),
+            value: 0,
+            callData: abi.encodeWithSelector(IERC20.transfer.selector, address(enforcer), initialAmount)
+        });
+        bytes memory executionCallData = ExecutionLib.encodeSingle(execution.target, execution.value, execution.callData);
+
+        vm.startPrank(address(delegationManager));
+        vm.expectRevert("ERC20RoyaltyEnforcer:invalid-royalties-length");
+        enforcer.beforeHook(
+            terms, args, mode, executionCallData, bytes32(0), address(users.alice.deleGator), address(users.bob.deleGator)
+        );
     }
 
     /// @notice Tests reversion on invalid transfer recipient
@@ -225,6 +232,35 @@ contract ERC20RoyaltyEnforcerTest is CaveatEnforcerBaseTest {
         );
     }
 
+    /// @notice Tests reversion on invalid redeemer address
+    /// @dev Should revert when redeemer is zero address
+    function test_revertOnInvalidRedeemer() public {
+        uint256 initialAmount = 1000;
+        token.mint(address(users.alice.deleGator), initialAmount);
+
+        bytes memory terms = abi.encode(address(users.carol.deleGator), uint256(200));
+        bytes memory args = hex"";
+
+        Execution memory execution = Execution({
+            target: address(token),
+            value: 0,
+            callData: abi.encodeWithSelector(IERC20.transfer.selector, address(enforcer), initialAmount)
+        });
+        bytes memory executionCallData = ExecutionLib.encodeSingle(execution.target, execution.value, execution.callData);
+
+        vm.startPrank(address(delegationManager));
+        vm.expectRevert("ERC20RoyaltyEnforcer:invalid-redeemer");
+        enforcer.beforeHook(
+            terms,
+            args,
+            mode,
+            executionCallData,
+            bytes32(0),
+            address(users.alice.deleGator),
+            address(0) // Zero address redeemer
+        );
+    }
+
     /// @notice Tests reversion on insufficient transfer amount
     /// @dev Should revert when transfer amount is less than total royalties
     function test_revertOnInsufficientAmount() public {
@@ -232,7 +268,7 @@ contract ERC20RoyaltyEnforcerTest is CaveatEnforcerBaseTest {
         token.mint(address(users.alice.deleGator), initialAmount);
 
         bytes memory terms = abi.encode(address(users.carol.deleGator), uint256(200), address(users.dave.deleGator), uint256(100));
-        bytes memory args = abi.encode(address(users.eve.deleGator));
+        bytes memory args = hex"";
 
         Execution memory execution = Execution({
             target: address(token),
@@ -251,13 +287,12 @@ contract ERC20RoyaltyEnforcerTest is CaveatEnforcerBaseTest {
     /// @notice Tests reversion on invalid transfer execution
     /// @dev Should revert when token transfer fails in afterHook
     function test_revertOnInvalidTransfer() public {
-        address redeemer = address(users.eve.deleGator);
         uint256 initialAmount = 300;
 
         token.mint(address(users.alice.deleGator), initialAmount);
 
         bytes memory terms = abi.encode(address(users.carol.deleGator), uint256(200), address(users.dave.deleGator), uint256(100));
-        bytes memory args = abi.encode(redeemer);
+        bytes memory args = hex"";
 
         Execution memory execution = Execution({
             target: address(token),
@@ -272,7 +307,7 @@ contract ERC20RoyaltyEnforcerTest is CaveatEnforcerBaseTest {
         );
 
         vm.startPrank(address(users.alice.deleGator));
-        token.transfer(address(enforcer), initialAmount - 100); // transfer less than total royalties (trying to emulate a failed
+        token.transfer(address(enforcer), initialAmount - 100); // transfer less than total royalties (trying to invoke a failed
             // transfer)
 
         vm.startPrank(address(delegationManager));
@@ -285,13 +320,12 @@ contract ERC20RoyaltyEnforcerTest is CaveatEnforcerBaseTest {
     /// @notice Tests reversion on invalid selector
     /// @dev Should revert when using non-transfer selector
     function test_revertOnInvalidSelector() public {
-        address redeemer = address(users.eve.deleGator);
         uint256 initialAmount = 1000;
 
         token.mint(address(users.alice.deleGator), initialAmount);
 
         bytes memory terms = abi.encode(address(users.carol.deleGator), uint256(200), address(users.dave.deleGator), uint256(100));
-        bytes memory args = abi.encode(redeemer);
+        bytes memory args = hex"";
 
         // Use approve selector instead of transfer
         Execution memory execution = Execution({
@@ -311,13 +345,12 @@ contract ERC20RoyaltyEnforcerTest is CaveatEnforcerBaseTest {
     /// @notice Tests reversion on non-zero value
     /// @dev Should revert when execution includes ETH value
     function test_revertOnNonZeroValue() public {
-        address redeemer = address(users.eve.deleGator);
         uint256 initialAmount = 1000;
 
         token.mint(address(users.alice.deleGator), initialAmount);
 
         bytes memory terms = abi.encode(address(users.carol.deleGator), uint256(200), address(users.dave.deleGator), uint256(100));
-        bytes memory args = abi.encode(redeemer);
+        bytes memory args = hex"";
 
         Execution memory execution = Execution({
             target: address(token),
@@ -336,10 +369,8 @@ contract ERC20RoyaltyEnforcerTest is CaveatEnforcerBaseTest {
     /// @notice Tests reversion on invalid calldata length
     /// @dev Should revert when calldata is too short
     function test_revertOnInvalidCalldataLength() public {
-        address redeemer = address(users.eve.deleGator);
-
         bytes memory terms = abi.encode(address(users.carol.deleGator), uint256(200), address(users.dave.deleGator), uint256(100));
-        bytes memory args = abi.encode(redeemer);
+        bytes memory args = hex"";
 
         Execution memory execution = Execution({
             target: address(token),

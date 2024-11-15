@@ -58,12 +58,19 @@ contract ERC20RoyaltyEnforcer is CaveatEnforcer {
         bytes calldata _executionCallData,
         bytes32 _delegationHash,
         address _delegator,
-        address
+        address _redeemer
     )
         public
         override
         onlySingleExecutionMode(_mode)
     {
+        // Validate redeemer is not zero address
+        require(_redeemer != address(0), "ERC20RoyaltyEnforcer:invalid-redeemer");
+
+        // Validate the terms info length is more than zero
+        RoyaltyInfo[] memory royalties_ = getTermsInfo(_terms);
+        require(royalties_.length > 0, "ERC20RoyaltyEnforcer:invalid-royalties-length");
+
         // Get execution details
         ExecutionDetails memory details = _parseExecution(_executionCallData);
 
@@ -88,19 +95,18 @@ contract ERC20RoyaltyEnforcer is CaveatEnforcer {
     /// @dev Distributes royalties and sends remaining tokens to redeemer
     function afterHook(
         bytes calldata _terms,
-        bytes calldata _args,
+        bytes calldata,
         ModeCode,
-        bytes calldata _executionCallData,
+        bytes calldata _executionCalldata,
         bytes32 _delegationHash,
         address _delegator,
-        address
+        address _redeemer
     )
         public
         override
     {
-        ExecutionDetails memory details = _parseExecution(_executionCallData);
-        address redeemer = abi.decode(_args, (address));
-        require(redeemer != address(0), "ERC20RoyaltyEnforcer:invalid-redeemer");
+        ExecutionDetails memory details = _parseExecution(_executionCalldata);
+        require(_redeemer != address(0), "ERC20RoyaltyEnforcer:invalid-redeemer");
 
         // Process royalties
         _distributeRoyalties(details.token, _terms);
@@ -108,7 +114,7 @@ contract ERC20RoyaltyEnforcer is CaveatEnforcer {
         // Send remaining balance
         uint256 remaining = IERC20(details.token).balanceOf(address(this));
         if (remaining > 0) {
-            require(IERC20(details.token).transfer(redeemer, remaining), "ERC20RoyaltyEnforcer:invalid-transfer");
+            require(IERC20(details.token).transfer(_redeemer, remaining), "ERC20RoyaltyEnforcer:invalid-transfer");
         }
 
         // Unlock
@@ -120,17 +126,8 @@ contract ERC20RoyaltyEnforcer is CaveatEnforcer {
 
     /// @notice Returns decoded terms info
     /// @param _terms Encoded royalty terms
-    /// @param _args Encoded redeemer address
     /// @return royalties_ Array of royalty info structs
-    /// @return redeemer_ Address of the redeemer
-    function getTermsInfo(
-        bytes calldata _terms,
-        bytes calldata _args
-    )
-        public
-        pure
-        returns (RoyaltyInfo[] memory royalties_, address redeemer_)
-    {
+    function getTermsInfo(bytes calldata _terms) public pure returns (RoyaltyInfo[] memory royalties_) {
         require(_terms.length % 64 == 0, "ERC20RoyaltyEnforcer:invalid-terms-length");
         uint256 count = _terms.length / 64;
         royalties_ = new RoyaltyInfo[](count);
@@ -139,9 +136,6 @@ contract ERC20RoyaltyEnforcer is CaveatEnforcer {
             (address recipient, uint256 amount) = abi.decode(_terms[(i * 64):((i + 1) * 64)], (address, uint256));
             royalties_[i] = RoyaltyInfo({ recipient: recipient, amount: amount });
         }
-
-        redeemer_ = abi.decode(_args, (address));
-        require(redeemer_ != address(0), "ERC20RoyaltyEnforcer:invalid-redeemer");
     }
 
     ////////////////////////////// Internal Methods //////////////////////////////
