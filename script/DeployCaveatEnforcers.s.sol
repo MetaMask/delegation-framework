@@ -45,7 +45,7 @@ contract DeployCaveatEnforcers is Script {
     function setUp() public {
         salt = bytes32(abi.encodePacked(vm.envString("SALT")));
         entryPoint = IEntryPoint(vm.envAddress("ENTRYPOINT_ADDRESS"));
-        delegationManager = IDelegationManager(vm.envAddress("DELEGATION_MANAGER"));
+        delegationManager = IDelegationManager(vm.envAddress("DELEGATION_MANAGER_ADDRESS"));
 
         deployer = msg.sender;
         console2.log("~~~");
@@ -71,9 +71,6 @@ contract DeployCaveatEnforcers is Script {
 
         deployedAddress = address(new AllowedTargetsEnforcer{ salt: salt }());
         console2.log("AllowedTargetsEnforcer: %s", deployedAddress);
-
-        deployedAddress = address(new ArgsEqualityCheckEnforcer{ salt: salt }());
-        console2.log("ArgsEqualityCheckEnforcer: %s", deployedAddress);
 
         deployedAddress = address(new BlockNumberEnforcer{ salt: salt }());
         console2.log("BlockNumberEnforcer: %s", deployedAddress);
@@ -105,8 +102,11 @@ contract DeployCaveatEnforcers is Script {
         deployedAddress = address(new NativeBalanceGteEnforcer{ salt: salt }());
         console2.log("NativeBalanceGteEnforcer: %s", deployedAddress);
 
+        address argsEqualityCheckEnforcer = address(new ArgsEqualityCheckEnforcer{ salt: salt }());
+        console2.log("ArgsEqualityCheckEnforcer: %s", argsEqualityCheckEnforcer);
+
         deployedAddress =
-            address(new NativeTokenPaymentEnforcer{ salt: salt }(IDelegationManager(delegationManager), deployedAddress));
+            address(new NativeTokenPaymentEnforcer{ salt: salt }(IDelegationManager(delegationManager), argsEqualityCheckEnforcer));
         console2.log("NativeTokenPaymentEnforcer: %s", deployedAddress);
 
         deployedAddress = address(new NativeTokenTransferAmountEnforcer{ salt: salt }());
