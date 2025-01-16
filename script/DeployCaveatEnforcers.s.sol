@@ -62,7 +62,6 @@ contract DeployCaveatEnforcers is Script {
 
         address deployedAddress;
 
-        // Caveat Enforcers (in alphabetical order)
         deployedAddress = address(new AllowedCalldataEnforcer{ salt: salt }());
         console2.log("AllowedCalldataEnforcer: %s", deployedAddress);
 

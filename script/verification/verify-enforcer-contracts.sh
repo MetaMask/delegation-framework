@@ -88,6 +88,6 @@ for (( i=0; i<"$len"; i++ )); do
     "$CONTRACT_PATH" \
     "$CONTRACT_NAME" \
     "$ADDRESS" \
-    ""  # No constructor arguments
+    ""  \
     ""  # No library references
 done
