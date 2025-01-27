@@ -26,7 +26,7 @@ jobs:
       - name: Install Foundry
         uses: MetaMask/foundry-toolchain@v1
         with:
-          version: nightly
+          version: stable
 
       - name: Run Forge Install
         run: forge install
