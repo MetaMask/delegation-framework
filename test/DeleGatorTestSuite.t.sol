@@ -13,6 +13,8 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts/proxy/utils/UUPSUpgrade
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionHelper } from "@erc7579/core/ExecutionHelper.sol";
 
+import { IERC7821 } from "../src/interfaces/IERC7821.sol";
+import { EIP7702DeleGatorCore } from "../src/EIP7702/EIP7702DeleGatorCore.sol";
 import { BaseTest } from "./utils/BaseTest.t.sol";
 import {
     Delegation,
@@ -99,6 +101,12 @@ abstract contract DeleGatorTestSuite is BaseTest {
     event SentPrefund(address indexed sender, uint256 amount, bool success);
     event RedeemedDelegation(address indexed rootDelegator, address indexed redeemer, Delegation delegation);
 
+    /// Hook: Expect an invalid signature revert.
+    function encodeInvalidSignatureRevertReason() internal virtual returns (bytes memory);
+
+    /// Hook: Expect the revert that occurs when not called from the EntryPoint.
+    function encodeNotEntryPointRevertReason() internal virtual returns (bytes memory);
+
     ////////////////////////////// Core Functionality //////////////////////////////
 
     function test_erc165_supportsInterface() public {
@@ -108,6 +116,15 @@ abstract contract DeleGatorTestSuite is BaseTest {
         assertTrue(users.alice.deleGator.supportsInterface(type(IERC1155Receiver).interfaceId));
         assertTrue(users.alice.deleGator.supportsInterface(type(IERC721Receiver).interfaceId));
         assertTrue(users.alice.deleGator.supportsInterface(type(IDeleGatorCore).interfaceId));
+
+        if (IMPLEMENTATION == Implementation.EIP7702Stateless) {
+            assertTrue(users.alice.deleGator.supportsInterface(type(IERC7821).interfaceId));
+        }
+    }
+
+    // should allow retrieval of the delegation manager
+    function test_allow_getDelegationManager() public {
+        assertEq(address(users.alice.deleGator.delegationManager()), address(delegationManager));
     }
 
     // should allow the delegator account to receive native tokens
@@ -116,6 +133,15 @@ abstract contract DeleGatorTestSuite is BaseTest {
         (bool success_,) = address(users.alice.deleGator).call{ value: 1 ether }("");
         assertTrue(success_);
         assertEq(address(users.alice.deleGator).balance, balanceBefore_ + 1 ether);
+    }
+
+    // should allow retrieval of the domain values
+    function test_allow_getDomainValues() public {
+        (,, string memory version_, uint256 chainId_, address verifyingContract,,) = users.alice.deleGator.eip712Domain();
+
+        assertEq(version_, "1");
+        assertEq(chainId_, block.chainid);
+        assertEq(verifyingContract, address(users.alice.deleGator));
     }
 
     // should allow retrieval of the nonce
@@ -887,7 +913,8 @@ abstract contract DeleGatorTestSuite is BaseTest {
         delegations_[1] = delegation1_;
 
         vm.prank(users.carol.addr);
-        vm.expectRevert(abi.encodeWithSelector(IDelegationManager.InvalidEOASignature.selector));
+        bytes memory revertReason_ = encodeInvalidSignatureRevertReason();
+        vm.expectRevert(revertReason_);
 
         bytes[] memory permissionContexts_ = new bytes[](1);
         permissionContexts_[0] = abi.encode(delegations_);
@@ -1312,53 +1339,48 @@ abstract contract DeleGatorTestSuite is BaseTest {
 
     // should not allow an unsupported callType
     function test_notAllow_unsupportedCallType_UserOp() public {
+        ModeCode mode_ = ModeLib.encode(CallType.wrap(0x02), EXECTYPE_DEFAULT, MODE_DEFAULT, ModePayload.wrap(0x00));
         // Execute Executions
         bytes memory userOpCallData_ = abi.encodeWithSignature(
             EXECUTE_SIGNATURE,
-            ModeLib.encode(CallType.wrap(0x02), EXECTYPE_DEFAULT, MODE_DEFAULT, ModePayload.wrap(0x00)),
+            mode_,
             ExecutionLib.encodeSingle(address(aliceDeleGatorCounter), 0, abi.encodeWithSelector(Counter.increment.selector))
         );
         PackedUserOperation memory userOp_ = createUserOp(address(users.alice.deleGator), userOpCallData_);
         bytes32 userOpHash_ = getPackedUserOperationTypedDataHash(userOp_);
         userOp_.signature = signHash(users.alice, userOpHash_);
 
+        bytes memory revertReason_ = abi.encodeWithSelector(DeleGatorCore.UnsupportedCallType.selector, CallType.wrap(0x02));
         // Expect a revert event
         vm.expectEmit(false, false, false, true, address(entryPoint));
-        emit UserOperationRevertReason(
-            userOpHash_,
-            address(users.alice.deleGator),
-            0,
-            abi.encodeWithSelector(DeleGatorCore.UnsupportedCallType.selector, CallType.wrap(0x02))
-        );
+        emit UserOperationRevertReason(userOpHash_, address(users.alice.deleGator), 0, revertReason_);
 
         submitUserOp_Bundler(userOp_, false);
     }
 
     // should not allow an unsupported execType
     function test_notAllow_singleUnsupportedExecType_UserOp() public {
+        ModeCode mode_ = ModeLib.encode(CALLTYPE_SINGLE, ExecType.wrap(0x02), MODE_DEFAULT, ModePayload.wrap(0x00));
         // Execute Executions
         bytes memory userOpCallData_ = abi.encodeWithSignature(
             EXECUTE_SIGNATURE,
-            ModeLib.encode(CALLTYPE_SINGLE, ExecType.wrap(0x02), MODE_DEFAULT, ModePayload.wrap(0x00)),
+            mode_,
             ExecutionLib.encodeSingle(address(aliceDeleGatorCounter), 0, abi.encodeWithSelector(Counter.increment.selector))
         );
         PackedUserOperation memory userOp_ = createUserOp(address(users.alice.deleGator), userOpCallData_);
         bytes32 userOpHash_ = getPackedUserOperationTypedDataHash(userOp_);
         userOp_.signature = signHash(users.alice, userOpHash_);
 
+        bytes memory revertReason_ = abi.encodeWithSelector(DeleGatorCore.UnsupportedExecType.selector, ExecType.wrap(0x02));
         // Expect a revert event
         vm.expectEmit(false, false, false, true, address(entryPoint));
-        emit UserOperationRevertReason(
-            userOpHash_,
-            address(users.alice.deleGator),
-            0,
-            abi.encodeWithSelector(DeleGatorCore.UnsupportedExecType.selector, ExecType.wrap(0x02))
-        );
+        emit UserOperationRevertReason(userOpHash_, address(users.alice.deleGator), 0, revertReason_);
         submitUserOp_Bundler(userOp_, false);
     }
 
     // should not allow an unsupported execType in a batch
     function test_notAllow_multiUnsupportedExecType_UserOp() public {
+        ModeCode mode_ = ModeLib.encode(CALLTYPE_BATCH, ExecType.wrap(0x02), MODE_DEFAULT, ModePayload.wrap(0x00));
         // Create Executions
         Execution[] memory executionCallDatas_ = new Execution[](2);
         executionCallDatas_[0] = Execution({
@@ -1373,23 +1395,15 @@ abstract contract DeleGatorTestSuite is BaseTest {
         });
 
         // Execute Executions
-        bytes memory userOpCallData_ = abi.encodeWithSignature(
-            EXECUTE_SIGNATURE,
-            ModeLib.encode(CALLTYPE_BATCH, ExecType.wrap(0x02), MODE_DEFAULT, ModePayload.wrap(0x00)),
-            abi.encode(executionCallDatas_)
-        );
+        bytes memory userOpCallData_ = abi.encodeWithSignature(EXECUTE_SIGNATURE, mode_, abi.encode(executionCallDatas_));
         PackedUserOperation memory userOp_ = createUserOp(address(users.alice.deleGator), userOpCallData_);
         bytes32 userOpHash_ = getPackedUserOperationTypedDataHash(userOp_);
         userOp_.signature = signHash(users.alice, userOpHash_);
 
+        bytes memory revertReason_ = abi.encodeWithSelector(DeleGatorCore.UnsupportedExecType.selector, ExecType.wrap(0x02));
         // Expect a revert event
         vm.expectEmit(false, false, false, true, address(entryPoint));
-        emit UserOperationRevertReason(
-            userOpHash_,
-            address(users.alice.deleGator),
-            0,
-            abi.encodeWithSelector(DeleGatorCore.UnsupportedExecType.selector, ExecType.wrap(0x02))
-        );
+        emit UserOperationRevertReason(userOpHash_, address(users.alice.deleGator), 0, revertReason_);
         submitUserOp_Bundler(userOp_, false);
     }
 
@@ -1602,18 +1616,21 @@ abstract contract DeleGatorTestSuite is BaseTest {
 
     // should allow Alice to execute a single Executions in a single UserOp
     function test_allow_executeFromExecutorUnsupportedExecType() public {
-        vm.expectRevert(abi.encodeWithSelector(DeleGatorCore.UnsupportedExecType.selector, ExecType.wrap(0x02)));
+        ModeCode mode_ = ModeLib.encode(CALLTYPE_SINGLE, ExecType.wrap(0x02), MODE_DEFAULT, ModePayload.wrap(0x00));
+
+        bytes memory revertReason_ = abi.encodeWithSelector(DeleGatorCore.UnsupportedExecType.selector, ExecType.wrap(0x02));
+        vm.expectRevert(revertReason_);
 
         // Execute Execution
         vm.prank(address(delegationManager));
         users.alice.deleGator.executeFromExecutor(
-            ModeLib.encode(CALLTYPE_SINGLE, ExecType.wrap(0x02), MODE_DEFAULT, ModePayload.wrap(0x00)),
-            ExecutionLib.encodeSingle(address(aliceDeleGatorCounter), 0, abi.encodeWithSelector(Counter.increment.selector))
+            mode_, ExecutionLib.encodeSingle(address(aliceDeleGatorCounter), 0, abi.encodeWithSelector(Counter.increment.selector))
         );
     }
 
     // should allow Alice to execute a single Executions in a single UserOp
     function test_notAllow_executeFromExecutorUnsupportedExecType_batch() public {
+        ModeCode mode_ = ModeLib.encode(CALLTYPE_BATCH, ExecType.wrap(0x02), MODE_DEFAULT, ModePayload.wrap(0x00));
         // Execute Execution
         Execution[] memory executions_ = new Execution[](2);
         executions_[0] = Execution({
@@ -1627,24 +1644,24 @@ abstract contract DeleGatorTestSuite is BaseTest {
             callData: abi.encodeWithSelector(Counter.increment.selector)
         });
 
-        vm.expectRevert(abi.encodeWithSelector(DeleGatorCore.UnsupportedExecType.selector, ExecType.wrap(0x02)));
+        bytes memory revertReason_ = abi.encodeWithSelector(DeleGatorCore.UnsupportedExecType.selector, ExecType.wrap(0x02));
+        vm.expectRevert(revertReason_);
 
         vm.prank(address(delegationManager));
-        users.alice.deleGator.executeFromExecutor(
-            ModeLib.encode(CALLTYPE_BATCH, ExecType.wrap(0x02), MODE_DEFAULT, ModePayload.wrap(0x00)),
-            ExecutionLib.encodeBatch(executions_)
-        );
+        users.alice.deleGator.executeFromExecutor(mode_, ExecutionLib.encodeBatch(executions_));
     }
 
     // should allow Alice to execute a single Executions in a single UserOp
     function test_notAllow_executeFromExecutorUnsupportedCallType() public {
-        vm.expectRevert(abi.encodeWithSelector(DeleGatorCore.UnsupportedCallType.selector, CallType.wrap(0x02)));
+        ModeCode mode_ = ModeLib.encode(CallType.wrap(0x02), EXECTYPE_TRY, MODE_DEFAULT, ModePayload.wrap(0x00));
+
+        bytes memory revertReason_ = abi.encodeWithSelector(DeleGatorCore.UnsupportedCallType.selector, CallType.wrap(0x02));
+        vm.expectRevert(revertReason_);
 
         // Execute Execution
         vm.prank(address(delegationManager));
         users.alice.deleGator.executeFromExecutor(
-            ModeLib.encode(CallType.wrap(0x02), EXECTYPE_TRY, MODE_DEFAULT, ModePayload.wrap(0x00)),
-            ExecutionLib.encodeSingle(address(aliceDeleGatorCounter), 0, abi.encodeWithSelector(Counter.increment.selector))
+            mode_, ExecutionLib.encodeSingle(address(aliceDeleGatorCounter), 0, abi.encodeWithSelector(Counter.increment.selector))
         );
     }
 
@@ -2147,7 +2164,8 @@ abstract contract DeleGatorTestSuite is BaseTest {
             value: 0,
             callData: abi.encodeWithSelector(Counter.increment.selector)
         });
-        vm.expectRevert(abi.encodeWithSelector(DeleGatorCore.NotEntryPoint.selector));
+        bytes memory revertReason_ = encodeNotEntryPointRevertReason();
+        vm.expectRevert(revertReason_);
         users.alice.deleGator.execute(execution_);
     }
 
@@ -2226,23 +2244,50 @@ abstract contract DeleGatorTestSuite is BaseTest {
     }
 }
 
-contract HybridDeleGator_TestSuite_P256_Test is DeleGatorTestSuite {
+abstract contract UUPSDeleGatorTest is DeleGatorTestSuite {
+    function encodeInvalidSignatureRevertReason() internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(IDelegationManager.InvalidEOASignature.selector);
+    }
+
+    function encodeNotEntryPointRevertReason() internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(DeleGatorCore.NotEntryPoint.selector);
+    }
+}
+
+abstract contract EIP7702DeleGatorTest is DeleGatorTestSuite {
+    function encodeInvalidSignatureRevertReason() internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(IDelegationManager.InvalidERC1271Signature.selector);
+    }
+
+    function encodeNotEntryPointRevertReason() internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(DeleGatorCore.NotEntryPointOrSelf.selector);
+    }
+}
+
+contract HybridDeleGator_TestSuite_P256_Test is UUPSDeleGatorTest {
     constructor() {
         IMPLEMENTATION = Implementation.Hybrid;
         SIGNATURE_TYPE = SignatureType.RawP256;
     }
 }
 
-contract HybridDeleGator_TestSuite_EOA_Test is DeleGatorTestSuite {
+contract HybridDeleGator_TestSuite_EOA_Test is UUPSDeleGatorTest {
     constructor() {
         IMPLEMENTATION = Implementation.Hybrid;
         SIGNATURE_TYPE = SignatureType.EOA;
     }
 }
 
-contract MultiSig_TestSuite_Test is DeleGatorTestSuite {
+contract MultiSig_TestSuite_Test is UUPSDeleGatorTest {
     constructor() {
         IMPLEMENTATION = Implementation.MultiSig;
         SIGNATURE_TYPE = SignatureType.MultiSig;
+    }
+}
+
+contract EIP7702Staless_TestSuite_Test is EIP7702DeleGatorTest {
+    constructor() {
+        IMPLEMENTATION = Implementation.EIP7702Stateless;
+        SIGNATURE_TYPE = SignatureType.EOA;
     }
 }
