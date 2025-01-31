@@ -29,6 +29,8 @@ import { DelegationManager } from "../../src/DelegationManager.sol";
 import { DeleGatorCore } from "../../src/DeleGatorCore.sol";
 import { HybridDeleGator } from "../../src/HybridDeleGator.sol";
 import { MultiSigDeleGator } from "../../src/MultiSigDeleGator.sol";
+import { EIP7702StatelessDeleGator } from "../../src/EIP7702/EIP7702StatelessDeleGator.sol";
+import "forge-std/Test.sol";
 
 abstract contract BaseTest is Test {
     using ModeLib for ModeCode;
@@ -55,6 +57,7 @@ abstract contract BaseTest is Test {
     // DeleGator Implementations
     HybridDeleGator public hybridDeleGatorImpl;
     MultiSigDeleGator public multiSigDeleGatorImpl;
+    EIP7702StatelessDeleGator public eip7702StatelessDeleGatorImpl;
 
     // Users
     TestUsers internal users;
@@ -92,6 +95,9 @@ abstract contract BaseTest is Test {
 
         multiSigDeleGatorImpl = new MultiSigDeleGator(delegationManager, entryPoint);
         vm.label(address(multiSigDeleGatorImpl), "MultiSig DeleGator");
+
+        eip7702StatelessDeleGatorImpl = new EIP7702StatelessDeleGator(delegationManager, entryPoint);
+        vm.label(address(eip7702StatelessDeleGatorImpl), "EIP7702Stateless DeleGator");
 
         // Create users
         users = _createUsers();
@@ -365,6 +371,8 @@ abstract contract BaseTest is Test {
             return deployDeleGator_Hybrid(_user);
         } else if (_implementation == Implementation.MultiSig) {
             return deployDeleGator_MultiSig(_user);
+        } else if (_implementation == Implementation.EIP7702Stateless) {
+            return deployDeleGator_EIP7702Stateless(_user);
         } else {
             revert("Invalid Implementation");
         }
@@ -409,6 +417,15 @@ abstract contract BaseTest is Test {
                 abi.encodeWithSignature("initialize(address,string[],uint256[],uint256[])", _owner, _keyIds, _xValues, _yValues)
             )
         );
+    }
+
+    function deployDeleGator_EIP7702Stateless(TestUser memory _user) public returns (address) {
+        return deployDeleGator_EIP7702Stateless(_user.addr);
+    }
+
+    function deployDeleGator_EIP7702Stateless(address _eoaAddress) public returns (address) {
+        vm.etch(_eoaAddress, bytes.concat(hex"ef0100", abi.encodePacked(eip7702StatelessDeleGatorImpl)));
+        return _eoaAddress;
     }
 
     // Name is the seed used to generate the address, private key, and DeleGator.
