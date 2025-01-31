@@ -95,24 +95,35 @@ forge test
 
 #### Deploying
 
-0. Copy `.env.example` to `.env` and populate the variables you plan to use if you plan to deploy any contracts.
+1. Copy `.env.example` to `.env` and populate the variables depending on the deployment scripts that you will execute.
 
 ```shell
 source .env
 ```
 
-1. Use [Anvil](https://book.getfoundry.sh/reference/anvil/) to run a local fork of a blockchain to develop in an isolated environment.
+2. For local testing, use [Anvil](https://book.getfoundry.sh/reference/anvil/) to run a local fork of a blockchain to develop in an isolated environment. Or obtain the RPC url for the blockchain to deploy.
 
 ```shell
+# Example of a forked local environment using anvil
 anvil -f <your_rpc_url>
 ```
 
-2. Deploy the necessary environment contracts.
+3. Deploy the necessary contracts.
 
 > NOTE: As this system matures, this step will no longer be required for public chains where the DeleGator is in use.
 
 ```shell
-forge script script/DeployEnvironmentSetUp.s.sol --rpc-url <your_rpc_url> --private-key $PRIVATE_KEY --broadcast
+# Deploys the Delegation Manager, Multisig and Hybrid DeleGator implementations
+forge script script/DeployDelegationFramework.s.sol --rpc-url <your_rpc_url> --private-key $PRIVATE_KEY --broadcast
+
+# Deploys all the caveat enforcers
+forge script script/DeployCaveatEnforcers.s.sol --rpc-url <your_rpc_url> --private-key $PRIVATE_KEY --broadcast
+
+# Deploys the EIP7702 Staless DeleGator
+forge script script/DeployEIP7702StatelessDeleGator.s.sol --rpc-url <your_rpc_url> --private-key $PRIVATE_KEY --broadcast
+
+# Deploys a MultisigDeleGator on a UUPS proxy
+forge script script/DeployMultiSigDeleGator.s.sol --private-key $PRIVATE_KEY --broadcast
 ```
 
 ### Javascript
@@ -143,3 +154,5 @@ Currently in Gated Alpha phase. Sign up to be an early partner [here](https://ga
 - [EIP-7201](https://eips.ethereum.org/EIPS/eip-7201)
 - [EIP-7212](https://eips.ethereum.org/EIPS/eip-7212)
 - [EIP-7579](https://eips.ethereum.org/EIPS/eip-7579)
+- [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702)
+- [EIP-7821](https://eips.ethereum.org/EIPS/eip-7821)

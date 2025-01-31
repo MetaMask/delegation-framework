@@ -28,7 +28,8 @@ struct TestUsers {
  */
 enum Implementation {
     MultiSig, // MultiSigDeleGator is a DeleGator that is owned by a set of EOA addresses.
-    Hybrid // HybridDeleGator is a DeleGator that is owned by a set of P256 Keys and EOA
+    Hybrid, // HybridDeleGator is a DeleGator that is owned by a set of P256 Keys and EOA
+    EIP7702Stateless // EIP7702Stateless is a DeleGator that is owned by the EIP7702 EOA
 
 }
 
