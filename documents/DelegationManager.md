@@ -22,6 +22,10 @@ Users can allow other contracts or EOAs to invoke an action directly from their 
 
 Users can create a `Delegation` and provide it to a delegate in the form of an offchain delegation.
 
+## Disabling a Delegation
+
+Delegators can disable a delegation by calling the function `disableDelegation(delegation)` of the DelegationManager, this is an onchain operation that requires paying gas.
+
 ### Offchain Delegations
 
 Offchain Delegations are done through signing a `Delegation` and adding it to the `signature` field. Delegates can then redeem Delegations by providing this struct. To get this signature we use [EIP-712](https://eips.ethereum.org/EIPS/eip-712).
@@ -32,7 +36,7 @@ Open delegations are delegations that don't have a strict `delegate`. By setting
 
 ## Redeeming a Delegation
 
-`redeemDelegation` method that can be used by delegation redeemers to execute some `Execution` which will be verified by the `DelegationManager` before ultimately calling `executeAsExecutor` on the root delegator.
+`redeemDelegation` method that can be used by delegation redeemers to execute some `Execution` which will be verified by the `DelegationManager` before ultimately calling `executeAsExecutor` on the root delegator. The delegations have to be redeemed in the same delegation manager that was used to create the delegation signature otherwise they will revert. Delegator accounts must allow the delegation manager to call the function `executeAsExecutor`.
 
 Our `DelegationManager` implementation:
 
@@ -46,14 +50,14 @@ Our `DelegationManager` implementation:
 7. Calls `beforeHook` before each individual execution tied to a delegation (from leaf to root delegation)
 8. Performs the `Execution` provided
 9. Calls `afterHook` after each individual execution tied to a delegation (from root to leaf delegation)
-10. Calls `afterAllHook` for all delegations before processing all the executions (from root to leaf delegation)
+10. Calls `afterAllHook` for all delegations after processing all the executions (from root to leaf delegation)
 
-> NOTE: Ensure to double check that the delegation is valid before submitting a UserOp. A delegation can be revoked or a signature can be invalidated at any time.
+> NOTE: Some actions can invalidate a delegation, for example: A delegation can be revoked by the delegator, the delegator code might change, or the delegation signature can become invalid at any time.
 > Validate a delegation redemption by either simulating the transaction or by reading the storage on our implementation `disabledDelegations(delegationHash)`.
 
 ## Re-delegating
 
-Example: Alice delegates to Bob the ability to transfer USDC, giving Bob the ability to act on her behalf. Bob then "re-delegates" the ability to act on his behalf to Carol and includes the `authority`, a hash of the delegation, given to him from Alice. This enables Carol to act on behalf of Alice.
+Example: Alice delegates to Bob the ability to transfer USDC, giving Bob the ability to act on her behalf. Bob then "re-delegates" the ability to act on his behalf to Carol and includes the `authority`, a hash of the delegation, given to him from Alice. This enables Carol to act on behalf of Alice. Bob can add extra restrictions when he re-delegates to Carol apart from what the initial delegation had, to reads what the delegation can do it is necessary to analyze all the enforcers being used in the entire delegation chain.
 
 ## Caveats
 

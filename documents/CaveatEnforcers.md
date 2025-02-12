@@ -1,18 +1,29 @@
-## Caveats Enforcers
+# Caveats Enforcers
 
 `CaveatEnforcer` contracts enable a delegator to place granular restrictions on the delegations, So dApps can create highly specific delegations that permit actions only under certain conditions. Caveats serve as a mechanism to verify the state both before and after execution, but not the final state post-redemption. However, caveats can still influence the final state of the transaction.
 
-> NOTE: Each `CaveatEnforcer` is called by the `DelegationManager` contract. This is important when storing data in the `CaveatEnforcer`, as `msg.sender` will always be the address of the `DelegationManager`.
+> **Note**: Each `CaveatEnforcer` is always called by the `DelegationManager`. This means `msg.sender` inside the enforcer will be the `DelegationManager`'s address. Keep this in mind if you plan to store data within the enforcer.
 
-> NOTE: There is no guarantee that the action will be executed. Keep this in mind when designing Caveat Enforcers. If your logic depends on the action being performed, ensure you use the afterHook and afterAllHook methods to validate any expected state changes.
+> **Important**: An action may never be executed. If your enforcer logic depends on the action actually happening, be sure to use `afterHook` and `afterAllHook` to confirm any expected state changes.
 
-The execution order of the caveat hooks may vary depending on the delegation manager implementation, but they are designed to be used in the following sequence:
+## Hook Sequence
+
+The order in which the caveat hooks are called can vary depending on the `DelegationManager` implementation, but generally:
 
 1. `beforeAllHook`: Called for all delegations before any executions begin, proceeding from the leaf delegation to the root delegation.
 2. `beforeHook`: Called before each individual execution tied to a delegation, also proceeding from the leaf delegation to the root delegation.
 3. Execution: The specified execution is performed.
 4. `afterHook`: Called after each individual execution tied to a delegation, proceeding from the root delegation back to the leaf delegation.
 5. `afterAllHook`: Called for all delegations after all executions have been processed, proceeding from the root delegation back to the leaf delegation.
+
+- These hooks are optional. If a hook has no logic, the enforcer performs no checks at that stage.
+- Each hook has access to the same delegation-related data in the function parameters (delegator, delegation hash, args, redeemer, terms, execution call data, and execution mode).
+
+### Execution Modes
+
+Enforcers can target a specific execution mode: **single** or **batch**. Because execution call data is encoded differently for each mode, you can use modifiers like `onlySingleExecutionMode` or `onlyBatchExecutionMode` to restrict an enforcer to the desired mode, using a different would revert.
+
+---
 
 ## Enforcer Details
 
