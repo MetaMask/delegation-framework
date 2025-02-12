@@ -57,7 +57,7 @@ Our `DelegationManager` implementation:
 
 ## Re-delegating
 
-Example: Alice delegates to Bob the ability to transfer USDC, giving Bob the ability to act on her behalf. Bob then "re-delegates" the ability to act on his behalf to Carol and includes the `authority`, a hash of the delegation, given to him from Alice. This enables Carol to act on behalf of Alice. Bob can add extra restrictions when he re-delegates to Carol apart from what the initial delegation had, to reads what the delegation can do it is necessary to analyze all the enforcers being used in the entire delegation chain.
+Example: Alice delegates to Bob the ability to transfer USDC, giving Bob the ability to act on her behalf. Bob then "re-delegates" the ability to act on his behalf to Carol and includes the `authority`, a hash of the delegation, given to him from Alice. This enables Carol to act on behalf of Alice. Bob can add extra restrictions when he re-delegates to Carol in addition to what the initial delegation had, to understand what the delegation can do, it is necessary to analyze all the enforcers being used in the entire delegation chain.
 
 ## Caveats
 
