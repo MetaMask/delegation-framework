@@ -20,7 +20,7 @@ Delegation: Allows for delegation of transaction execution to other accounts.
 
 ### P256 Signature Verification
 
-Signature verification is handled through a slightly modified version of [Damio's P256 Verifier](https://github.com/daimo-eth/p256-verifier) contract. The `P256Verifier` contract is a "Progressive Precompile" contract which will forward verification calls to a precompiled version of the contract if [EIP7212](https://eips.ethereum.org/EIPS/eip-7212) is included on the chain, reducing signature verification gas costs from ~330k to ~3k.
+Signature verification is handled through [SmoothCryptoLib](https://github.com/get-smooth/crypto-lib) contract. The `P256Verifier` contract is a "Progressive Precompile" contract which will forward verification calls to a precompiled version of the contract if [EIP7212](https://eips.ethereum.org/EIPS/eip-7212) is included on the chain, reducing signature verification gas costs from ~330k to ~3k.
 
 ### P256 Signatures
 

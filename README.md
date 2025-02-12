@@ -44,6 +44,12 @@ The DeleGator Core includes the Delegation execution and ERC-4337 functionality 
 
 [Read more on "DeleGator Core" ->](/documents/DeleGatorCore.md)
 
+### EIP7702 DeleGator Core
+
+The DeleGator 7702 Core includes the Delegation execution and ERC-4337 functionality to make the Smart Account work but without UUPS proxy functionalities.
+
+[Read more on "EIP7702 DeleGator Core" ->](/documents/EIP7702DeleGator.md)
+
 ### DeleGator Implementation
 
 A DeleGator Implementation contains the logic for a DeleGator Smart Account. Each DeleGator Implementation must include the required methods for a DeleGator Smart Account, namely the signature scheme to be used for verifying access to control the contract. A few examples are the MultiSigDeleGator and the HybridDeleGator.
@@ -51,6 +57,8 @@ A DeleGator Implementation contains the logic for a DeleGator Smart Account. Eac
 [Read more on "MultiSig DeleGator" ->](/documents/MultisigDeleGator.md)
 
 [Read more on "Hybrid DeleGator" ->](/documents/HybridDeleGator.md)
+
+[Read more on "EIP7702 Stateless DeleGator" ->](/documents/EIP7702DeleGator.md)
 
 ### Delegation Manager
 
@@ -72,7 +80,7 @@ Developers can build new Caveat Enforcers for their own use cases, and the possi
 
 There's several touchpoints where developers may be using or extending a DeleGator Smart Account.
 
-- Developers can build custom DeleGator Implementations that use the [DeleGator Core](/src/DeleGatorCore.sol) to create new ways for end users to control and manage their Smart Accounts.
+- Developers can build custom DeleGator Implementations that use the [DeleGator Core](/src/DeleGatorCore.sol) or [EIP7702 DeleGator Core](/src/EIP7702/EIP7702DeleGatorCore.sol) to create new ways for end users to control and manage their Smart Accounts.
 - Developers can write any contract that meets the [DeleGator Core Interface](/src/interfaces/IDeleGatorCore.sol) to create novel ways of delegating functionality.
 - Developers can create custom Caveat Enforcers to refine the capabilities of a delegation for any use case they imagine.
 - Developers can craft Delegations to then share onchain capabilities entirely offchain.
