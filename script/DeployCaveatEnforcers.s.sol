@@ -3,7 +3,6 @@ pragma solidity 0.8.23;
 
 import "forge-std/Script.sol";
 import { console2 } from "forge-std/console2.sol";
-import { IEntryPoint } from "@account-abstraction/interfaces/IEntryPoint.sol";
 
 import { IDelegationManager } from "../src/interfaces/IDelegationManager.sol";
 
@@ -26,6 +25,7 @@ import { NativeTokenTransferAmountEnforcer } from "../src/enforcers/NativeTokenT
 import { NonceEnforcer } from "../src/enforcers/NonceEnforcer.sol";
 import { OwnershipTransferEnforcer } from "../src/enforcers/OwnershipTransferEnforcer.sol";
 import { RedeemerEnforcer } from "../src/enforcers/RedeemerEnforcer.sol";
+import { StreamingERC20Enforcer } from "../src/enforcers/StreamingERC20Enforcer.sol";
 import { TimestampEnforcer } from "../src/enforcers/TimestampEnforcer.sol";
 import { ValueLteEnforcer } from "../src/enforcers/ValueLteEnforcer.sol";
 
@@ -38,19 +38,16 @@ import { ValueLteEnforcer } from "../src/enforcers/ValueLteEnforcer.sol";
  */
 contract DeployCaveatEnforcers is Script {
     bytes32 salt;
-    IEntryPoint entryPoint;
     IDelegationManager delegationManager;
     address deployer;
 
     function setUp() public {
         salt = bytes32(abi.encodePacked(vm.envString("SALT")));
-        entryPoint = IEntryPoint(vm.envAddress("ENTRYPOINT_ADDRESS"));
         delegationManager = IDelegationManager(vm.envAddress("DELEGATION_MANAGER_ADDRESS"));
 
         deployer = msg.sender;
         console2.log("~~~");
         console2.log("Deployer: %s", address(deployer));
-        console2.log("Entry Point: %s", address(entryPoint));
         console2.log("Delegation Manager: %s", address(delegationManager));
         console2.log("Salt:");
         console2.logBytes32(salt);
@@ -119,6 +116,9 @@ contract DeployCaveatEnforcers is Script {
 
         deployedAddress = address(new RedeemerEnforcer{ salt: salt }());
         console2.log("RedeemerEnforcer: %s", deployedAddress);
+
+        deployedAddress = address(new StreamingERC20Enforcer{ salt: salt }());
+        console2.log("StreamingERC20Enforcer: %s", deployedAddress);
 
         deployedAddress = address(new TimestampEnforcer{ salt: salt }());
         console2.log("TimestampEnforcer: %s", deployedAddress);

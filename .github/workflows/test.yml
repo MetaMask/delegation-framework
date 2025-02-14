@@ -32,7 +32,7 @@ jobs:
         run: forge install
 
       - name: Check contract sizes
-        run: forge build --sizes --skip test --skip script
+        run: forge build --sizes --skip test --skip script --optimize true
 
       - name: Run tests
         run: forge test -vvv
