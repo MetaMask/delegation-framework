@@ -8,21 +8,20 @@ import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";
 
 /**
- * @title StreamingERC20Enforcer
- * @notice This contract enforces a streaming transfer limit for ERC20 tokens.
+ * @title ERC20StreamingEnforcer
+ * @notice This contract enforces a linear streaming transfer limit for ERC20 tokens.
  *
  * How it works:
- *  - `maxAmount` is a hard cap on total tokens that can ever become available.
- *  - If `initialAmount` == 0, the allowance accumulates linearly from `startTime`
- *    at a rate of `amountPerSecond`.
- *  - If `initialAmount` > 0, then the allowance is unlocked in "chunks":
- *     - The first chunk (size = `initialAmount`) is available immediately at `startTime`.
- *     - Each subsequent chunk is also `initialAmount` in size, and becomes available
- *       after each `chunkDuration = (initialAmount / amountPerSecond)` seconds.
+ *  1. Nothing is available before `startTime`.
+ *  2. Starting at `startTime`, `initialAmount` becomes immediately available.
+ *  3. Beyond that, tokens accrue linearly at `amountPerSecond`.
+ *  4. The total unlocked is capped by `maxAmount`.
+ *  5. The enforcer tracks how many tokens have already been spent, and will revert
+ *     if an attempted transfer exceeds what remains unlocked.
  *
  * @dev This caveat enforcer only works when the execution is in single mode (`ModeCode.Single`).
  */
-contract StreamingERC20Enforcer is CaveatEnforcer {
+contract ERC20StreamingEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
 
     ////////////////////////////// State //////////////////////////////
@@ -59,14 +58,14 @@ contract StreamingERC20Enforcer is CaveatEnforcer {
 
     /**
      * @notice Retrieves the current available allowance for a specific delegation.
-     * @param _delegationHash The hash of the delegation being queried.
      * @param _delegationManager The address of the delegation manager.
+     * @param _delegationHash The hash of the delegation being queried.
      * @return availableAmount_ The number of tokens that are currently spendable
      * under this streaming allowance (capped by `maxAmount`).
      */
     function getAvailableAmount(
-        bytes32 _delegationHash,
-        address _delegationManager
+        address _delegationManager,
+        bytes32 _delegationHash
     )
         external
         view
@@ -88,6 +87,7 @@ contract StreamingERC20Enforcer is CaveatEnforcer {
      * @param _mode The mode of the execution (must be `ModeCode.Single` for this enforcer).
      * @param _executionCallData The transaction the delegate might try to perform.
      * @param _delegationHash The hash of the delegation being operated on.
+     * @param _redeemer The address of the redeemer.
      */
     function beforeHook(
         bytes calldata _terms,
@@ -114,7 +114,7 @@ contract StreamingERC20Enforcer is CaveatEnforcer {
      * - 32 bytes: amount per second.
      * - 32 bytes: start time for the streaming allowance.
      * @return token_ The address of the ERC20 token contract.
-     * @return initialAmount_ The initial chunk size or 0 if purely linear
+     * @return initialAmount_ The initial amount available at startTime.
      * @return maxAmount_ The maximum total unlocked tokens (hard cap)
      * @return amountPerSecond_ The rate at which the allowance increases per second.
      * @return startTime_ The timestamp from which the allowance streaming begins.
@@ -124,7 +124,7 @@ contract StreamingERC20Enforcer is CaveatEnforcer {
         pure
         returns (address token_, uint256 initialAmount_, uint256 maxAmount_, uint256 amountPerSecond_, uint256 startTime_)
     {
-        require(_terms.length == 148, "StreamingERC20Enforcer:invalid-terms-length");
+        require(_terms.length == 148, "ERC20StreamingEnforcer:invalid-terms-length");
 
         token_ = address(bytes20(_terms[0:20]));
         initialAmount_ = uint256(bytes32(_terms[20:52]));
@@ -136,19 +136,14 @@ contract StreamingERC20Enforcer is CaveatEnforcer {
     ////////////////////////////// Internal Methods //////////////////////////////
 
     /**
-     * @notice Enforces the streaming allowance limit and updates `spent`.
+     * @notice Validates the streaming allowance limit and updates `spent`.
      * @dev Reverts if the transfer amount exceeds the currently available allowance.
      *
-     * @param _terms The encoded streaming terms: ERC20 token, initial amount, amount per second, and start time.
-     * @param _executionCallData The transaction data specifying the target contract and call data. We expect
+     * @param _terms The encoded streaming terms: ERC20 token, initial amount, max amount, amount per second, and start time.
+     * @param _executionCallData The transaction data specifying the target contract and call data. Expect
      * an `IERC20.transfer(address,uint256)` call here.
      * @param _delegationHash The hash of the delegation to which this transfer applies.
-     * @return token_ The token address (extracted from `_terms`).
-     * @return initialAmount_ The `initialAmount` set for this streaming allowance.
-     * @return maxAmount_ The maximum amount that can be transferred.
-     * @return amountPerSecond_ The streaming rate specified in `_terms`.
-     * @return startTime_ The timestamp after which tokens become available.
-     * @return spent_ The updated `spent` amount after applying this transfer.
+     * @param _redeemer The address of the redeemer.
      */
     function _validateAndConsumeAllowance(
         bytes calldata _terms,
@@ -157,28 +152,21 @@ contract StreamingERC20Enforcer is CaveatEnforcer {
         address _redeemer
     )
         private
-        returns (
-            address token_,
-            uint256 initialAmount_,
-            uint256 maxAmount_,
-            uint256 amountPerSecond_,
-            uint256 startTime_,
-            uint256 spent_
-        )
     {
         (address target_,, bytes calldata callData_) = _executionCallData.decodeSingle();
 
-        require(callData_.length == 68, "StreamingERC20Enforcer:invalid-execution-length");
+        require(callData_.length == 68, "ERC20StreamingEnforcer:invalid-execution-length");
 
-        (token_, initialAmount_, maxAmount_, amountPerSecond_, startTime_) = getTermsInfo(_terms);
+        (address token_, uint256 initialAmount_, uint256 maxAmount_, uint256 amountPerSecond_, uint256 startTime_) =
+            getTermsInfo(_terms);
 
-        require(maxAmount_ >= initialAmount_, "StreamingERC20Enforcer:invalid-max-amount");
+        require(maxAmount_ >= initialAmount_, "ERC20StreamingEnforcer:invalid-max-amount");
 
-        require(startTime_ > 0, "StreamingERC20Enforcer:invalid-zero-start-time");
+        require(startTime_ > 0, "ERC20StreamingEnforcer:invalid-zero-start-time");
 
-        require(token_ == target_, "StreamingERC20Enforcer:invalid-contract");
+        require(token_ == target_, "ERC20StreamingEnforcer:invalid-contract");
 
-        require(bytes4(callData_[0:4]) == IERC20.transfer.selector, "StreamingERC20Enforcer:invalid-method");
+        require(bytes4(callData_[0:4]) == IERC20.transfer.selector, "ERC20StreamingEnforcer:invalid-method");
 
         StreamingAllowance storage allowance = streamingAllowances[msg.sender][_delegationHash];
         if (allowance.spent == 0) {
@@ -191,10 +179,9 @@ contract StreamingERC20Enforcer is CaveatEnforcer {
 
         uint256 transferAmount_ = uint256(bytes32(callData_[36:68]));
 
-        require(transferAmount_ <= _getAvailableAmount(allowance), "StreamingERC20Enforcer:allowance-exceeded");
+        require(transferAmount_ <= _getAvailableAmount(allowance), "ERC20StreamingEnforcer:allowance-exceeded");
 
         allowance.spent += transferAmount_;
-        spent_ = allowance.spent;
 
         emit IncreasedSpentMap(
             msg.sender,
@@ -205,70 +192,29 @@ contract StreamingERC20Enforcer is CaveatEnforcer {
             maxAmount_,
             amountPerSecond_,
             startTime_,
-            spent_,
+            allowance.spent,
             block.timestamp
         );
     }
 
     /**
-     * @notice Calculates the available allowance for a given StreamingAllowance state.
-     * @dev Computes the remaining allowance based on elapsed time, initial amount, and spent tokens
-     * then clamps by `maxAmount`.
-     * @param allowance The StreamingAllowance struct containing allowance details.
+     * @notice Calculates how many tokens are currently unlocked in total, then subtracts `spent`, then clamps by `maxAmount`.
+     * @param _allowance The StreamingAllowance struct containing allowance details.
      * @return A uint256 representing how many tokens are currently available to spend.
      */
-    function _getAvailableAmount(StreamingAllowance storage allowance) internal view returns (uint256) {
-        if (block.timestamp < allowance.startTime) return 0;
+    function _getAvailableAmount(StreamingAllowance memory _allowance) private view returns (uint256) {
+        if (block.timestamp < _allowance.startTime) return 0;
 
-        uint256 elapsed_ = block.timestamp - allowance.startTime;
+        uint256 elapsed_ = block.timestamp - _allowance.startTime;
 
-        // If `initialAmount` == 0, do purely linear streaming
-        if (allowance.initialAmount == 0) return _computeLinearAllowance(allowance, elapsed_);
+        uint256 unlocked_ = _allowance.initialAmount + (_allowance.amountPerSecond * elapsed_);
 
-        require(allowance.amountPerSecond > 0, "StreamingERC20Enforcer:zero-amount-per-second");
-
-        // If the user wants chunks, ensure the initial amount is large enough
-        // that `chunkDuration` won't be zero.
-        require(allowance.initialAmount >= allowance.amountPerSecond, "StreamingERC20Enforcer:initial-amount-is-too-low");
-
-        // Calculate how many chunks have fully unlocked
-        uint256 chunkDuration_ = allowance.initialAmount / allowance.amountPerSecond;
-        uint256 chunksUnlocked_ = elapsed_ / chunkDuration_;
-
-        // The first chunk is unlocked immediately at `startTime`,
-        uint256 totalUnlocked_ = (chunksUnlocked_ + 1) * allowance.initialAmount;
-
-        // clamp by maxAmount
-        if (totalUnlocked_ > allowance.maxAmount) {
-            totalUnlocked_ = allowance.maxAmount;
+        if (unlocked_ > _allowance.maxAmount) {
+            unlocked_ = _allowance.maxAmount;
         }
 
-        if (allowance.spent >= totalUnlocked_) return 0;
+        if (_allowance.spent >= unlocked_) return 0;
 
-        return totalUnlocked_ - allowance.spent;
-    }
-
-    /**
-     * @notice Computes the unlocked amount using a purely linear model:
-     *         `initialAmount + (amountPerSecond * elapsed)`, then clamps by `maxAmount`.
-     *
-     * @dev This function is called when `initialAmount == 0`, or as a fallback
-     *      if chunk-based logic is not feasible.
-     *
-     * @param allowance The StreamingAllowance containing the streaming parameters.
-     * @param elapsed_  How many seconds have passed since `startTime`.
-     * @return The number of tokens currently available after subtracting `spent`.
-     */
-    function _computeLinearAllowance(StreamingAllowance storage allowance, uint256 elapsed_) private view returns (uint256) {
-        uint256 totalSoFar_ = allowance.initialAmount + (allowance.amountPerSecond * elapsed_);
-
-        // clamp to maxAmount
-        if (totalSoFar_ > allowance.maxAmount) {
-            totalSoFar_ = allowance.maxAmount;
-        }
-
-        if (allowance.spent >= totalSoFar_) return 0;
-
-        return totalSoFar_ - allowance.spent;
+        return unlocked_ - _allowance.spent;
     }
 }
