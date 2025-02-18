@@ -253,6 +253,162 @@ contract SwapOfferEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(tokenOut.balanceOf(address(users.bob.deleGator)), bobTokenOutBalanceBefore + 5 ether, "Bob's tokenOut balance incorrect");
     }
 
+    function test_multipleSwapOfferFulfillment() public {
+        // Deploy two tokens: seller token and buyer token
+        BasicERC20 sellerToken = new BasicERC20(address(this), "Seller Token", "SELL", 1000 ether);
+        BasicERC20 buyerToken = new BasicERC20(address(this), "Buyer Token", "BUY", 1000 ether);
+
+        // Setup initial balances
+        // Alice has seller tokens
+        // Bob and Carol both have buyer tokens
+        sellerToken.transfer(address(users.alice.deleGator), 10 ether);
+        buyerToken.transfer(address(users.bob.deleGator), 0 ether);
+        buyerToken.transfer(address(users.carol.deleGator), 2 ether);
+
+        // Record starting balances
+        uint256 aliceSellerBefore = sellerToken.balanceOf(address(users.alice.deleGator));
+        uint256 aliceBuyerBefore = buyerToken.balanceOf(address(users.alice.deleGator));
+        uint256 bobBuyerBefore = buyerToken.balanceOf(address(users.bob.deleGator));
+        uint256 carolBuyerBefore = buyerToken.balanceOf(address(users.carol.deleGator));
+
+        // Create Alice's offer: selling sellerToken for buyerToken
+        Delegation memory aliceDelegationToBob = Delegation({
+            authority: ROOT_AUTHORITY,
+            delegator: address(users.alice.deleGator),
+            delegate: address(users.bob.deleGator), // Allow Bob to trigger the swap
+            caveats: new Caveat[](1),
+            salt: 0,
+            signature: hex""
+        });
+        aliceDelegationToBob.caveats[0] = Caveats.createSwapOfferCaveat(
+            address(swapOfferEnforcer),
+            SwapOfferEnforcer.SwapOfferTerms({
+                tokenIn: address(buyerToken),
+                tokenOut: address(sellerToken),
+                amountIn: 1 ether,
+                amountOut: 10 ether,
+                recipient: address(users.bob.deleGator)
+            })
+        );
+        aliceDelegationToBob = signDelegation(users.alice, aliceDelegationToBob);
+
+        // Bob's authorization to transfer buyerToken
+        Delegation memory bobDelegationToCarol = Delegation({
+            authority: keccak256(abi.encode(aliceDelegationToBob)),
+            delegator: address(users.bob.deleGator),
+            delegate: address(users.carol.deleGator),
+            caveats: new Caveat[](1),
+            salt: 0,
+            signature: hex""
+        });
+        bobDelegationToCarol.caveats[0] = Caveats.createSwapOfferCaveat(
+            address(swapOfferEnforcer),
+            SwapOfferEnforcer.SwapOfferTerms({
+                tokenIn: address(buyerToken),
+                tokenOut: address(sellerToken), 
+                amountIn: 1 ether,
+                amountOut: 5 ether,
+                recipient: address(users.bob.deleGator)
+            })
+        );
+        bobDelegationToCarol = signDelegation(users.bob, bobDelegationToCarol);
+
+        // Execute Carol's swap
+        Execution memory carolSwap = Execution({
+            target: address(sellerToken),
+            value: 0,
+            callData: abi.encodeWithSelector(IERC20.transfer.selector, address(users.carol.deleGator), 5 ether)
+        });
+
+        // Carol prepares delegations of ERC20TransferAmountEnforcer to the SwapOfferEnforcer
+        Caveat memory erc20TransferCaveatForAlice = Caveats.createERC20TransferAmountCaveat(
+            address(erc20TransferAmountEnforcer),
+            address(buyerToken),
+            1 ether // Match Alice's swap terms
+        );
+        Caveat memory erc20TransferCaveatForBob = Caveats.createERC20TransferAmountCaveat(
+            address(erc20TransferAmountEnforcer), 
+            address(buyerToken),
+            1 ether // Match Bob's swap terms
+        );
+
+        Delegation memory carolDelegationForAliceSwap = Delegation({
+            delegate: address(swapOfferEnforcer),
+            delegator: address(users.carol.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: new Caveat[](1),
+            salt: 0,
+            signature: hex""
+        });
+        carolDelegationForAliceSwap.caveats[0] = erc20TransferCaveatForAlice;
+        carolDelegationForAliceSwap = signDelegation(users.carol, carolDelegationForAliceSwap);
+
+        Delegation memory carolDelegationForBobSwap = Delegation({
+            delegate: address(swapOfferEnforcer),
+            delegator: address(users.carol.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: new Caveat[](1),
+            salt: 0,
+            signature: hex""
+        });
+        carolDelegationForBobSwap.caveats[0] = erc20TransferCaveatForBob;
+        carolDelegationForBobSwap = signDelegation(users.carol, carolDelegationForBobSwap);
+
+        aliceDelegationToBob.caveats[0].args = abi.encode(SwapOfferEnforcer.SwapOfferArgs({
+            claimedAmount: 1 ether,
+            delegationManager: IDelegationManager(address(delegationManager)),
+            permissionContext: abi.encode(carolDelegationForAliceSwap)
+        }));
+        bobDelegationToCarol.caveats[0].args = abi.encode(SwapOfferEnforcer.SwapOfferArgs({
+            claimedAmount: 1 ether,
+            delegationManager: IDelegationManager(address(delegationManager)),
+            permissionContext: abi.encode(carolDelegationForBobSwap)
+        }));
+
+        Delegation[] memory carolSwapDelegations = new Delegation[](2);
+        carolSwapDelegations[0] = aliceDelegationToBob;
+        carolSwapDelegations[1] = bobDelegationToCarol;
+
+        invokeDelegation_UserOp(users.carol, carolSwapDelegations, carolSwap);
+
+        // Verify final balances
+        // Alice should have +40 buyer tokens, -10 seller tokens
+        assertEq(
+            buyerToken.balanceOf(address(users.alice.deleGator)),
+            aliceBuyerBefore + 40 ether,
+            "Alice's buyer token balance wrong"
+        );
+        assertEq(
+            sellerToken.balanceOf(address(users.alice.deleGator)),
+            aliceSellerBefore - 10 ether,
+            "Alice's seller token balance wrong"
+        );
+
+        // Bob should have -20 buyer tokens, +5 seller tokens
+        assertEq(
+            buyerToken.balanceOf(address(users.bob.deleGator)),
+            bobBuyerBefore - 20 ether,
+            "Bob's buyer token balance wrong"
+        );
+        assertEq(
+            sellerToken.balanceOf(address(users.bob.deleGator)),
+            5 ether,
+            "Bob's seller token balance wrong"
+        );
+
+        // Carol should have -20 buyer tokens, +5 seller tokens
+        assertEq(
+            buyerToken.balanceOf(address(users.carol.deleGator)),
+            carolBuyerBefore - 20 ether,
+            "Carol's buyer token balance wrong"
+        );
+        assertEq(
+            sellerToken.balanceOf(address(users.carol.deleGator)),
+            5 ether,
+            "Carol's seller token balance wrong"
+        );
+    }
+
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {
         return ICaveatEnforcer(address(swapOfferEnforcer));
     }
