@@ -22,6 +22,7 @@ import { LimitedCallsEnforcer } from "../src/enforcers/LimitedCallsEnforcer.sol"
 import { NativeBalanceGteEnforcer } from "../src/enforcers/NativeBalanceGteEnforcer.sol";
 import { NativeTokenPaymentEnforcer } from "../src/enforcers/NativeTokenPaymentEnforcer.sol";
 import { NativeTokenTransferAmountEnforcer } from "../src/enforcers/NativeTokenTransferAmountEnforcer.sol";
+import { NativeTokenStreamingEnforcer } from "../src/enforcers/NativeTokenStreamingEnforcer.sol";
 import { NonceEnforcer } from "../src/enforcers/NonceEnforcer.sol";
 import { OwnershipTransferEnforcer } from "../src/enforcers/OwnershipTransferEnforcer.sol";
 import { RedeemerEnforcer } from "../src/enforcers/RedeemerEnforcer.sol";
@@ -107,6 +108,9 @@ contract DeployCaveatEnforcers is Script {
 
         deployedAddress = address(new NativeTokenTransferAmountEnforcer{ salt: salt }());
         console2.log("NativeTokenTransferAmountEnforcer: %s", deployedAddress);
+
+        deployedAddress = address(new NativeTokenStreamingEnforcer{ salt: salt }());
+        console2.log("NativeTokenStreamingEnforcer: %s", deployedAddress);
 
         deployedAddress = address(new NonceEnforcer{ salt: salt }());
         console2.log("NonceEnforcer: %s", deployedAddress);
