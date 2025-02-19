@@ -6,7 +6,7 @@ This contract does not implement ERC7579 see [ERC-7579 Details](/documents/Parti
 
 ## Rules
 
-- A Delegation Manager MUST implement `redeemDelegations` interface as specified `function redeemDelegations(bytes[] calldata _permissionContexts, ModeCode[] _modes, bytes[] calldata _executionCallDatas) external;`.
+- A Delegation Manager MUST implement ERC-7710 `redeemDelegations` interface as specified `function redeemDelegations(bytes[] calldata _permissionContexts, ModeCode[] _modes, bytes[] calldata _executionCallDatas) external;`.
 
 ## Delegations
 

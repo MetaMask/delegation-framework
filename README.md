@@ -163,4 +163,5 @@ Currently in Gated Alpha phase. Sign up to be an early partner [here](https://ga
 - [EIP-7212](https://eips.ethereum.org/EIPS/eip-7212)
 - [EIP-7579](https://eips.ethereum.org/EIPS/eip-7579)
 - [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702)
+- [EIP-7710](https://eips.ethereum.org/EIPS/eip-7710)
 - [EIP-7821](https://eips.ethereum.org/EIPS/eip-7821)
