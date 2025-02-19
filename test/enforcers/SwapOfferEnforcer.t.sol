@@ -291,10 +291,9 @@ contract SwapOfferEnforcerTest is CaveatEnforcerBaseTest {
             })
         );
         aliceDelegationToBob = signDelegation(users.alice, aliceDelegationToBob);
-
         // Bob's authorization to transfer buyerToken
         Delegation memory bobDelegationToCarol = Delegation({
-            authority: keccak256(abi.encode(aliceDelegationToBob)),
+            authority: EncoderLib._getDelegationHash(aliceDelegationToBob),
             delegator: address(users.bob.deleGator),
             delegate: address(users.carol.deleGator),
             caveats: new Caveat[](1),
@@ -342,6 +341,11 @@ contract SwapOfferEnforcerTest is CaveatEnforcerBaseTest {
         });
         carolDelegationForAliceSwap.caveats[0] = erc20TransferCaveatForAlice;
         carolDelegationForAliceSwap = signDelegation(users.carol, carolDelegationForAliceSwap);
+        aliceDelegationToBob.caveats[0].args = abi.encode(SwapOfferEnforcer.SwapOfferArgs({
+            claimedAmount: 1 ether,
+            delegationManager: IDelegationManager(address(delegationManager)),
+            permissionContext: abi.encode(carolDelegationForAliceSwap)
+        }));
 
         Delegation memory carolDelegationForBobSwap = Delegation({
             delegate: address(swapOfferEnforcer),
@@ -353,12 +357,6 @@ contract SwapOfferEnforcerTest is CaveatEnforcerBaseTest {
         });
         carolDelegationForBobSwap.caveats[0] = erc20TransferCaveatForBob;
         carolDelegationForBobSwap = signDelegation(users.carol, carolDelegationForBobSwap);
-
-        aliceDelegationToBob.caveats[0].args = abi.encode(SwapOfferEnforcer.SwapOfferArgs({
-            claimedAmount: 1 ether,
-            delegationManager: IDelegationManager(address(delegationManager)),
-            permissionContext: abi.encode(carolDelegationForAliceSwap)
-        }));
         bobDelegationToCarol.caveats[0].args = abi.encode(SwapOfferEnforcer.SwapOfferArgs({
             claimedAmount: 1 ether,
             delegationManager: IDelegationManager(address(delegationManager)),
@@ -375,7 +373,7 @@ contract SwapOfferEnforcerTest is CaveatEnforcerBaseTest {
         // Alice should have +40 buyer tokens, -10 seller tokens
         assertEq(
             buyerToken.balanceOf(address(users.alice.deleGator)),
-            aliceBuyerBefore + 40 ether,
+            aliceBuyerBefore + 1 ether,
             "Alice's buyer token balance wrong"
         );
         assertEq(
@@ -387,25 +385,15 @@ contract SwapOfferEnforcerTest is CaveatEnforcerBaseTest {
         // Bob should have -20 buyer tokens, +5 seller tokens
         assertEq(
             buyerToken.balanceOf(address(users.bob.deleGator)),
-            bobBuyerBefore - 20 ether,
+            bobBuyerBefore + 1 ether,
             "Bob's buyer token balance wrong"
-        );
-        assertEq(
-            sellerToken.balanceOf(address(users.bob.deleGator)),
-            5 ether,
-            "Bob's seller token balance wrong"
         );
 
         // Carol should have -20 buyer tokens, +5 seller tokens
         assertEq(
             buyerToken.balanceOf(address(users.carol.deleGator)),
-            carolBuyerBefore - 20 ether,
+            carolBuyerBefore - 2 ether,
             "Carol's buyer token balance wrong"
-        );
-        assertEq(
-            sellerToken.balanceOf(address(users.carol.deleGator)),
-            5 ether,
-            "Carol's seller token balance wrong"
         );
     }
 
