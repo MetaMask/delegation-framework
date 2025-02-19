@@ -6,7 +6,7 @@ This contract does not implement ERC7579 see [ERC-7579 Details](/documents/Parti
 
 ## Rules
 
-- A Delegation Manager MUST implement `redeemDelegation` interface as specified `function redeemDelegation(bytes[] calldata _permissionContexts, ModeCode[] _modes, bytes[] calldata _executionCallDatas) external;`.
+- A Delegation Manager MUST implement `redeemDelegations` interface as specified `function redeemDelegations(bytes[] calldata _permissionContexts, ModeCode[] _modes, bytes[] calldata _executionCallDatas) external;`.
 
 ## Delegations
 
@@ -36,19 +36,19 @@ Open delegations are delegations that don't have a strict `delegate`. By setting
 
 ## Redeeming a Delegation
 
-`redeemDelegation` method that can be used by delegation redeemers to execute some `Execution` which will be verified by the `DelegationManager` before ultimately calling `executeAsExecutor` on the root delegator. The delegations have to be redeemed in the same delegation manager that was used to create the delegation signature otherwise they will revert. Delegator accounts must allow the delegation manager to call the function `executeAsExecutor`.
+`redeemDelegations` method that can be used by delegation redeemers to execute some `Execution` which will be verified by the `DelegationManager` before ultimately calling `executeFromExecutor` on the root delegator. The delegations have to be redeemed in the same delegation manager that was used to create the delegation signature otherwise they will revert. Delegator accounts must allow the delegation manager to call the function `executeFromExecutor`.
 
 Our `DelegationManager` implementation:
 
-1. `redeemDelegation` consumes an array of bytes with the encoded delegation chains (`Delegation[]`) for executing each of the `Execution`.
+1. `redeemDelegations` consumes an array of bytes with the encoded delegation chains (`Delegation[]`) for executing each of the `Execution`.
    > NOTE: Delegations are ordered from leaf to root. The last delegation in the array must have the root authority.
-2. Validates the `msg.sender` calling `redeemDelegation` is allowed to do so
+2. Validates the `msg.sender` calling `redeemDelegations` is allowed to do so
 3. Validates the signatures of offchain delegations.
 4. Checks if any of the delegations being redeemed are disabled
 5. Ensures each delegation has sufficient authority to execute, given by the previous delegation or by being a root delegation
 6. Calls `beforeAllHook` for all delegations before processing any of the executions (from leaf to root delegation)
 7. Calls `beforeHook` before each individual execution tied to a delegation (from leaf to root delegation)
-8. Performs the `Execution` provided
+8. Performs the `Execution` provided by calling `ExecuteFromExecutor` on the root delegator.
 9. Calls `afterHook` after each individual execution tied to a delegation (from root to leaf delegation)
 10. Calls `afterAllHook` for all delegations after processing all the executions (from root to leaf delegation)
 
