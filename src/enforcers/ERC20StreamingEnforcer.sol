@@ -20,6 +20,7 @@ import { ModeCode } from "../utils/Types.sol";
  *     if an attempted transfer exceeds what remains unlocked.
  *
  * @dev This caveat enforcer only works when the execution is in single mode (`ModeCode.Single`).
+ * @dev To enable an 'infinite' token stream, set `maxAmount` to type(uint256).max
  */
 contract ERC20StreamingEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
