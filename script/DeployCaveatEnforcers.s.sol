@@ -29,6 +29,7 @@ import { RedeemerEnforcer } from "../src/enforcers/RedeemerEnforcer.sol";
 import { TimestampEnforcer } from "../src/enforcers/TimestampEnforcer.sol";
 import { ValueLteEnforcer } from "../src/enforcers/ValueLteEnforcer.sol";
 import { ERC20RoyaltyEnforcer } from "../src/enforcers/ERC20RoyaltyEnforcer.sol";
+import { LimitedCallsByRedeemerEnforcer } from "../src/enforcers/LimitedCallsByRedeemerEnforcer.sol";
 /**
  * @title DeployCaveatEnforcers
  * @notice Deploys the suite of caveat enforcers to be used with the Delegation Framework.
@@ -130,6 +131,9 @@ contract DeployCaveatEnforcers is Script {
 
         deployedAddress = address(new ERC20RoyaltyEnforcer{ salt: salt }());
         console2.log("ERC20RoyaltyEnforcer: %s", deployedAddress);
+
+        deployedAddress = address(new LimitedCallsByRedeemerEnforcer{ salt: salt }());
+        console2.log("LimitedCallsByRedeemerEnforcer: %s", deployedAddress);
 
         vm.stopBroadcast();
     }
