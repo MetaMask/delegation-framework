@@ -18,6 +18,7 @@ import { ModeCode } from "../utils/Types.sol";
  *     if an attempted transfer (i.e. the value sent) exceeds what remains unlocked.
  *
  * @dev This enforcer only works when the execution is in single mode (`ModeCode.Single`).
+ * @dev To enable an 'infinite' token stream, set `maxAmount` to type(uint256).max
  */
 contract NativeTokenStreamingEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
