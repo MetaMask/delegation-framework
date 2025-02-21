@@ -39,6 +39,8 @@ import { DeleGatorCore } from "../src/DeleGatorCore.sol";
 import { EncoderLib } from "../src/libraries/EncoderLib.sol";
 import { AllowedMethodsEnforcer } from "../src/enforcers/AllowedMethodsEnforcer.sol";
 import { AllowedTargetsEnforcer } from "../src/enforcers/AllowedTargetsEnforcer.sol";
+import { SpecificActionERC20TransferBatchEnforcer } from "../src/enforcers/SpecificActionERC20TransferBatchEnforcer.sol";
+import { BasicERC20, IERC20 } from "./utils/BasicERC20.t.sol";
 
 abstract contract DeleGatorTestSuite is BaseTest {
     using ModeLib for ModeCode;
@@ -49,6 +51,7 @@ abstract contract DeleGatorTestSuite is BaseTest {
     Counter aliceDeleGatorCounter;
     Counter bobDeleGatorCounter;
     ModeCode[] oneSingularMode;
+    ModeCode[] oneBatchMode;
 
     function setUp() public virtual override {
         super.setUp();
@@ -57,18 +60,28 @@ abstract contract DeleGatorTestSuite is BaseTest {
         vm.label(address(allowedMethodsEnforcer), "Allowed Methods Enforcer");
         allowedTargetsEnforcer = new AllowedTargetsEnforcer();
         vm.label(address(allowedTargetsEnforcer), "Allowed Targets Enforcer");
+        specificActionEnforcer = new SpecificActionERC20TransferBatchEnforcer();
+        vm.label(address(specificActionEnforcer), "Specific Action ERC20 Transfer Batch Enforcer");
 
         aliceDeleGatorCounter = new Counter(address(users.alice.deleGator));
         bobDeleGatorCounter = new Counter(address(users.bob.deleGator));
+        token = new BasicERC20(address(users.alice.deleGator), "Test", "TST", 100 ether);
 
         oneSingularMode = new ModeCode[](1);
         oneSingularMode[0] = ModeLib.encodeSimpleSingle();
+
+        // Set up batch mode
+        oneBatchMode = new ModeCode[](1);
+        oneBatchMode[0] = ModeLib.encode(CALLTYPE_BATCH, EXECTYPE_DEFAULT, MODE_DEFAULT, ModePayload.wrap(0x00));
     }
 
     ////////////////////////////// State //////////////////////////////
 
     AllowedMethodsEnforcer public allowedMethodsEnforcer;
     AllowedTargetsEnforcer public allowedTargetsEnforcer;
+    SpecificActionERC20TransferBatchEnforcer public specificActionEnforcer;
+    BasicERC20 public token;
+    uint256 public constant TRANSFER_AMOUNT = 10 ether;
     bytes32 private DELEGATIONS_STORAGE_LOCATION = StorageUtilsLib.getStorageLocation("DeleGator.Delegations");
     bytes32 private DELEGATOR_CORE_STORAGE_LOCATION = StorageUtilsLib.getStorageLocation("DeleGator.Core");
     bytes32 private INITIALIZABLE_STORAGE_LOCATION = StorageUtilsLib.getStorageLocation("openzeppelin.storage.Initializable");
@@ -2241,6 +2254,68 @@ abstract contract DeleGatorTestSuite is BaseTest {
             userOpHash_, address(users.carol.deleGator), 0, abi.encodeWithSelector(IDelegationManager.InvalidAuthority.selector)
         );
         entryPoint.handleOps(userOps_, bundler);
+    }
+
+    // should allow a specific action ERC20 transfer batch through delegation
+    function test_allow_specificActionERC20TransferBatch() public {
+        // Create batch of executions
+        Execution[] memory executions = new Execution[](2);
+
+        // First execution: increment counter
+        bytes memory incrementCalldata = abi.encodeWithSelector(Counter.increment.selector);
+        executions[0] = Execution({ target: address(aliceDeleGatorCounter), value: 0, callData: incrementCalldata });
+
+        // Second execution: transfer tokens
+        executions[1] = Execution({
+            target: address(token),
+            value: 0,
+            callData: abi.encodeWithSelector(IERC20.transfer.selector, users.bob.addr, TRANSFER_AMOUNT)
+        });
+
+        // Create matching terms
+        bytes memory terms = abi.encodePacked(
+            address(token), // tokenAddress
+            users.bob.addr, // recipient
+            TRANSFER_AMOUNT, // amount
+            address(aliceDeleGatorCounter), // firstTarget
+            incrementCalldata // firstCalldata
+        );
+
+        // Create delegation from Alice to Bob with the SpecificActionERC20TransferBatchEnforcer caveat
+        Caveat[] memory caveats = new Caveat[](1);
+        caveats[0] = Caveat({ enforcer: address(specificActionEnforcer), terms: terms, args: hex"" });
+
+        Delegation memory delegation = Delegation({
+            delegate: users.bob.addr,
+            delegator: address(users.alice.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: caveats,
+            salt: 0,
+            signature: hex""
+        });
+
+        delegation = signDelegation(users.alice, delegation);
+
+        // Record initial states
+        uint256 initialCount = aliceDeleGatorCounter.count();
+        uint256 initialBalance = token.balanceOf(users.bob.addr);
+
+        // Prepare delegation redemption parameters
+        bytes[] memory permissionContexts = new bytes[](1);
+        Delegation[] memory delegations = new Delegation[](1);
+        delegations[0] = delegation;
+        permissionContexts[0] = abi.encode(delegations);
+
+        bytes[] memory executionCallDatas = new bytes[](1);
+        executionCallDatas[0] = ExecutionLib.encodeBatch(executions);
+
+        // Bob redeems the delegation to execute the batch
+        vm.prank(users.bob.addr);
+        delegationManager.redeemDelegations(permissionContexts, oneBatchMode, executionCallDatas);
+
+        // Verify states changed correctly
+        assertEq(aliceDeleGatorCounter.count(), initialCount + 1);
+        assertEq(token.balanceOf(users.bob.addr), initialBalance + TRANSFER_AMOUNT);
     }
 }
 
