@@ -26,4 +26,3 @@ Contracts that extend the DeleGatorCore contract MUST use [EIP712](https://eips.
 - DeleGator Implementations SHOULD implement a function to clear the storage related to the account's signer configuration, inside the function `_clearDeleGatorStorage`.
 
 > NOTE: If a DeleGator Implementation implements `reinitialize` it SHOULD gate the method to `onlySelf` to ensure no one can unexpectedly take over the DeleGator.
-> c
