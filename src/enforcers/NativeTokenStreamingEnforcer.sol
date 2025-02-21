@@ -68,8 +68,8 @@ contract NativeTokenStreamingEnforcer is CaveatEnforcer {
         view
         returns (uint256 availableAmount_)
     {
-        StreamingAllowance storage allowance = streamingAllowances[_delegationManager][_delegationHash];
-        availableAmount_ = _getAvailableAmount(allowance);
+        StreamingAllowance storage allowance_ = streamingAllowances[_delegationManager][_delegationHash];
+        availableAmount_ = _getAvailableAmount(allowance_);
     }
 
     /**
@@ -145,27 +145,25 @@ contract NativeTokenStreamingEnforcer is CaveatEnforcer {
     )
         private
     {
-        (, uint256 value,) = _executionCallData.decodeSingle();
+        (, uint256 value_,) = _executionCallData.decodeSingle();
 
         (uint256 initialAmount_, uint256 maxAmount_, uint256 amountPerSecond_, uint256 startTime_) = getTermsInfo(_terms);
 
         require(maxAmount_ >= initialAmount_, "NativeTokenStreamingEnforcer:invalid-max-amount");
         require(startTime_ > 0, "NativeTokenStreamingEnforcer:invalid-zero-start-time");
 
-        StreamingAllowance storage allowance = streamingAllowances[msg.sender][_delegationHash];
-        if (allowance.spent == 0) {
+        StreamingAllowance storage allowance_ = streamingAllowances[msg.sender][_delegationHash];
+        if (allowance_.spent == 0) {
             // First use of this delegation
-            allowance.initialAmount = initialAmount_;
-            allowance.maxAmount = maxAmount_;
-            allowance.amountPerSecond = amountPerSecond_;
-            allowance.startTime = startTime_;
+            allowance_.initialAmount = initialAmount_;
+            allowance_.maxAmount = maxAmount_;
+            allowance_.amountPerSecond = amountPerSecond_;
+            allowance_.startTime = startTime_;
         }
 
-        uint256 transferAmount_ = value;
+        require(value_ <= _getAvailableAmount(allowance_), "NativeTokenStreamingEnforcer:allowance-exceeded");
 
-        require(transferAmount_ <= _getAvailableAmount(allowance), "NativeTokenStreamingEnforcer:allowance-exceeded");
-
-        allowance.spent += transferAmount_;
+        allowance_.spent += value_;
 
         emit IncreasedSpentMap(
             msg.sender,
@@ -175,7 +173,7 @@ contract NativeTokenStreamingEnforcer is CaveatEnforcer {
             maxAmount_,
             amountPerSecond_,
             startTime_,
-            allowance.spent,
+            allowance_.spent,
             block.timestamp
         );
     }
