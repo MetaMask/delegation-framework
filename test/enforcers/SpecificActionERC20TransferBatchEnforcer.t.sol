@@ -40,9 +40,17 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
     function test_validBatchExecution() public {
         (Execution[] memory executions_, bytes memory terms_) = _setupValidBatchAndTerms();
         bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
+        bytes32 delegationHash_ = keccak256("test");
+        address delegator_ = address(users.alice.deleGator);
 
         vm.prank(address(delegationManager));
-        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
+        vm.expectEmit(true, true, true, true, address(batchEnforcer));
+        emit SpecificActionERC20TransferBatchEnforcer.DelegationExecuted(
+            address(delegationManager),
+            delegationHash_,
+            delegator_ // delegator
+        );
+        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, delegationHash_, delegator_, address(0));
     }
 
     // should allow multiple different delegations with same parameters

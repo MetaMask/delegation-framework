@@ -26,7 +26,7 @@ contract SpecificActionERC20TransferBatchEnforcer is CaveatEnforcer {
 
     ////////////////////////////// Events //////////////////////////////
 
-    event DelegationExecuted(address indexed delegationManager, bytes32 indexed delegationHash);
+    event DelegationExecuted(address indexed delegationManager, bytes32 indexed delegationHash, address indexed delegator);
 
     ////////////////////////////// Structs //////////////////////////////
 
@@ -58,7 +58,7 @@ contract SpecificActionERC20TransferBatchEnforcer is CaveatEnforcer {
         ModeCode _mode,
         bytes calldata _executionCallData,
         bytes32 _delegationHash,
-        address,
+        address _delegator,
         address
     )
         public
@@ -102,7 +102,7 @@ contract SpecificActionERC20TransferBatchEnforcer is CaveatEnforcer {
             revert("SpecificActionERC20TransferBatchEnforcer:invalid-second-transaction");
         }
 
-        emit DelegationExecuted(msg.sender, _delegationHash);
+        emit DelegationExecuted(msg.sender, _delegationHash, _delegator);
     }
 
     /**
