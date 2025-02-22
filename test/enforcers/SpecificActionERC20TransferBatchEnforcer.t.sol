@@ -38,25 +38,25 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
 
     // should allow a valid batch execution with correct parameters
     function test_validBatchExecution() public {
-        (Execution[] memory executions, bytes memory terms) = _setupValidBatchAndTerms();
-        bytes memory executionCallData = ExecutionLib.encodeBatch(executions);
+        (Execution[] memory executions_, bytes memory terms_) = _setupValidBatchAndTerms();
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
 
         vm.prank(address(delegationManager));
-        batchEnforcer.beforeHook(terms, hex"", batchMode, executionCallData, keccak256("test"), address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
     }
 
     // should allow multiple different delegations with same parameters
     function test_multipleDelegationsAllowed() public {
-        (Execution[] memory executions, bytes memory terms) = _setupValidBatchAndTerms();
-        bytes memory executionCallData = ExecutionLib.encodeBatch(executions);
+        (Execution[] memory executions_, bytes memory terms_) = _setupValidBatchAndTerms();
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
 
         vm.startPrank(address(delegationManager));
 
         // First delegation
-        batchEnforcer.beforeHook(terms, hex"", batchMode, executionCallData, keccak256("delegation1"), address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("delegation1"), address(0), address(0));
 
         // Second delegation with different hash
-        batchEnforcer.beforeHook(terms, hex"", batchMode, executionCallData, keccak256("delegation2"), address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("delegation2"), address(0), address(0));
 
         vm.stopPrank();
     }
@@ -65,71 +65,71 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
 
     // should fail with invalid mode (single mode instead of batch)
     function test_revertWithInvalidMode() public {
-        (Execution[] memory executions, bytes memory terms) = _setupValidBatchAndTerms();
-        bytes memory executionCallData = ExecutionLib.encodeBatch(executions);
+        (Execution[] memory executions_, bytes memory terms_) = _setupValidBatchAndTerms();
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
 
         vm.prank(address(delegationManager));
         vm.expectRevert("CaveatEnforcer:invalid-call-type");
-        batchEnforcer.beforeHook(terms, hex"", singleMode, executionCallData, keccak256("test"), address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", singleMode, executionCallData_, keccak256("test"), address(0), address(0));
     }
 
     // should fail when trying to reuse a delegation
     function test_revertOnDelegationReuse() public {
-        (Execution[] memory executions, bytes memory terms) = _setupValidBatchAndTerms();
-        bytes memory executionCallData = ExecutionLib.encodeBatch(executions);
-        bytes32 delegationHash = keccak256("test");
+        (Execution[] memory executions_, bytes memory terms_) = _setupValidBatchAndTerms();
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
+        bytes32 delegationHash_ = keccak256("test");
 
         vm.startPrank(address(delegationManager));
 
         // First use
-        batchEnforcer.beforeHook(terms, hex"", batchMode, executionCallData, delegationHash, address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, delegationHash_, address(0), address(0));
 
         // Attempt reuse
         vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:delegation-already-used");
-        batchEnforcer.beforeHook(terms, hex"", batchMode, executionCallData, delegationHash, address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, delegationHash_, address(0), address(0));
 
         vm.stopPrank();
     }
 
     // should fail with invalid batch size
     function test_revertWithInvalidBatchSize() public {
-        Execution[] memory executions = new Execution[](1);
-        executions[0] = Execution({
+        Execution[] memory executions_ = new Execution[](1);
+        executions_[0] = Execution({
             target: address(aliceDeleGatorCounter),
             value: 0,
             callData: abi.encodeWithSelector(Counter.increment.selector)
         });
 
-        (, bytes memory terms) = _setupValidBatchAndTerms();
-        bytes memory executionCallData = ExecutionLib.encodeBatch(executions);
+        (, bytes memory terms_) = _setupValidBatchAndTerms();
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
 
         vm.prank(address(delegationManager));
         vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-batch-size");
-        batchEnforcer.beforeHook(terms, hex"", batchMode, executionCallData, keccak256("test"), address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
     }
 
     // should fail with invalid first transaction
     function test_revertWithInvalidFirstTransaction() public {
-        (Execution[] memory executions, bytes memory terms) = _setupValidBatchAndTerms();
+        (Execution[] memory executions_, bytes memory terms_) = _setupValidBatchAndTerms();
         // Modify first transaction
-        executions[0].target = address(token);
-        bytes memory executionCallData = ExecutionLib.encodeBatch(executions);
+        executions_[0].target = address(token);
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
 
         vm.prank(address(delegationManager));
         vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-first-transaction");
-        batchEnforcer.beforeHook(terms, hex"", batchMode, executionCallData, keccak256("test"), address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
     }
 
     // should fail with invalid second transaction
     function test_revertWithInvalidSecondTransaction() public {
-        (Execution[] memory executions, bytes memory terms) = _setupValidBatchAndTerms();
+        (Execution[] memory executions_, bytes memory terms_) = _setupValidBatchAndTerms();
         // Modify second transaction amount
-        executions[1].callData = abi.encodeWithSelector(IERC20.transfer.selector, users.bob.addr, TRANSFER_AMOUNT + 1);
-        bytes memory executionCallData = ExecutionLib.encodeBatch(executions);
+        executions_[1].callData = abi.encodeWithSelector(IERC20.transfer.selector, users.bob.addr, TRANSFER_AMOUNT + 1);
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
 
         vm.prank(address(delegationManager));
         vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-second-transaction");
-        batchEnforcer.beforeHook(terms, hex"", batchMode, executionCallData, keccak256("test"), address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
     }
 
     // should fail with invalid terms length
@@ -143,94 +143,96 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
     // should allow a specific action ERC20 transfer batch through delegation
     function test_allow_specificActionERC20TransferBatch() public {
         // Create batch of executions
-        Execution[] memory executions = new Execution[](2);
+        Execution[] memory executions_ = new Execution[](2);
 
         // First execution: increment counter
-        bytes memory incrementCalldata = abi.encodeWithSelector(Counter.increment.selector);
-        executions[0] = Execution({ target: address(aliceDeleGatorCounter), value: 0, callData: incrementCalldata });
+        bytes memory incrementCalldata_ = abi.encodeWithSelector(Counter.increment.selector);
+        executions_[0] = Execution({ target: address(aliceDeleGatorCounter), value: 0, callData: incrementCalldata_ });
 
         // Second execution: transfer tokens
-        executions[1] = Execution({
+        executions_[1] = Execution({
             target: address(token),
             value: 0,
             callData: abi.encodeWithSelector(IERC20.transfer.selector, users.bob.addr, TRANSFER_AMOUNT)
         });
 
         // Create matching terms
-        bytes memory terms = abi.encodePacked(
+        bytes memory terms_ = abi.encodePacked(
             address(token), // tokenAddress
             users.bob.addr, // recipient
             TRANSFER_AMOUNT, // amount
             address(aliceDeleGatorCounter), // firstTarget
-            incrementCalldata // firstCalldata
+            incrementCalldata_ // firstCalldata
         );
 
         // Create delegation from Alice to Bob with the SpecificActionERC20TransferBatchEnforcer caveat
-        Caveat[] memory caveats = new Caveat[](1);
-        caveats[0] = Caveat({ enforcer: address(batchEnforcer), terms: terms, args: hex"" });
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] = Caveat({ enforcer: address(batchEnforcer), terms: terms_, args: hex"" });
 
-        Delegation memory delegation = Delegation({
+        Delegation memory delegation_ = Delegation({
             delegate: users.bob.addr,
             delegator: address(users.alice.deleGator),
             authority: ROOT_AUTHORITY,
-            caveats: caveats,
+            caveats: caveats_,
             salt: 0,
             signature: hex""
         });
 
-        delegation = signDelegation(users.alice, delegation);
+        delegation_ = signDelegation(users.alice, delegation_);
 
         // Record initial states
-        uint256 initialCount = aliceDeleGatorCounter.count();
-        uint256 initialBalance = token.balanceOf(users.bob.addr);
+        uint256 initialCount_ = aliceDeleGatorCounter.count();
+        uint256 initialBalance_ = token.balanceOf(users.bob.addr);
 
         // Prepare delegation redemption parameters
-        bytes[] memory permissionContexts = new bytes[](1);
-        Delegation[] memory delegations = new Delegation[](1);
-        delegations[0] = delegation;
-        permissionContexts[0] = abi.encode(delegations);
+        bytes[] memory permissionContexts_ = new bytes[](1);
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation_;
+        permissionContexts_[0] = abi.encode(delegations_);
 
-        bytes[] memory executionCallDatas = new bytes[](1);
-        executionCallDatas[0] = ExecutionLib.encodeBatch(executions);
+        bytes[] memory executionCallDatas_ = new bytes[](1);
+        executionCallDatas_[0] = ExecutionLib.encodeBatch(executions_);
 
         // Set up batch mode
-        ModeCode[] memory oneBatchMode = new ModeCode[](1);
-        oneBatchMode[0] = batchMode;
+        ModeCode[] memory oneBatchMode_ = new ModeCode[](1);
+        oneBatchMode_[0] = batchMode;
 
         // Bob redeems the delegation to execute the batch
         vm.prank(users.bob.addr);
-        delegationManager.redeemDelegations(permissionContexts, oneBatchMode, executionCallDatas);
+        delegationManager.redeemDelegations(permissionContexts_, oneBatchMode_, executionCallDatas_);
 
         // Verify states changed correctly
-        assertEq(aliceDeleGatorCounter.count(), initialCount + 1);
-        assertEq(token.balanceOf(users.bob.addr), initialBalance + TRANSFER_AMOUNT);
+        assertEq(aliceDeleGatorCounter.count(), initialCount_ + 1);
+        assertEq(token.balanceOf(users.bob.addr), initialBalance_ + TRANSFER_AMOUNT);
     }
 
     ////////////////////// Helper functions //////////////////////
 
-    function _setupValidBatchAndTerms() internal view returns (Execution[] memory executions, bytes memory terms) {
+    function _setupValidBatchAndTerms() internal view returns (Execution[] memory executions_, bytes memory terms_) {
         // Create valid batch of executions
-        executions = new Execution[](2);
+        executions_ = new Execution[](2);
 
         // First execution: increment counter
-        bytes memory incrementCalldata = abi.encodeWithSelector(Counter.increment.selector);
-        executions[0] = Execution({ target: address(aliceDeleGatorCounter), value: 0, callData: incrementCalldata });
+        bytes memory incrementCalldata_ = abi.encodeWithSelector(Counter.increment.selector);
+        executions_[0] = Execution({ target: address(aliceDeleGatorCounter), value: 0, callData: incrementCalldata_ });
 
         // Second execution: transfer tokens
-        executions[1] = Execution({
+        executions_[1] = Execution({
             target: address(token),
             value: 0,
             callData: abi.encodeWithSelector(IERC20.transfer.selector, users.bob.addr, TRANSFER_AMOUNT)
         });
 
         // Create matching terms
-        terms = abi.encodePacked(
+        terms_ = abi.encodePacked(
             address(token), // tokenAddress
             users.bob.addr, // recipient
             TRANSFER_AMOUNT, // amount
             address(aliceDeleGatorCounter), // firstTarget
-            incrementCalldata // firstCalldata
+            incrementCalldata_ // firstCalldata
         );
+
+        return (executions_, terms_);
     }
 
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {
