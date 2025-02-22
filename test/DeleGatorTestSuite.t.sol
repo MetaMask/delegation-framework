@@ -39,8 +39,6 @@ import { DeleGatorCore } from "../src/DeleGatorCore.sol";
 import { EncoderLib } from "../src/libraries/EncoderLib.sol";
 import { AllowedMethodsEnforcer } from "../src/enforcers/AllowedMethodsEnforcer.sol";
 import { AllowedTargetsEnforcer } from "../src/enforcers/AllowedTargetsEnforcer.sol";
-import { SpecificActionERC20TransferBatchEnforcer } from "../src/enforcers/SpecificActionERC20TransferBatchEnforcer.sol";
-import { BasicERC20, IERC20 } from "./utils/BasicERC20.t.sol";
 
 abstract contract DeleGatorTestSuite is BaseTest {
     using ModeLib for ModeCode;
@@ -59,12 +57,9 @@ abstract contract DeleGatorTestSuite is BaseTest {
         vm.label(address(allowedMethodsEnforcer), "Allowed Methods Enforcer");
         allowedTargetsEnforcer = new AllowedTargetsEnforcer();
         vm.label(address(allowedTargetsEnforcer), "Allowed Targets Enforcer");
-        specificActionEnforcer = new SpecificActionERC20TransferBatchEnforcer();
-        vm.label(address(specificActionEnforcer), "Specific Action ERC20 Transfer Batch Enforcer");
 
         aliceDeleGatorCounter = new Counter(address(users.alice.deleGator));
         bobDeleGatorCounter = new Counter(address(users.bob.deleGator));
-        token = new BasicERC20(address(users.alice.deleGator), "Test", "TST", 100 ether);
 
         oneSingularMode = new ModeCode[](1);
         oneSingularMode[0] = ModeLib.encodeSimpleSingle();
@@ -74,9 +69,6 @@ abstract contract DeleGatorTestSuite is BaseTest {
 
     AllowedMethodsEnforcer public allowedMethodsEnforcer;
     AllowedTargetsEnforcer public allowedTargetsEnforcer;
-    SpecificActionERC20TransferBatchEnforcer public specificActionEnforcer;
-    BasicERC20 public token;
-    uint256 public constant TRANSFER_AMOUNT = 10 ether;
     bytes32 private DELEGATIONS_STORAGE_LOCATION = StorageUtilsLib.getStorageLocation("DeleGator.Delegations");
     bytes32 private DELEGATOR_CORE_STORAGE_LOCATION = StorageUtilsLib.getStorageLocation("DeleGator.Core");
     bytes32 private INITIALIZABLE_STORAGE_LOCATION = StorageUtilsLib.getStorageLocation("openzeppelin.storage.Initializable");
