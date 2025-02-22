@@ -138,6 +138,74 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
         batchEnforcer.getTermsInfo(new bytes(91)); // Minimum required is 92 bytes
     }
 
+    ////////////////////// Integration //////////////////////
+
+    // should allow a specific action ERC20 transfer batch through delegation
+    function test_allow_specificActionERC20TransferBatch() public {
+        // Create batch of executions
+        Execution[] memory executions = new Execution[](2);
+
+        // First execution: increment counter
+        bytes memory incrementCalldata = abi.encodeWithSelector(Counter.increment.selector);
+        executions[0] = Execution({ target: address(aliceDeleGatorCounter), value: 0, callData: incrementCalldata });
+
+        // Second execution: transfer tokens
+        executions[1] = Execution({
+            target: address(token),
+            value: 0,
+            callData: abi.encodeWithSelector(IERC20.transfer.selector, users.bob.addr, TRANSFER_AMOUNT)
+        });
+
+        // Create matching terms
+        bytes memory terms = abi.encodePacked(
+            address(token), // tokenAddress
+            users.bob.addr, // recipient
+            TRANSFER_AMOUNT, // amount
+            address(aliceDeleGatorCounter), // firstTarget
+            incrementCalldata // firstCalldata
+        );
+
+        // Create delegation from Alice to Bob with the SpecificActionERC20TransferBatchEnforcer caveat
+        Caveat[] memory caveats = new Caveat[](1);
+        caveats[0] = Caveat({ enforcer: address(batchEnforcer), terms: terms, args: hex"" });
+
+        Delegation memory delegation = Delegation({
+            delegate: users.bob.addr,
+            delegator: address(users.alice.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: caveats,
+            salt: 0,
+            signature: hex""
+        });
+
+        delegation = signDelegation(users.alice, delegation);
+
+        // Record initial states
+        uint256 initialCount = aliceDeleGatorCounter.count();
+        uint256 initialBalance = token.balanceOf(users.bob.addr);
+
+        // Prepare delegation redemption parameters
+        bytes[] memory permissionContexts = new bytes[](1);
+        Delegation[] memory delegations = new Delegation[](1);
+        delegations[0] = delegation;
+        permissionContexts[0] = abi.encode(delegations);
+
+        bytes[] memory executionCallDatas = new bytes[](1);
+        executionCallDatas[0] = ExecutionLib.encodeBatch(executions);
+
+        // Set up batch mode
+        ModeCode[] memory oneBatchMode = new ModeCode[](1);
+        oneBatchMode[0] = batchMode;
+
+        // Bob redeems the delegation to execute the batch
+        vm.prank(users.bob.addr);
+        delegationManager.redeemDelegations(permissionContexts, oneBatchMode, executionCallDatas);
+
+        // Verify states changed correctly
+        assertEq(aliceDeleGatorCounter.count(), initialCount + 1);
+        assertEq(token.balanceOf(users.bob.addr), initialBalance + TRANSFER_AMOUNT);
+    }
+
     ////////////////////// Helper functions //////////////////////
 
     function _setupValidBatchAndTerms() internal view returns (Execution[] memory executions, bytes memory terms) {
