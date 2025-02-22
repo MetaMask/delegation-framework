@@ -444,9 +444,9 @@ abstract contract BaseTest is Test {
         vm.label(address(user_.deleGator), string.concat(_name, " DeleGator"));
     }
 
-    ////////////////////////////// Private //////////////////////////////
+    ////////////////////////////// Internal //////////////////////////////
 
-    function _createUsers() private returns (TestUsers memory users_) {
+    function _createUsers() internal returns (TestUsers memory users_) {
         users_.alice = createUser("Alice");
         users_.bob = createUser("Bob");
         users_.carol = createUser("Carol");

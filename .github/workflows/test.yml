@@ -36,3 +36,5 @@ jobs:
 
       - name: Run tests
         run: forge test -vvv
+        env:
+          LINEA_RPC_URL: ${{ secrets.LINEA_RPC_URL }}
