@@ -108,11 +108,10 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
         batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
     }
 
-    // should fail with invalid first transaction
-    function test_revertWithInvalidFirstTransaction() public {
+    // should fail with invalid first transaction target
+    function test_revertWithInvalidFirstTransactionTarget() public {
         (Execution[] memory executions_, bytes memory terms_) = _setupValidBatchAndTerms();
-        // Modify first transaction
-        executions_[0].target = address(token);
+        executions_[0].target = address(token); // Change target to something invalid
         bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
 
         vm.prank(address(delegationManager));
@@ -120,11 +119,90 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
         batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
     }
 
-    // should fail with invalid second transaction
-    function test_revertWithInvalidSecondTransaction() public {
+    // should fail with invalid first transaction value
+    function test_revertWithInvalidFirstTransactionValue() public {
         (Execution[] memory executions_, bytes memory terms_) = _setupValidBatchAndTerms();
-        // Modify second transaction amount
-        executions_[1].callData = abi.encodeWithSelector(IERC20.transfer.selector, users.bob.addr, TRANSFER_AMOUNT + 1);
+        executions_[0].value = 1 ether; // Add non-zero value
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
+
+        vm.prank(address(delegationManager));
+        vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-first-transaction");
+        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
+    }
+
+    // should fail with invalid first transaction calldata
+    function test_revertWithInvalidFirstTransactionCalldata() public {
+        (Execution[] memory executions_, bytes memory terms_) = _setupValidBatchAndTerms();
+        executions_[0].callData = abi.encodeWithSelector(Counter.setCount.selector, 42); // Different calldata
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
+
+        vm.prank(address(delegationManager));
+        vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-first-transaction");
+        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
+    }
+
+    // should fail with invalid second transaction target
+    function test_revertWithInvalidSecondTransactionTarget() public {
+        (Execution[] memory executions_, bytes memory terms_) = _setupValidBatchAndTerms();
+        executions_[1].target = address(aliceDeleGatorCounter); // Wrong target
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
+
+        vm.prank(address(delegationManager));
+        vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-second-transaction");
+        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
+    }
+
+    // should fail with invalid second transaction value
+    function test_revertWithInvalidSecondTransactionValue() public {
+        (Execution[] memory executions_, bytes memory terms_) = _setupValidBatchAndTerms();
+        executions_[1].value = 1 ether; // Non-zero value
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
+
+        vm.prank(address(delegationManager));
+        vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-second-transaction");
+        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
+    }
+
+    // should fail with invalid second transaction calldata length
+    function test_revertWithInvalidSecondTransactionCalldataLength() public {
+        (Execution[] memory executions_, bytes memory terms_) = _setupValidBatchAndTerms();
+        executions_[1].callData = abi.encodeWithSelector(IERC20.transfer.selector, users.bob.addr); // Missing amount parameter
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
+
+        vm.prank(address(delegationManager));
+        vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-second-transaction");
+        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
+    }
+
+    // should fail with invalid second transaction selector
+    function test_revertWithInvalidSecondTransactionSelector() public {
+        (Execution[] memory executions_, bytes memory terms_) = _setupValidBatchAndTerms();
+        executions_[1].callData = abi.encodeWithSelector(IERC20.approve.selector, users.bob.addr, TRANSFER_AMOUNT); // Wrong
+            // function
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
+
+        vm.prank(address(delegationManager));
+        vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-second-transaction");
+        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
+    }
+
+    // should fail with invalid second transaction recipient
+    function test_revertWithInvalidSecondTransactionRecipient() public {
+        (Execution[] memory executions_, bytes memory terms_) = _setupValidBatchAndTerms();
+        executions_[1].callData = abi.encodeWithSelector(IERC20.transfer.selector, address(this), TRANSFER_AMOUNT); // Wrong
+            // recipient
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
+
+        vm.prank(address(delegationManager));
+        vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-second-transaction");
+        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
+    }
+
+    // should fail with invalid second transaction amount
+    function test_revertWithInvalidSecondTransactionAmount() public {
+        (Execution[] memory executions_, bytes memory terms_) = _setupValidBatchAndTerms();
+        executions_[1].callData = abi.encodeWithSelector(IERC20.transfer.selector, users.bob.addr, TRANSFER_AMOUNT + 1); // Wrong
+            // amount
         bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
 
         vm.prank(address(delegationManager));
