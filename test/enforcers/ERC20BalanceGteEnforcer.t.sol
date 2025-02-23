@@ -17,6 +17,7 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
     BasicERC20 public token;
     address delegator;
     address delegate;
+    address recipient;
     address dm;
     Execution mintExecution;
     bytes mintExecutionCallData;
@@ -28,6 +29,7 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         super.setUp();
         delegator = address(users.alice.deleGator);
         delegate = address(users.bob.deleGator);
+        recipient = address(users.carol.deleGator);
         dm = address(delegationManager);
         enforcer = new ERC20BalanceGteEnforcer();
         vm.label(address(enforcer), "ERC20 BalanceGte Enforcer");
@@ -42,24 +44,26 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
     // Validates the terms get decoded correctly
     function test_decodedTheTerms() public {
-        bytes memory terms_ = abi.encodePacked(address(token), uint256(100));
+        bytes memory terms_ = abi.encodePacked(address(recipient), address(token), uint256(100));
         uint256 amount_;
         address token_;
-        (token_, amount_) = enforcer.getTermsInfo(terms_);
+        address recipient_;
+        (recipient_, token_, amount_) = enforcer.getTermsInfo(terms_);
         assertEq(amount_, 100);
         assertEq(token_, address(token));
+        assertEq(recipient_, address(recipient));
     }
 
     // Validates that a balance has increased at least the expected amount
     function test_allow_ifBalanceIncreases() public {
         // Expect it to increase by at least 100
-        bytes memory terms_ = abi.encodePacked(address(token), uint256(100));
+        bytes memory terms_ = abi.encodePacked(address(recipient), address(token), uint256(100));
 
         // Increase by 100
         vm.prank(dm);
         enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(delegator);
-        token.mint(delegator, 100);
+        token.mint(recipient, 100);
         vm.prank(dm);
         enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
@@ -67,9 +71,32 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(dm);
         enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(delegator);
-        token.mint(delegator, 1000);
+        token.mint(recipient, 1000);
         vm.prank(dm);
         enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+    }
+
+    // Validates that the delegation can be reused with different recipients
+    function test_allow_reuseDelegationWithDifferentRecipients() public {
+        // Expect it to increase by at least 100
+        bytes memory terms1_ = abi.encodePacked(address(recipient), address(token), uint256(100));
+        bytes memory terms2_ = abi.encodePacked(address(delegator), address(token), uint256(100));
+
+        // Increase by 100, check for recipient
+        vm.prank(dm);
+        enforcer.beforeHook(terms1_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        vm.prank(delegator);
+        token.mint(recipient, 100);
+        vm.prank(dm);
+        enforcer.afterHook(terms1_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Increase by 100, check for delegator as recipient
+        vm.prank(dm);
+        enforcer.beforeHook(terms2_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        vm.prank(delegator);
+        token.mint(delegator, 100);
+        vm.prank(dm);
+        enforcer.afterHook(terms2_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // ////////////////////// Errors //////////////////////
@@ -77,13 +104,13 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
     // Reverts if a balance hasn't increased by the set amount
     function test_notAllow_insufficientIncrease() public {
         // Expect it to increase by at least 100
-        bytes memory terms_ = abi.encodePacked(address(token), uint256(100));
+        bytes memory terms_ = abi.encodePacked(address(recipient), address(token), uint256(100));
 
         // Increase by 10, expect revert
         vm.prank(dm);
         enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(delegator);
-        token.mint(delegator, 10);
+        token.mint(recipient, 10);
         vm.prank(dm);
         vm.expectRevert(bytes("ERC20BalanceGteEnforcer:balance-not-gt"));
         enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
@@ -92,7 +119,7 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
     // Reverts if a enforcer is locked
     function test_notAllow_reenterALockedEnforcer() public {
         // Expect it to increase by at least 100
-        bytes memory terms_ = abi.encodePacked(address(token), uint256(100));
+        bytes memory terms_ = abi.encodePacked(address(recipient), address(token), uint256(100));
         bytes32 delegationHash_ = bytes32(uint256(99999999));
 
         // Increase by 100
@@ -104,7 +131,7 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         vm.expectRevert(bytes("ERC20BalanceGteEnforcer:enforcer-is-locked"));
         enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, delegationHash_, delegator, delegate);
         vm.startPrank(delegator);
-        token.mint(delegator, 1000);
+        token.mint(recipient, 1000);
         vm.startPrank(dm);
 
         // Unlocks the enforcer
@@ -115,17 +142,31 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         assertTrue(enforcer.isLocked(hashKey_));
     }
 
+    // Reverts if the recipient didn't receive any tokens
+    function test_notAllow_noIncreaseToRecipient() public {
+        bytes memory terms_ = abi.encodePacked(address(recipient), address(token), uint256(100));
+
+        // BeforeHook should cache the recipient's balance
+        vm.prank(dm);
+        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // No tokens are minted to the recipient, so balance shouldn't increase
+        vm.prank(dm);
+        vm.expectRevert(bytes("ERC20BalanceGteEnforcer:balance-not-gt"));
+        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+    }
+
     // Validates the terms are well formed
     function test_invalid_decodedTheTerms() public {
         bytes memory terms_;
 
         // Too small
-        terms_ = abi.encodePacked(address(token), uint8(100));
+        terms_ = abi.encodePacked(address(recipient), address(token), uint8(100));
         vm.expectRevert(bytes("ERC20BalanceGteEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
 
         // Too large
-        terms_ = abi.encodePacked(uint256(100), uint256(100));
+        terms_ = abi.encodePacked(address(recipient), address(token), uint256(100), uint256(100));
         vm.expectRevert(bytes("ERC20BalanceGteEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
     }
@@ -135,7 +176,7 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_;
 
         // Invalid token
-        terms_ = abi.encodePacked(address(0), uint256(100));
+        terms_ = abi.encodePacked(address(recipient), address(0), uint256(100));
         vm.expectRevert();
         enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
@@ -143,7 +184,7 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
     // Validates that an invalid ID reverts
     function test_notAllow_expectingOverflow() public {
         // Expect balance to increase so much that the balance overflows
-        bytes memory terms_ = abi.encodePacked(address(token), type(uint256).max);
+        bytes memory terms_ = abi.encodePacked(address(recipient), address(token), type(uint256).max);
 
         // Increase
         vm.prank(dm);
