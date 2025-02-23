@@ -529,6 +529,272 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         vm.stopPrank();
     }
 
+    // Test that swapByDelegation reverts when the delegations array is empty.
+    function test_revert_swapByDelegation_emptyDelegations() public {
+        _setUpMockContracts();
+        bytes memory apiData_ = _encodeApiData(aggregatorId, IERC20(tokenA), amountFrom, swapDataTokenAtoTokenB);
+        Delegation[] memory emptyDelegations_ = new Delegation[](0);
+        vm.prank(address(subVault.deleGator));
+        vm.expectRevert(DelegationMetaSwapAdapter.InvalidEmptyDelegations.selector);
+        delegationMetaSwapAdapter.swapByDelegation(apiData_, emptyDelegations_);
+    }
+
+    // Test that swapByDelegation reverts if tokenFrom equals tokenTo.
+    function test_revert_swapByDelegation_identicalTokens() public {
+        _setUpMockContracts();
+        // Create swapData with identical tokens.
+        bytes memory swapDataIdentical_ =
+            _encodeSwapData(IERC20(tokenA), IERC20(tokenA), amountFrom, amountTo, hex"", 0, address(0), true);
+        bytes memory apiData_ = _encodeApiData(aggregatorId, IERC20(tokenA), amountFrom, swapDataIdentical_);
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = _getVaultDelegation();
+        vm.prank(address(subVault.deleGator));
+        vm.expectRevert(DelegationMetaSwapAdapter.InvalidIdenticalTokens.selector);
+        delegationMetaSwapAdapter.swapByDelegation(apiData_, delegations_);
+    }
+
+    // Test that swapByDelegation reverts if tokenFrom is not allowed.
+    function test_revert_swapByDelegation_tokenFromNotAllowed() public {
+        _setUpMockContracts();
+        // Remove tokenA from allowed tokens.
+        IERC20[] memory tokens_ = new IERC20[](1);
+        tokens_[0] = IERC20(tokenA);
+        bool[] memory statuses_ = new bool[](1);
+        statuses_[0] = false;
+        vm.prank(owner);
+        delegationMetaSwapAdapter.updateAllowedTokens(tokens_, statuses_);
+
+        bytes memory apiData_ = _encodeApiData(aggregatorId, IERC20(tokenA), amountFrom, swapDataTokenAtoTokenB);
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = _getVaultDelegation();
+
+        vm.prank(address(subVault.deleGator));
+        vm.expectRevert(abi.encodeWithSelector(DelegationMetaSwapAdapter.TokenFromIsNotAllowed.selector, tokenA));
+        delegationMetaSwapAdapter.swapByDelegation(apiData_, delegations_);
+    }
+
+    // Test that swapByDelegation reverts if tokenTo is not allowed.
+    function test_revert_swapByDelegation_tokenToNotAllowed() public {
+        _setUpMockContracts();
+        // Remove tokenB from allowed tokens.
+        IERC20[] memory tokens_ = new IERC20[](1);
+        tokens_[0] = IERC20(tokenB);
+        bool[] memory statuses_ = new bool[](1);
+        statuses_[0] = false;
+        vm.prank(owner);
+        delegationMetaSwapAdapter.updateAllowedTokens(tokens_, statuses_);
+
+        bytes memory apiData_ = _encodeApiData(aggregatorId, IERC20(tokenA), amountFrom, swapDataTokenAtoTokenB);
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = _getVaultDelegation();
+
+        vm.prank(address(subVault.deleGator));
+        vm.expectRevert(abi.encodeWithSelector(DelegationMetaSwapAdapter.TokenToIsNotAllowed.selector, tokenB));
+        delegationMetaSwapAdapter.swapByDelegation(apiData_, delegations_);
+    }
+
+    // Test that swapByDelegation reverts if the aggregator ID is not allowed.
+    function test_revert_swapByDelegation_aggregatorIdNotAllowed() public {
+        _setUpMockContracts();
+        // Remove aggregatorId from the allowed list.
+        string[] memory aggregatorIds_ = new string[](1);
+        aggregatorIds_[0] = aggregatorId;
+        bool[] memory statuses = new bool[](1);
+        statuses[0] = false;
+        vm.prank(owner);
+        delegationMetaSwapAdapter.updateAllowedAggregatorIds(aggregatorIds_, statuses);
+
+        bytes memory apiData_ = _encodeApiData(aggregatorId, IERC20(tokenA), amountFrom, swapDataTokenAtoTokenB);
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = _getVaultDelegation();
+
+        vm.prank(address(subVault.deleGator));
+        vm.expectRevert(abi.encodeWithSelector(DelegationMetaSwapAdapter.AggregatorIdIsNotAllowed.selector, aggregatorId));
+        delegationMetaSwapAdapter.swapByDelegation(apiData_, delegations_);
+    }
+
+    // Test that swapTokens reverts when insufficient tokens are received.
+    function test_revert_swapTokens_insufficientTokens() public {
+        _setUpMockContracts();
+        // Without sending any token, _getSelfBalance(tokenA) - 0 will be 0.
+        vm.prank(address(delegationMetaSwapAdapter));
+        vm.expectRevert(DelegationMetaSwapAdapter.InsufficientTokens.selector);
+        delegationMetaSwapAdapter.swapTokens(
+            aggregatorId, tokenA, tokenB, address(vault.deleGator), amountFrom, 0, swapDataTokenAtoTokenB
+        );
+    }
+
+    // Test the extra tokens branch in swapTokens (sending the surplus to the recipient).
+    function test_swapTokens_extraTokenFromSent() public {
+        _setUpMockContracts();
+        uint256 extra_ = 0.5 ether;
+        // Mint extra tokenA directly to the adapter.
+        vm.prank(owner);
+        tokenA.mint(address(delegationMetaSwapAdapter), amountFrom + extra_);
+        address recipient_ = address(0x1234);
+
+        uint256 recipientTokenABalanceBefore = tokenA.balanceOf(recipient_);
+        uint256 recipientTokenBBalanceBefore = tokenB.balanceOf(recipient_);
+
+        // Call swapTokens directly from the contract itself.
+        vm.prank(address(delegationMetaSwapAdapter));
+        delegationMetaSwapAdapter.swapTokens(aggregatorId, tokenA, tokenB, recipient_, amountFrom, 0, swapDataTokenAtoTokenB);
+
+        uint256 recipientTokenABalanceAfter = tokenA.balanceOf(recipient_);
+        uint256 recipientTokenBBalanceAfter = tokenB.balanceOf(recipient_);
+
+        assertEq(recipientTokenABalanceAfter - recipientTokenABalanceBefore, extra_, "Recipient should receive the extra tokenA");
+        assertEq(
+            recipientTokenBBalanceAfter - recipientTokenBBalanceBefore,
+            amountFrom,
+            "Recipient should receive tokenB swapped for amountFrom"
+        );
+    }
+
+    // Test the withdraw function for an ERC20 token.
+    function test_withdraw() public {
+        _setUpMockContracts();
+        uint256 withdrawAmount_ = 0.8 ether;
+        // Mint tokenA to the adapter.
+        vm.prank(owner);
+        tokenA.mint(address(delegationMetaSwapAdapter), withdrawAmount_);
+        address recipient_ = address(0xABCD);
+        vm.expectEmit(true, true, true, true);
+        emit DelegationMetaSwapAdapter.SentTokens(tokenA, recipient_, withdrawAmount_);
+        vm.prank(owner);
+        delegationMetaSwapAdapter.withdraw(tokenA, withdrawAmount_, recipient_);
+        assertEq(tokenA.balanceOf(recipient_), withdrawAmount_, "Recipient should receive the withdrawn tokenA");
+    }
+
+    // Test the withdraw function for native tokens.
+    function test_withdraw_native() public {
+        _setUpMockContracts();
+        uint256 withdrawAmount_ = 1 ether;
+        address recipient_ = address(0xDEAD);
+        // Fund the adapter with native ETH.
+        vm.deal(address(delegationMetaSwapAdapter), withdrawAmount_);
+        vm.expectEmit(true, true, true, true);
+        emit DelegationMetaSwapAdapter.SentTokens(IERC20(address(0)), recipient_, withdrawAmount_);
+        vm.prank(owner);
+        delegationMetaSwapAdapter.withdraw(IERC20(address(0)), withdrawAmount_, recipient_);
+        assertEq(recipient_.balance, withdrawAmount_, "Recipient should receive the withdrawn ETH");
+    }
+
+    // Test that updateAllowedTokens emits the ChangedTokenStatus event.
+    function test_event_ChangedTokenStatus() public {
+        _setUpMockContracts();
+        BasicERC20 tokenC_ = new BasicERC20(owner, "TokenC", "TKC", 0);
+
+        IERC20[] memory tokens_ = new IERC20[](2);
+        tokens_[0] = IERC20(tokenA);
+        tokens_[1] = IERC20(tokenC_);
+        bool[] memory statuses_ = new bool[](2);
+        statuses_[0] = false;
+        statuses_[1] = true;
+
+        vm.expectEmit(false, false, false, true);
+        emit DelegationMetaSwapAdapter.ChangedTokenStatus(tokenA, false);
+        vm.expectEmit(false, false, false, true);
+        emit DelegationMetaSwapAdapter.ChangedTokenStatus(tokenC_, true);
+        vm.prank(owner);
+        delegationMetaSwapAdapter.updateAllowedTokens(tokens_, statuses_);
+    }
+
+    // Test that updateAllowedAggregatorIds emits the ChangedAggregatorIdStatus event.
+    function test_event_ChangedAggregatorIdStatus() public {
+        _setUpMockContracts();
+        string[] memory aggregatorIds_ = new string[](1);
+        aggregatorIds_[0] = "2";
+        bool[] memory statuses_ = new bool[](1);
+        statuses_[0] = true;
+        bytes32 aggHash_ = keccak256(abi.encode("2"));
+
+        vm.expectEmit(true, false, false, true);
+        emit DelegationMetaSwapAdapter.ChangedAggregatorIdStatus(aggHash_, "2", true);
+        vm.prank(owner);
+        delegationMetaSwapAdapter.updateAllowedAggregatorIds(aggregatorIds_, statuses_);
+    }
+
+    // Test that swapTokens (when called via the extra-token branch) emits two SentTokens events.
+    function test_event_SentTokens_in_swapTokens() public {
+        _setUpMockContracts();
+        uint256 extra_ = 0.3 ether;
+        address recipient_ = address(0x5678);
+        // Mint extra tokenA to the adapter.
+        vm.prank(owner);
+        tokenA.mint(address(delegationMetaSwapAdapter), amountFrom + extra_);
+
+        // Expect the first SentTokens event (for sending extra tokenA).
+        vm.expectEmit(true, true, true, true);
+        emit DelegationMetaSwapAdapter.SentTokens(tokenA, recipient_, extra_);
+        // And the second SentTokens event (for sending tokenB after swap).
+        vm.expectEmit(true, true, true, true);
+        emit DelegationMetaSwapAdapter.SentTokens(tokenB, recipient_, amountFrom);
+
+        vm.prank(address(delegationMetaSwapAdapter));
+        delegationMetaSwapAdapter.swapTokens(aggregatorId, tokenA, tokenB, recipient_, amountFrom, 0, swapDataTokenAtoTokenB);
+    }
+
+    // Test that onlyOwner functions revert if called by a non-owner.
+    function test_revert_withdraw_ifNotOwner() public {
+        _setUpMockContracts();
+        vm.prank(address(subVault.deleGator));
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(subVault.deleGator)));
+        delegationMetaSwapAdapter.withdraw(tokenA, 1 ether, address(vault.deleGator));
+    }
+
+    // Test that updateAllowedTokens reverts with InputLengthsMismatch.
+    function test_revert_updateAllowedTokens_arrayLengthMismatch_New() public {
+        _setUpMockContracts();
+        IERC20[] memory tokens_ = new IERC20[](2);
+        tokens_[0] = IERC20(tokenA);
+        tokens_[1] = IERC20(tokenB);
+        bool[] memory statuses_ = new bool[](1); // intentionally mismatched length
+        statuses_[0] = true;
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(DelegationMetaSwapAdapter.InputLengthsMismatch.selector));
+        delegationMetaSwapAdapter.updateAllowedTokens(tokens_, statuses_);
+    }
+
+    // Test that updateAllowedAggregatorIds reverts with InputLengthsMismatch.
+    function test_revert_updateAllowedAggregatorIds_arrayLengthMismatch_New() public {
+        _setUpMockContracts();
+        string[] memory aggregatorIds_ = new string[](2);
+        aggregatorIds_[0] = "X";
+        aggregatorIds_[1] = "Y";
+        bool[] memory statuses_ = new bool[](1); // intentionally mismatched
+        statuses_[0] = true;
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(DelegationMetaSwapAdapter.InputLengthsMismatch.selector));
+        delegationMetaSwapAdapter.updateAllowedAggregatorIds(aggregatorIds_, statuses_);
+    }
+
+    // Test that a native token transfer failure reverts with FailedNativeTokenTransfer.
+    function test_revert_withdraw_failedNativeTokenTransfer() public {
+        _setUpMockContracts();
+        // Using a massive amount
+        uint256 withdrawAmount_ = type(uint256).max;
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(DelegationMetaSwapAdapter.FailedNativeTokenTransfer.selector, address(delegationMetaSwapAdapter))
+        );
+        delegationMetaSwapAdapter.withdraw(IERC20(address(0)), withdrawAmount_, address(delegationMetaSwapAdapter));
+    }
+
+    // Test that the constructor emits the SetDelegationManager and SetMetaSwap events.
+    function test_event_constructor_SetDelegationManager_SetMetaSwap() public {
+        // Use dummy addresses for testing.
+        address dummyDelegationManager_ = address(0x123);
+        address dummyMetaSwap_ = address(0x456);
+        // Expect the events to be emitted during construction.
+        vm.expectEmit(true, true, false, true);
+        emit DelegationMetaSwapAdapter.SetDelegationManager(IDelegationManager(dummyDelegationManager_));
+        vm.expectEmit(true, true, false, true);
+        emit DelegationMetaSwapAdapter.SetMetaSwap(IMetaSwap(dummyMetaSwap_));
+        // Deploy a new instance to capture the events.
+        new DelegationMetaSwapAdapter(owner, IDelegationManager(dummyDelegationManager_), IMetaSwap(dummyMetaSwap_));
+    }
+
     /**
      * @dev Deploys and configures a MetaSwapMock that can be used to test the delegationMetaSwapAdapter contract
      */
