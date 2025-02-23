@@ -25,7 +25,7 @@ contract ERC20BalanceGteEnforcer is CaveatEnforcer {
     /**
      * @notice Generates the key that identifies the run. Produced by the hash of the values used.
      * @param _caller Address of the sender calling the enforcer.
-     * @param _token Token being compared in the beforeHook and beforeHook.
+     * @param _token Token being compared in the beforeHook and afterHook.
      * @param _delegationHash The hash of the delegation.
      * @return The hash to be used as key of the mapping.
      */
