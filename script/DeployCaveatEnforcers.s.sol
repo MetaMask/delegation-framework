@@ -17,6 +17,7 @@ import { ERC20TransferAmountEnforcer } from "../src/enforcers/ERC20TransferAmoun
 import { ERC721BalanceGteEnforcer } from "../src/enforcers/ERC721BalanceGteEnforcer.sol";
 import { ERC721TransferEnforcer } from "../src/enforcers/ERC721TransferEnforcer.sol";
 import { ERC1155BalanceGteEnforcer } from "../src/enforcers/ERC1155BalanceGteEnforcer.sol";
+import { ExactCalldataEnforcer } from "../src/enforcers/ExactCalldataEnforcer.sol";
 import { IdEnforcer } from "../src/enforcers/IdEnforcer.sol";
 import { LimitedCallsEnforcer } from "../src/enforcers/LimitedCallsEnforcer.sol";
 import { NativeBalanceGteEnforcer } from "../src/enforcers/NativeBalanceGteEnforcer.sol";
@@ -26,6 +27,7 @@ import { NativeTokenStreamingEnforcer } from "../src/enforcers/NativeTokenStream
 import { NonceEnforcer } from "../src/enforcers/NonceEnforcer.sol";
 import { OwnershipTransferEnforcer } from "../src/enforcers/OwnershipTransferEnforcer.sol";
 import { RedeemerEnforcer } from "../src/enforcers/RedeemerEnforcer.sol";
+import { SpecificActionERC20TransferBatchEnforcer } from "../src/enforcers/SpecificActionERC20TransferBatchEnforcer.sol";
 import { ERC20StreamingEnforcer } from "../src/enforcers/ERC20StreamingEnforcer.sol";
 import { TimestampEnforcer } from "../src/enforcers/TimestampEnforcer.sol";
 import { ValueLteEnforcer } from "../src/enforcers/ValueLteEnforcer.sol";
@@ -81,6 +83,9 @@ contract DeployCaveatEnforcers is Script {
         deployedAddress = address(new ERC20TransferAmountEnforcer{ salt: salt }());
         console2.log("ERC20TransferAmountEnforcer: %s", deployedAddress);
 
+        deployedAddress = address(new ERC20StreamingEnforcer{ salt: salt }());
+        console2.log("ERC20StreamingEnforcer: %s", deployedAddress);
+
         deployedAddress = address(new ERC721BalanceGteEnforcer{ salt: salt }());
         console2.log("ERC721BalanceGteEnforcer: %s", deployedAddress);
 
@@ -89,6 +94,9 @@ contract DeployCaveatEnforcers is Script {
 
         deployedAddress = address(new ERC1155BalanceGteEnforcer{ salt: salt }());
         console2.log("ERC1155BalanceGteEnforcer: %s", deployedAddress);
+
+        deployedAddress = address(new ExactCalldataEnforcer{ salt: salt }());
+        console2.log("ExactCalldataEnforcer: %s", deployedAddress);
 
         deployedAddress = address(new IdEnforcer{ salt: salt }());
         console2.log("IdEnforcer: %s", deployedAddress);
@@ -121,8 +129,8 @@ contract DeployCaveatEnforcers is Script {
         deployedAddress = address(new RedeemerEnforcer{ salt: salt }());
         console2.log("RedeemerEnforcer: %s", deployedAddress);
 
-        deployedAddress = address(new ERC20StreamingEnforcer{ salt: salt }());
-        console2.log("ERC20StreamingEnforcer: %s", deployedAddress);
+        deployedAddress = address(new SpecificActionERC20TransferBatchEnforcer{ salt: salt }());
+        console2.log("SpecificActionERC20TransferBatchEnforcer: %s", deployedAddress);
 
         deployedAddress = address(new TimestampEnforcer{ salt: salt }());
         console2.log("TimestampEnforcer: %s", deployedAddress);
