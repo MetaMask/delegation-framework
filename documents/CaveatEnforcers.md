@@ -25,3 +25,110 @@ This redemption may alter the state of other contracts. For example, the balance
 Consider a scenario where D1 includes an array of caveats: one caveat is the `NativeBalanceGteEnforcer`, which verifies that Bob’s balance has increased as a result of the execution attached to D1. The second caveat is the `NativeTokenPaymentEnforcer`, which deducts from Bob’s balance by redeeming D2. If these enforcers are not correctly ordered, they could conflict. For instance, if the `NativeTokenPaymentEnforcer` is executed before the `NativeBalanceGteEnforcer`, Bob’s balance would be reduced first, potentially causing the `NativeBalanceGteEnforcer` to fail its validation of ensuring Bob’s balance exceeds a certain threshold.
 
 Because the `NativeTokenPaymentEnforcer` modifies the state of external contracts, it is essential to carefully order enforcers in the delegation to prevent conflicts. The enforcers are designed to protect the execution process, but they do not guarantee a final state after the redemption. This means that even if the `NativeBalanceGteEnforcer` validates Bob’s balance at one point, subsequent enforcers, such as the `NativeTokenPaymentEnforcer`, may modify it later.
+
+### ERC20SubscriptionEnforcer
+
+A delegate (i.e., redeemer) can use the `ERC20SubscriptionEnforcer` to transfer ERC20 tokens from the delegator's account once every `x` day.
+
+Given an initial timestamp from the redeemer, the `next allowed timestamp` is calculated dynamically, checking this value against the current `block.timestamp` to ensure the redemption fits within the next cycle before execution. `ERC20SubscriptionEnforcer` will enforce the following constraints:
+
+1. The redeemer can only redeem the subscription token amount once per cycle, preventing duplicate claims in the same cycle
+2. The redeemer can claim missed a cycle. They skip a claim period at a later date.
+
+### References
+
+Here are a few implementations of subscriptions in the wild that we have taken some inspiration from:
+
+- [OG delegatable framework DistrictERC20PermitSubscriptionsEnforcer](https://github.com/district-labs/delegatable-enforcers/blob/main/contracts/DistrictERC20PermitSubscriptionsEnforcer.sol)
+- [Coinbase SpendPermissionManager](https://github.com/coinbase/spend-permissions/blob/main/src/SpendPermissionManager.sol)
+
+### Caveat input:
+
+#### Start Timestamp
+
+An initial timestamp is passed into the caveat args to determine the subscription's start date.
+
+---
+
+#### Formulas:
+
+Below is a set of formulas used in the `ERC20SubscriptionEnforcer` to enforce on-chain subscriptions.
+
+#### Elapsed time
+
+Determines in **seconds** how much time has passed since the subscription start date.
+
+```math
+\text{elapsedTime} = \text{block.timestamp} - \text{startTimestamp}
+```
+
+---
+
+#### Periods passed(cycles)
+
+We will use integer division to dynamically determine how many full `x-day` periods have passed since the `elapsed time` while ignoring any remainder(i.e., accumulated extra days/hours toward the current cycle in progress). We `elapsedTime` evaluates to `0`. No full cycle has passed, and the first cycle is in progress.
+
+```math
+\text{periodsPassed} = \frac{\text{elapsedTime}}{30 \text{ days}}
+```
+
+For example:
+
+- If an of `elapsedTime = 75 days`, then:
+  \[
+  \frac{75}{30} = 2
+  \]
+  (meaning **2 full cycles** have passed and the **third cycle** is in progress. Once the 90-day mark is reached, the redeemer can claim tokens for the third cycle).
+
+For example:
+
+- If an of `elapsedTime = 10 days`, then:
+  \[
+  \frac{10}{30} = 0
+  \]
+  (meaning **first full cycles** is in progress).
+
+---
+
+#### Next valid timestamp
+
+We can use a simple calculation with values derived from the previous formula to determine the next timestamp the redeemer is eligible to claim the subscription token amount.
+
+Since `periodsPassed` will give us the last completed cycle, we need to `+1` to know where to start the next cycle (i.e., cycle actively in progress).
+
+```math
+\text{nextValidTimestamp} = \text{startTimestamp} + (\text{periodsPassed} + 1) \times 30 \text{ days}
+```
+
+---
+
+##### Example Calculation
+
+Given the following input for the `ERC20SubscriptionEnforcer`:
+
+- `cycle = 30 days`
+- `startTimestamp = 1,000,000` (Unix time)(Mon Jan 12 1970 13:46:40)
+- `block.timestamp = 1,090,000` (current time)(Tue Jan 13 1970 14:46:40)
+
+1. Compute `elapsedTime`
+   \[
+   \text{elapsedTime} = 1,090,000 - 1,000,000 = 90,000 \text{ seconds}
+   \]
+
+2. Compute `periodsPassed`
+   \[
+   \text{periodsPassed} = \frac{90,000}{30 \times 24 \times 60 \times 60} = \frac{90,000}{2,592,000} = 0
+   \]
+
+(No full periods have passed, since `90,000` seconds is **less than 30 days**. The first cycle is still in progress.)
+
+1. Compute `nextValidTimestamp`
+   \[
+   \text{nextValidTimestamp} = 1,000,000 + (0 + 1) \times 2,592,000
+   \]
+
+\[
+= 1,000,000 + 2,592,000 = 3,592,000
+\]
+
+(This means the redeemer can submit a transaction with a timestamp **3,592,000** or later to claim the token amount for the first 30-day cycle.)
