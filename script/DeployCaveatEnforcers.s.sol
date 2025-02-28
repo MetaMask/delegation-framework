@@ -26,7 +26,7 @@ import { NativeTokenStreamingEnforcer } from "../src/enforcers/NativeTokenStream
 import { NonceEnforcer } from "../src/enforcers/NonceEnforcer.sol";
 import { OwnershipTransferEnforcer } from "../src/enforcers/OwnershipTransferEnforcer.sol";
 import { RedeemerEnforcer } from "../src/enforcers/RedeemerEnforcer.sol";
-import { ERC20StreamingEnforcer } from "../src/enforcers/ERC20StreamingEnforcer.sol";
+import { ERC20PeriodicClaimEnforcer } from "../src/enforcers/ERC20PeriodicClaimEnforcer.sol";
 import { TimestampEnforcer } from "../src/enforcers/TimestampEnforcer.sol";
 import { ValueLteEnforcer } from "../src/enforcers/ValueLteEnforcer.sol";
 
@@ -121,8 +121,8 @@ contract DeployCaveatEnforcers is Script {
         deployedAddress = address(new RedeemerEnforcer{ salt: salt }());
         console2.log("RedeemerEnforcer: %s", deployedAddress);
 
-        deployedAddress = address(new ERC20StreamingEnforcer{ salt: salt }());
-        console2.log("ERC20StreamingEnforcer: %s", deployedAddress);
+        deployedAddress = address(new ERC20PeriodicClaimEnforcer{ salt: salt }());
+        console2.log("ERC20PeriodicClaimEnforcer: %s", deployedAddress);
 
         deployedAddress = address(new TimestampEnforcer{ salt: salt }());
         console2.log("TimestampEnforcer: %s", deployedAddress);
