@@ -8,14 +8,14 @@ import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";
 
 /**
- * @title ERC20PeriodicClaimEnforcer
+ * @title ERC20PeriodAllowanceEnforcer
  * @notice Enforces periodic claim limits for ERC20 token transfers.
  * @dev This contract implements a mechanism by which a user may claim up to a fixed amount of tokens (the period amount)
  *      during a given time period. The claimable amount resets at the beginning of each period and unclaimed tokens are
  *      forfeited once the period ends. Partial claims within a period are allowed, but the total claim in any period
  *      cannot exceed the specified limit. This enforcer is designed to work only in single execution mode (ModeCode.Single).
  */
-contract ERC20PeriodicClaimEnforcer is CaveatEnforcer {
+contract ERC20PeriodAllowanceEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
 
     ////////////////////////////// State //////////////////////////////
@@ -128,7 +128,7 @@ contract ERC20PeriodicClaimEnforcer is CaveatEnforcer {
         pure
         returns (address token_, uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_)
     {
-        require(_terms.length == 116, "ERC20PeriodicClaimEnforcer:invalid-terms-length");
+        require(_terms.length == 116, "ERC20PeriodAllowanceEnforcer:invalid-terms-length");
 
         token_ = address(bytes20(_terms[0:20]));
         periodAmount_ = uint256(bytes32(_terms[20:52]));
@@ -156,21 +156,21 @@ contract ERC20PeriodicClaimEnforcer is CaveatEnforcer {
     {
         (address target_,, bytes calldata callData_) = _executionCallData.decodeSingle();
 
-        require(callData_.length == 68, "ERC20PeriodicClaimEnforcer:invalid-execution-length");
+        require(callData_.length == 68, "ERC20PeriodAllowanceEnforcer:invalid-execution-length");
 
         (address token_, uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) = getTermsInfo(_terms);
 
         // Validate terms
-        require(startDate_ > 0, "ERC20PeriodicClaimEnforcer:invalid-zero-start-date");
-        require(periodDuration_ > 0, "ERC20PeriodicClaimEnforcer:invalid-zero-period-duration");
-        require(periodAmount_ > 0, "ERC20PeriodicClaimEnforcer:invalid-zero-period-amount");
+        require(startDate_ > 0, "ERC20PeriodAllowanceEnforcer:invalid-zero-start-date");
+        require(periodDuration_ > 0, "ERC20PeriodAllowanceEnforcer:invalid-zero-period-duration");
+        require(periodAmount_ > 0, "ERC20PeriodAllowanceEnforcer:invalid-zero-period-amount");
 
-        require(token_ == target_, "ERC20PeriodicClaimEnforcer:invalid-contract");
+        require(token_ == target_, "ERC20PeriodAllowanceEnforcer:invalid-contract");
 
-        require(bytes4(callData_[0:4]) == IERC20.transfer.selector, "ERC20PeriodicClaimEnforcer:invalid-method");
+        require(bytes4(callData_[0:4]) == IERC20.transfer.selector, "ERC20PeriodAllowanceEnforcer:invalid-method");
 
         // Ensure the claim period has started.
-        require(block.timestamp >= startDate_, "ERC20PeriodicClaimEnforcer:claim-not-started");
+        require(block.timestamp >= startDate_, "ERC20PeriodAllowanceEnforcer:claim-not-started");
 
         PeriodicAllowance storage allowance_ = periodicAllowances[msg.sender][_delegationHash];
 
@@ -187,7 +187,7 @@ contract ERC20PeriodicClaimEnforcer is CaveatEnforcer {
         (uint256 available_, bool isNewPeriod_, uint256 currentPeriod_) = _getAvailableAmount(allowance_);
 
         uint256 transferAmount_ = uint256(bytes32(callData_[36:68]));
-        require(transferAmount_ <= available_, "ERC20PeriodicClaimEnforcer:claim-amount-exceeded");
+        require(transferAmount_ <= available_, "ERC20PeriodAllowanceEnforcer:claim-amount-exceeded");
 
         // If a new period has started, update state before processing the claim.
         if (isNewPeriod_) {

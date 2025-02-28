@@ -7,15 +7,15 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { ModeCode } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
-import { ERC20PeriodicClaimEnforcer } from "../../src/enforcers/ERC20PeriodicClaimEnforcer.sol";
+import { ERC20PeriodAllowanceEnforcer } from "../../src/enforcers/ERC20PeriodAllowanceEnforcer.sol";
 import { BasicERC20, IERC20 } from "../utils/BasicERC20.t.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
-contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
+contract ERC20PeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
     using ModeLib for ModeCode;
 
     ////////////////////////////// State //////////////////////////////
-    ERC20PeriodicClaimEnforcer public erc20PeriodicClaimEnforcer;
+    ERC20PeriodAllowanceEnforcer public erc20PeriodAllowanceEnforcer;
     BasicERC20 public basicERC20;
     ModeCode public singleMode = ModeLib.encodeSimpleSingle();
     address public alice;
@@ -33,8 +33,8 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
 
     function setUp() public override {
         super.setUp();
-        erc20PeriodicClaimEnforcer = new ERC20PeriodicClaimEnforcer();
-        vm.label(address(erc20PeriodicClaimEnforcer), "ERC20 Periodic Claim Enforcer");
+        erc20PeriodAllowanceEnforcer = new ERC20PeriodAllowanceEnforcer();
+        vm.label(address(erc20PeriodAllowanceEnforcer), "ERC20 Periodic Claim Enforcer");
 
         alice = address(users.alice.deleGator);
         bob = address(users.bob.deleGator);
@@ -51,26 +51,26 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
      */
     function testInvalidTermsLength() public {
         bytes memory invalidTerms = new bytes(115); // one byte short
-        vm.expectRevert("ERC20PeriodicClaimEnforcer:invalid-terms-length");
-        erc20PeriodicClaimEnforcer.getTermsInfo(invalidTerms);
+        vm.expectRevert("ERC20PeriodAllowanceEnforcer:invalid-terms-length");
+        erc20PeriodAllowanceEnforcer.getTermsInfo(invalidTerms);
     }
 
     function testInvalidZeroStartDate() public {
         bytes memory terms = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, uint256(0));
-        vm.expectRevert("ERC20PeriodicClaimEnforcer:invalid-zero-start-date");
-        erc20PeriodicClaimEnforcer.beforeHook(terms, "", singleMode, hex"", delegationHash, address(0), redeemer);
+        vm.expectRevert("ERC20PeriodAllowanceEnforcer:invalid-zero-start-date");
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, hex"", delegationHash, address(0), redeemer);
     }
 
     function testInvalidZeroPeriodDuration() public {
         bytes memory terms = abi.encodePacked(address(basicERC20), periodAmount, uint256(0), startDate);
-        vm.expectRevert("ERC20PeriodicClaimEnforcer:invalid-zero-period-duration");
-        erc20PeriodicClaimEnforcer.beforeHook(terms, "", singleMode, hex"", delegationHash, address(0), redeemer);
+        vm.expectRevert("ERC20PeriodAllowanceEnforcer:invalid-zero-period-duration");
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, hex"", delegationHash, address(0), redeemer);
     }
 
     function testInvalidZeroPeriodAmount() public {
         bytes memory terms = abi.encodePacked(address(basicERC20), uint256(0), periodDuration, startDate);
-        vm.expectRevert("ERC20PeriodicClaimEnforcer:invalid-zero-period-amount");
-        erc20PeriodicClaimEnforcer.beforeHook(terms, "", singleMode, hex"", delegationHash, address(0), redeemer);
+        vm.expectRevert("ERC20PeriodAllowanceEnforcer:invalid-zero-period-amount");
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, hex"", delegationHash, address(0), redeemer);
     }
 
     function testClaimNotStarted() public {
@@ -80,16 +80,16 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
         bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
 
-        vm.expectRevert("ERC20PeriodicClaimEnforcer:claim-not-started");
-        erc20PeriodicClaimEnforcer.beforeHook(terms, "", singleMode, execData_, delegationHash, address(0), redeemer);
+        vm.expectRevert("ERC20PeriodAllowanceEnforcer:claim-not-started");
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execData_, delegationHash, address(0), redeemer);
     }
 
     function testInvalidExecutionLength() public {
         bytes memory terms = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
         // Create call data with invalid length (not 68 bytes)
         bytes memory invalidExecCallData = new bytes(67);
-        vm.expectRevert("ERC20PeriodicClaimEnforcer:invalid-execution-length");
-        erc20PeriodicClaimEnforcer.beforeHook(terms, "", singleMode, invalidExecCallData, delegationHash, address(0), redeemer);
+        vm.expectRevert("ERC20PeriodAllowanceEnforcer:invalid-execution-length");
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, invalidExecCallData, delegationHash, address(0), redeemer);
     }
 
     function testInvalidContract() public {
@@ -101,8 +101,8 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
         bytes memory execData_ = _encodeSingleExecution(address(0xdead), 0, callData_);
 
-        vm.expectRevert("ERC20PeriodicClaimEnforcer:invalid-contract");
-        erc20PeriodicClaimEnforcer.beforeHook(terms, "", singleMode, invalidExecCallData, delegationHash, address(0), redeemer);
+        vm.expectRevert("ERC20PeriodAllowanceEnforcer:invalid-contract");
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, invalidExecCallData, delegationHash, address(0), redeemer);
     }
 
     function testInvalidMethod() public {
@@ -110,20 +110,20 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
         // Create call data with an invalid function selector (not IERC20.transfer.selector)
         bytes memory invalidCallData = abi.encodeWithSelector(IERC20.transferFrom.selector, redeemer, 500);
         bytes memory execCallData = abi.encodePacked(address(basicERC20), invalidCallData);
-        vm.expectRevert("ERC20PeriodicClaimEnforcer:invalid-method");
-        erc20PeriodicClaimEnforcer.beforeHook(terms, "", singleMode, execCallData, delegationHash, address(0), redeemer);
+        vm.expectRevert("ERC20PeriodAllowanceEnforcer:invalid-method");
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execCallData, delegationHash, address(0), redeemer);
     }
 
     function testClaimAmountExceeded() public {
         bytes memory terms = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
         // First claim: 800 tokens
         bytes memory execCallData1 = _encodeSingleExecution(address(basicERC20), _encodeERC20Transfer(800));
-        erc20PeriodicClaimEnforcer.beforeHook(terms, "", singleMode, execCallData1, delegationHash, address(0), redeemer);
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execCallData1, delegationHash, address(0), redeemer);
 
         // Second claim: attempt to claim 300 tokens, which exceeds the remaining 200 tokens.
         bytes memory execCallData2 = _encodeSingleExecution(address(basicERC20), _encodeERC20Transfer(300));
-        vm.expectRevert("ERC20PeriodicClaimEnforcer:claim-amount-exceeded");
-        erc20PeriodicClaimEnforcer.beforeHook(terms, "", singleMode, execCallData2, delegationHash, address(0), redeemer);
+        vm.expectRevert("ERC20PeriodAllowanceEnforcer:claim-amount-exceeded");
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execCallData2, delegationHash, address(0), redeemer);
     }
 
     // /**
@@ -142,8 +142,8 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
     //     bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
     //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
 
-    //     vm.expectRevert(bytes("ERC20PeriodicClaimEnforcer:invalid-max-amount"));
-    //     erc20PeriodicClaimEnforcer.beforeHook(terms, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+    //     vm.expectRevert(bytes("ERC20PeriodAllowanceEnforcer:invalid-max-amount"));
+    //     erc20PeriodAllowanceEnforcer.beforeHook(terms, bytes(""), mode, execData_, bytes32(0), address(0), alice);
     // }
 
     // /**
@@ -157,12 +157,12 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
     //     bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
     //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
 
-    //     vm.expectRevert(bytes("ERC20PeriodicClaimEnforcer:invalid-zero-start-time"));
-    //     erc20PeriodicClaimEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+    //     vm.expectRevert(bytes("ERC20PeriodAllowanceEnforcer:invalid-zero-start-time"));
+    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
     // }
 
     // /**
-    //  * @notice Test that it reverts with `ERC20PeriodicClaimEnforcer:allowance-exceeded`
+    //  * @notice Test that it reverts with `ERC20PeriodAllowanceEnforcer:allowance-exceeded`
     //  *         if the transfer request exceeds the currently unlocked amount.
     //  */
     // function test_allowanceExceeded() public {
@@ -174,8 +174,8 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
     //     bytes memory callData_ = _encodeERC20Transfer(bob, 50 ether);
     //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
 
-    //     vm.expectRevert(bytes("ERC20PeriodicClaimEnforcer:allowance-exceeded"));
-    //     erc20PeriodicClaimEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+    //     vm.expectRevert(bytes("ERC20PeriodAllowanceEnforcer:allowance-exceeded"));
+    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
     // }
 
     // /**
@@ -196,8 +196,8 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
 
     //     // Because initialAmount > 0 and amountPerSecond = 0, chunk logic triggers the revert
     //     vm.warp(block.timestamp + 1);
-    //     vm.expectRevert(bytes("ERC20PeriodicClaimEnforcer:zero-amount-per-second"));
-    //     erc20PeriodicClaimEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+    //     vm.expectRevert(bytes("ERC20PeriodAllowanceEnforcer:zero-amount-per-second"));
+    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
     // }
 
     // /// @notice Test chunk logic revert if initialAmount < amountPerSecond.
@@ -208,11 +208,12 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
     //     bytes memory callData_ = _encodeERC20Transfer(bob, 1 ether);
     //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
 
-    //     vm.expectRevert(bytes("ERC20PeriodicClaimEnforcer:initial-amount-is-too-low"));
-    //     erc20PeriodicClaimEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+    //     vm.expectRevert(bytes("ERC20PeriodAllowanceEnforcer:initial-amount-is-too-low"));
+    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
     // }
 
-    // /// @notice Test that it reverts with `ERC20PeriodicClaimEnforcer:invalid-execution-length` if the callData_ is not 68 bytes.
+    // /// @notice Test that it reverts with `ERC20PeriodAllowanceEnforcer:invalid-execution-length` if the callData_ is not 68
+    // bytes.
     // function test_invalidExecutionLength() public {
     //     // valid `_terms`
     //     bytes memory terms_ = encodeTerms(address(basicERC20), 100 ether, 1 ether, 1 ether, block.timestamp + 10);
@@ -221,11 +222,11 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
     //     // _encodeSingleExecution
     //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
 
-    //     vm.expectRevert(bytes("ERC20PeriodicClaimEnforcer:invalid-execution-length"));
-    //     erc20PeriodicClaimEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+    //     vm.expectRevert(bytes("ERC20PeriodAllowanceEnforcer:invalid-execution-length"));
+    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
     // }
 
-    // /// @notice Test that it reverts with `ERC20PeriodicClaimEnforcer:invalid-method` if the selector isn't `transfer`.
+    // /// @notice Test that it reverts with `ERC20PeriodAllowanceEnforcer:invalid-method` if the selector isn't `transfer`.
     // function test_invalidMethodSelector() public {
     //     bytes memory terms_ = encodeTerms(address(basicERC20), 100 ether, 100 ether, 1 ether, block.timestamp + 10);
 
@@ -234,11 +235,11 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
 
     //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, badCallData_);
 
-    //     vm.expectRevert(bytes("ERC20PeriodicClaimEnforcer:invalid-method"));
-    //     erc20PeriodicClaimEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+    //     vm.expectRevert(bytes("ERC20PeriodAllowanceEnforcer:invalid-method"));
+    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
     // }
 
-    // /// @notice Test that it reverts with `ERC20PeriodicClaimEnforcer:invalid-contract` if the basicERC20 address doesn't match
+    // /// @notice Test that it reverts with `ERC20PeriodAllowanceEnforcer:invalid-contract` if the basicERC20 address doesn't match
     // the
     // /// target.
     // function test_invalidContract() public {
@@ -250,8 +251,8 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
     //     bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
     //     bytes memory execData_ = _encodeSingleExecution(address(otherToken_), 0, callData_);
 
-    //     vm.expectRevert(bytes("ERC20PeriodicClaimEnforcer:invalid-contract"));
-    //     erc20PeriodicClaimEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+    //     vm.expectRevert(bytes("ERC20PeriodAllowanceEnforcer:invalid-contract"));
+    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
     // }
 
     // //////////////////// Valid cases //////////////////////
@@ -272,7 +273,7 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
     //         uint256 decodedMaxAmount_,
     //         uint256 decodedAmountPerSecond_,
     //         uint256 decodedStartTime_
-    //     ) = erc20PeriodicClaimEnforcer.getTermsInfo(termsData_);
+    //     ) = erc20PeriodAllowanceEnforcer.getTermsInfo(termsData_);
 
     //     assertEq(decodedToken_, token_, "Token mismatch");
     //     assertEq(decodedInitialAmount_, initialAmount_, "Initial amount mismatch");
@@ -281,15 +282,15 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
     //     assertEq(decodedStartTime_, startTime_, "Start time mismatch");
     // }
 
-    // /// @notice Test that getTermsInfo() reverts with `ERC20PeriodicClaimEnforcer:invalid-terms-length` if `_terms` is not 148
+    // /// @notice Test that getTermsInfo() reverts with `ERC20PeriodAllowanceEnforcer:invalid-terms-length` if `_terms` is not 148
     // /// bytes.
     // function test_getTermsInfoInvalidLength() public {
     //     // Create an array shorter than 1 bytes
     //     bytes memory shortTermsData = new bytes(100);
 
     //     // Expect the specific revert
-    //     vm.expectRevert(bytes("ERC20PeriodicClaimEnforcer:invalid-terms-length"));
-    //     erc20PeriodicClaimEnforcer.getTermsInfo(shortTermsData);
+    //     vm.expectRevert(bytes("ERC20PeriodAllowanceEnforcer:invalid-terms-length"));
+    //     erc20PeriodAllowanceEnforcer.getTermsInfo(shortTermsData);
     // }
 
     // /**
@@ -307,8 +308,8 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
     //     bytes memory callData_ = _encodeERC20Transfer(bob, transferAmount_);
     //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
 
-    //     vm.expectEmit(true, true, true, true, address(erc20PeriodicClaimEnforcer));
-    //     emit ERC20PeriodicClaimEnforcer.IncreasedSpentMap(
+    //     vm.expectEmit(true, true, true, true, address(erc20PeriodAllowanceEnforcer));
+    //     emit ERC20PeriodAllowanceEnforcer.IncreasedSpentMap(
     //         address(this), // sender = this test contract is calling beforeHook()
     //         alice, // redeemer = alice is the original message sender in this scenario
     //         bytes32(0), // example delegationHash (we're using 0 here)
@@ -321,7 +322,7 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
     //         block.timestamp // lastUpdateTimestamp (the event uses current block timestamp)
     //     );
 
-    //     erc20PeriodicClaimEnforcer.beforeHook(
+    //     erc20PeriodAllowanceEnforcer.beforeHook(
     //         terms_,
     //         bytes(""), // no additional data
     //         mode, // single execution mode
@@ -333,7 +334,7 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
 
     //     // Verify final storage
     //     (uint256 storedInitial_, uint256 storedMax, uint256 storedRate_, uint256 storedStart_, uint256 storedSpent_) =
-    //         erc20PeriodicClaimEnforcer.streamingAllowances(address(this), bytes32(0));
+    //         erc20PeriodAllowanceEnforcer.streamingAllowances(address(this), bytes32(0));
 
     //     assertEq(storedInitial_, initialAmount_, "Should store the correct initialAmount");
     //     assertEq(storedMax, maxAmount_, "Should store correct max");
@@ -355,11 +356,11 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
     //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
 
     //     // Calls beforeHook expecting no tokens to be spendable => must revert
-    //     vm.expectRevert("ERC20PeriodicClaimEnforcer:allowance-exceeded");
-    //     erc20PeriodicClaimEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+    //     vm.expectRevert("ERC20PeriodAllowanceEnforcer:allowance-exceeded");
+    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
 
     //     // Checking getAvailableAmount directly also returns 0
-    //     uint256 available_ = erc20PeriodicClaimEnforcer.getAvailableAmount(bytes32(0), address(this));
+    //     uint256 available_ = erc20PeriodAllowanceEnforcer.getAvailableAmount(bytes32(0), address(this));
     //     assertEq(available_, 0, "Expected 0 tokens available before start time");
     // }
 
@@ -376,25 +377,25 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
     //     // Transfer 2 => should succeed
     //     bytes memory callData_ = _encodeERC20Transfer(bob, 2 ether);
     //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
-    //     erc20PeriodicClaimEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
 
     //     // 3 were available, 2 spent => 1 remains
-    //     uint256 available_ = erc20PeriodicClaimEnforcer.getAvailableAmount(bytes32(0), address(this));
+    //     uint256 available_ = erc20PeriodAllowanceEnforcer.getAvailableAmount(bytes32(0), address(this));
     //     assertEq(available_, 1 ether, "1 ether left after spending 2 of 3");
 
     //     // Warp forward 10 seconds => total unlocked=13, but clamp by max=5 => totalUnlocked=5
     //     // Spent=2 => 3 remain
     //     vm.warp(block.timestamp + 10);
-    //     available_ = erc20PeriodicClaimEnforcer.getAvailableAmount(bytes32(0), address(this));
+    //     available_ = erc20PeriodAllowanceEnforcer.getAvailableAmount(bytes32(0), address(this));
     //     assertEq(available_, 3 ether, "Clamped at 5 total unlocked, 2 spent => 3 remain");
 
     //     // Transfer 3 => should succeed
     //     callData_ = _encodeERC20Transfer(bob, 3 ether);
     //     execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
-    //     erc20PeriodicClaimEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
 
     //     // No available amount
-    //     available_ = erc20PeriodicClaimEnforcer.getAvailableAmount(bytes32(0), address(this));
+    //     available_ = erc20PeriodAllowanceEnforcer.getAvailableAmount(bytes32(0), address(this));
     //     assertEq(available_, 0, "Available amount should be 0");
     // }
 
@@ -410,22 +411,22 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
     //     // Transfer 10 right away => chunk #1
     //     bytes memory callData1_ = _encodeERC20Transfer(bob, 10 ether);
     //     bytes memory execData1_ = _encodeSingleExecution(address(basicERC20), 0, callData1_);
-    //     erc20PeriodicClaimEnforcer.beforeHook(terms, bytes(""), mode, execData1_, bytes32(0), address(0), alice);
+    //     erc20PeriodAllowanceEnforcer.beforeHook(terms, bytes(""), mode, execData1_, bytes32(0), address(0), alice);
 
     //     // spent=10 => 0 remain from first chunk
     //     // Warp 2 sec => chunk #2 => totalUnlocked=20 => spent=10 => 10 remain
     //     vm.warp(block.timestamp + 2);
-    //     uint256 availNow_ = erc20PeriodicClaimEnforcer.getAvailableAmount(bytes32(0), address(this));
+    //     uint256 availNow_ = erc20PeriodAllowanceEnforcer.getAvailableAmount(bytes32(0), address(this));
     //     assertEq(availNow_, 10 ether, "Second chunk unlocked => total=20, spent=10 => 10 remain");
 
     //     // Transfer 10 => spent=20 => 0 remain
     //     bytes memory callData2_ = _encodeERC20Transfer(bob, 10 ether);
     //     bytes memory execData2_ = _encodeSingleExecution(address(basicERC20), 0, callData2_);
-    //     erc20PeriodicClaimEnforcer.beforeHook(terms, bytes(""), mode, execData2_, bytes32(0), address(0), alice);
+    //     erc20PeriodAllowanceEnforcer.beforeHook(terms, bytes(""), mode, execData2_, bytes32(0), address(0), alice);
 
     //     // Warp 2 more sec => chunk #3 => totalUnlocked=30 => clamp to max=25 => spent=20 => 5 remain
     //     vm.warp(block.timestamp + 2);
-    //     uint256 availClamped_ = erc20PeriodicClaimEnforcer.getAvailableAmount(bytes32(0), address(this));
+    //     uint256 availClamped_ = erc20PeriodAllowanceEnforcer.getAvailableAmount(bytes32(0), address(this));
     //     assertEq(availClamped_, 5 ether, "Clamped at max=25, spent=20 => 5 left");
     // }
 
@@ -477,6 +478,6 @@ contract ERC20PeriodicClaimEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {
-        return ICaveatEnforcer(address(erc20PeriodicClaimEnforcer));
+        return ICaveatEnforcer(address(erc20PeriodAllowanceEnforcer));
     }
 }
