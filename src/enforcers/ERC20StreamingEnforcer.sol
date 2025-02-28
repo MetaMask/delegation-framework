@@ -8,7 +8,7 @@ import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";
 
 /**
- * @title StreamingERC20Enforcer
+ * @title ERC20StreamingEnforcer
  * @notice This contract enforces a streaming transfer limit for ERC20 tokens.
  *
  * How it works:
@@ -22,7 +22,7 @@ import { ModeCode } from "../utils/Types.sol";
  *
  * @dev This caveat enforcer only works when the execution is in single mode (`ModeCode.Single`).
  */
-contract StreamingERC20Enforcer is CaveatEnforcer {
+contract ERC20StreamingEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
 
     ////////////////////////////// State //////////////////////////////
@@ -124,7 +124,7 @@ contract StreamingERC20Enforcer is CaveatEnforcer {
         pure
         returns (address token_, uint256 initialAmount_, uint256 maxAmount_, uint256 amountPerSecond_, uint256 startTime_)
     {
-        require(_terms.length == 148, "StreamingERC20Enforcer:invalid-terms-length");
+        require(_terms.length == 148, "ERC20StreamingEnforcer:invalid-terms-length");
 
         token_ = address(bytes20(_terms[0:20]));
         initialAmount_ = uint256(bytes32(_terms[20:52]));
@@ -168,17 +168,17 @@ contract StreamingERC20Enforcer is CaveatEnforcer {
     {
         (address target_,, bytes calldata callData_) = _executionCallData.decodeSingle();
 
-        require(callData_.length == 68, "StreamingERC20Enforcer:invalid-execution-length");
+        require(callData_.length == 68, "ERC20StreamingEnforcer:invalid-execution-length");
 
         (token_, initialAmount_, maxAmount_, amountPerSecond_, startTime_) = getTermsInfo(_terms);
 
-        require(maxAmount_ >= initialAmount_, "StreamingERC20Enforcer:invalid-max-amount");
+        require(maxAmount_ >= initialAmount_, "ERC20StreamingEnforcer:invalid-max-amount");
 
-        require(startTime_ > 0, "StreamingERC20Enforcer:invalid-zero-start-time");
+        require(startTime_ > 0, "ERC20StreamingEnforcer:invalid-zero-start-time");
 
-        require(token_ == target_, "StreamingERC20Enforcer:invalid-contract");
+        require(token_ == target_, "ERC20StreamingEnforcer:invalid-contract");
 
-        require(bytes4(callData_[0:4]) == IERC20.transfer.selector, "StreamingERC20Enforcer:invalid-method");
+        require(bytes4(callData_[0:4]) == IERC20.transfer.selector, "ERC20StreamingEnforcer:invalid-method");
 
         StreamingAllowance storage allowance = streamingAllowances[msg.sender][_delegationHash];
         if (allowance.spent == 0) {
@@ -191,7 +191,7 @@ contract StreamingERC20Enforcer is CaveatEnforcer {
 
         uint256 transferAmount_ = uint256(bytes32(callData_[36:68]));
 
-        require(transferAmount_ <= _getAvailableAmount(allowance), "StreamingERC20Enforcer:allowance-exceeded");
+        require(transferAmount_ <= _getAvailableAmount(allowance), "ERC20StreamingEnforcer:allowance-exceeded");
 
         allowance.spent += transferAmount_;
         spent_ = allowance.spent;
@@ -225,11 +225,11 @@ contract StreamingERC20Enforcer is CaveatEnforcer {
         // If `initialAmount` == 0, do purely linear streaming
         if (allowance.initialAmount == 0) return _computeLinearAllowance(allowance, elapsed_);
 
-        require(allowance.amountPerSecond > 0, "StreamingERC20Enforcer:zero-amount-per-second");
+        require(allowance.amountPerSecond > 0, "ERC20StreamingEnforcer:zero-amount-per-second");
 
         // If the user wants chunks, ensure the initial amount is large enough
         // that `chunkDuration` won't be zero.
-        require(allowance.initialAmount >= allowance.amountPerSecond, "StreamingERC20Enforcer:initial-amount-is-too-low");
+        require(allowance.initialAmount >= allowance.amountPerSecond, "ERC20StreamingEnforcer:initial-amount-is-too-low");
 
         // Calculate how many chunks have fully unlocked
         uint256 chunkDuration_ = allowance.initialAmount / allowance.amountPerSecond;

@@ -7,15 +7,15 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { ModeCode } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
-import { StreamingERC20Enforcer } from "../../src/enforcers/StreamingERC20Enforcer.sol";
+import { ERC20StreamingEnforcer } from "../../src/enforcers/ERC20StreamingEnforcer.sol";
 import { BasicERC20, IERC20 } from "../utils/BasicERC20.t.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
-contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
+contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
     using ModeLib for ModeCode;
 
     ////////////////////////////// State //////////////////////////////
-    StreamingERC20Enforcer public streamingERC20Enforcer;
+    ERC20StreamingEnforcer public erc20StreamingEnforcer;
     BasicERC20 public basicERC20;
     ModeCode public mode = ModeLib.encodeSimpleSingle();
     address public alice;
@@ -25,8 +25,8 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
 
     function setUp() public override {
         super.setUp();
-        streamingERC20Enforcer = new StreamingERC20Enforcer();
-        vm.label(address(streamingERC20Enforcer), "Streaming ERC20 Enforcer");
+        erc20StreamingEnforcer = new ERC20StreamingEnforcer();
+        vm.label(address(erc20StreamingEnforcer), "Streaming ERC20 Enforcer");
 
         alice = address(users.alice.deleGator);
         bob = address(users.bob.deleGator);
@@ -47,8 +47,8 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
         bytes memory callData_ = encodeERC20Transfer(bob, 10 ether);
         bytes memory execData_ = encodeSingleExecution(address(basicERC20), 0, callData_);
 
-        vm.expectRevert(bytes("StreamingERC20Enforcer:invalid-terms-length"));
-        streamingERC20Enforcer.beforeHook(badTerms, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+        vm.expectRevert(bytes("ERC20StreamingEnforcer:invalid-terms-length"));
+        erc20StreamingEnforcer.beforeHook(badTerms, bytes(""), mode, execData_, bytes32(0), address(0), alice);
     }
 
     /**
@@ -67,8 +67,8 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
         bytes memory callData_ = encodeERC20Transfer(bob, 10 ether);
         bytes memory execData_ = encodeSingleExecution(address(basicERC20), 0, callData_);
 
-        vm.expectRevert(bytes("StreamingERC20Enforcer:invalid-max-amount"));
-        streamingERC20Enforcer.beforeHook(terms, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+        vm.expectRevert(bytes("ERC20StreamingEnforcer:invalid-max-amount"));
+        erc20StreamingEnforcer.beforeHook(terms, bytes(""), mode, execData_, bytes32(0), address(0), alice);
     }
 
     /**
@@ -82,12 +82,12 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
         bytes memory callData_ = encodeERC20Transfer(bob, 10 ether);
         bytes memory execData_ = encodeSingleExecution(address(basicERC20), 0, callData_);
 
-        vm.expectRevert(bytes("StreamingERC20Enforcer:invalid-zero-start-time"));
-        streamingERC20Enforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+        vm.expectRevert(bytes("ERC20StreamingEnforcer:invalid-zero-start-time"));
+        erc20StreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
     }
 
     /**
-     * @notice Test that it reverts with `StreamingERC20Enforcer:allowance-exceeded`
+     * @notice Test that it reverts with `ERC20StreamingEnforcer:allowance-exceeded`
      *         if the transfer request exceeds the currently unlocked amount.
      */
     function test_allowanceExceeded() public {
@@ -99,8 +99,8 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
         bytes memory callData_ = encodeERC20Transfer(bob, 50 ether);
         bytes memory execData_ = encodeSingleExecution(address(basicERC20), 0, callData_);
 
-        vm.expectRevert(bytes("StreamingERC20Enforcer:allowance-exceeded"));
-        streamingERC20Enforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+        vm.expectRevert(bytes("ERC20StreamingEnforcer:allowance-exceeded"));
+        erc20StreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
     }
 
     /**
@@ -121,8 +121,8 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
 
         // Because initialAmount > 0 and amountPerSecond = 0, chunk logic triggers the revert
         vm.warp(block.timestamp + 1);
-        vm.expectRevert(bytes("StreamingERC20Enforcer:zero-amount-per-second"));
-        streamingERC20Enforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+        vm.expectRevert(bytes("ERC20StreamingEnforcer:zero-amount-per-second"));
+        erc20StreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
     }
 
     /// @notice Test chunk logic revert if initialAmount < amountPerSecond.
@@ -133,11 +133,11 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
         bytes memory callData_ = encodeERC20Transfer(bob, 1 ether);
         bytes memory execData_ = encodeSingleExecution(address(basicERC20), 0, callData_);
 
-        vm.expectRevert(bytes("StreamingERC20Enforcer:initial-amount-is-too-low"));
-        streamingERC20Enforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+        vm.expectRevert(bytes("ERC20StreamingEnforcer:initial-amount-is-too-low"));
+        erc20StreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
     }
 
-    /// @notice Test that it reverts with `StreamingERC20Enforcer:invalid-execution-length` if the callData_ is not 68 bytes.
+    /// @notice Test that it reverts with `ERC20StreamingEnforcer:invalid-execution-length` if the callData_ is not 68 bytes.
     function test_invalidExecutionLength() public {
         // valid `_terms`
         bytes memory terms_ = encodeTerms(address(basicERC20), 100 ether, 1 ether, 1 ether, block.timestamp + 10);
@@ -146,11 +146,11 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
         // encodeSingleExecution
         bytes memory execData_ = encodeSingleExecution(address(basicERC20), 0, callData_);
 
-        vm.expectRevert(bytes("StreamingERC20Enforcer:invalid-execution-length"));
-        streamingERC20Enforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+        vm.expectRevert(bytes("ERC20StreamingEnforcer:invalid-execution-length"));
+        erc20StreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
     }
 
-    /// @notice Test that it reverts with `StreamingERC20Enforcer:invalid-method` if the selector isn't `transfer`.
+    /// @notice Test that it reverts with `ERC20StreamingEnforcer:invalid-method` if the selector isn't `transfer`.
     function test_invalidMethodSelector() public {
         bytes memory terms_ = encodeTerms(address(basicERC20), 100 ether, 100 ether, 1 ether, block.timestamp + 10);
 
@@ -159,11 +159,11 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
 
         bytes memory execData_ = encodeSingleExecution(address(basicERC20), 0, badCallData_);
 
-        vm.expectRevert(bytes("StreamingERC20Enforcer:invalid-method"));
-        streamingERC20Enforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+        vm.expectRevert(bytes("ERC20StreamingEnforcer:invalid-method"));
+        erc20StreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
     }
 
-    /// @notice Test that it reverts with `StreamingERC20Enforcer:invalid-contract` if the token address doesn't match the target.
+    /// @notice Test that it reverts with `ERC20StreamingEnforcer:invalid-contract` if the token address doesn't match the target.
     function test_invalidContract() public {
         // Terms says the token is `basicERC20`, but we call a different target in `execData_`
         bytes memory terms_ = encodeTerms(address(basicERC20), 100 ether, 100 ether, 1 ether, block.timestamp + 10);
@@ -173,8 +173,8 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
         bytes memory callData_ = encodeERC20Transfer(bob, 10 ether);
         bytes memory execData_ = encodeSingleExecution(address(otherToken_), 0, callData_);
 
-        vm.expectRevert(bytes("StreamingERC20Enforcer:invalid-contract"));
-        streamingERC20Enforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+        vm.expectRevert(bytes("ERC20StreamingEnforcer:invalid-contract"));
+        erc20StreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
     }
 
     //////////////////// Valid cases //////////////////////
@@ -195,7 +195,7 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
             uint256 decodedMaxAmount_,
             uint256 decodedAmountPerSecond_,
             uint256 decodedStartTime_
-        ) = streamingERC20Enforcer.getTermsInfo(termsData_);
+        ) = erc20StreamingEnforcer.getTermsInfo(termsData_);
 
         assertEq(decodedToken_, token_, "Token mismatch");
         assertEq(decodedInitialAmount_, initialAmount_, "Initial amount mismatch");
@@ -204,14 +204,14 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
         assertEq(decodedStartTime_, startTime_, "Start time mismatch");
     }
 
-    /// @notice Test that getTermsInfo() reverts with `StreamingERC20Enforcer:invalid-terms-length` if `_terms` is not 148 bytes.
+    /// @notice Test that getTermsInfo() reverts with `ERC20StreamingEnforcer:invalid-terms-length` if `_terms` is not 148 bytes.
     function test_getTermsInfoInvalidLength() public {
         // Create an array shorter than 1 bytes
         bytes memory shortTermsData = new bytes(100);
 
         // Expect the specific revert
-        vm.expectRevert(bytes("StreamingERC20Enforcer:invalid-terms-length"));
-        streamingERC20Enforcer.getTermsInfo(shortTermsData);
+        vm.expectRevert(bytes("ERC20StreamingEnforcer:invalid-terms-length"));
+        erc20StreamingEnforcer.getTermsInfo(shortTermsData);
     }
 
     /**
@@ -229,8 +229,8 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
         bytes memory callData_ = encodeERC20Transfer(bob, transferAmount_);
         bytes memory execData_ = encodeSingleExecution(address(basicERC20), 0, callData_);
 
-        vm.expectEmit(true, true, true, true, address(streamingERC20Enforcer));
-        emit StreamingERC20Enforcer.IncreasedSpentMap(
+        vm.expectEmit(true, true, true, true, address(erc20StreamingEnforcer));
+        emit ERC20StreamingEnforcer.IncreasedSpentMap(
             address(this), // sender = this test contract is calling beforeHook()
             alice, // redeemer = alice is the original message sender in this scenario
             bytes32(0), // example delegationHash (we're using 0 here)
@@ -243,7 +243,7 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
             block.timestamp // lastUpdateTimestamp (the event uses current block timestamp)
         );
 
-        streamingERC20Enforcer.beforeHook(
+        erc20StreamingEnforcer.beforeHook(
             terms_,
             bytes(""), // no additional data
             mode, // single execution mode
@@ -255,7 +255,7 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
 
         // Verify final storage
         (uint256 storedInitial_, uint256 storedMax, uint256 storedRate_, uint256 storedStart_, uint256 storedSpent_) =
-            streamingERC20Enforcer.streamingAllowances(address(this), bytes32(0));
+            erc20StreamingEnforcer.streamingAllowances(address(this), bytes32(0));
 
         assertEq(storedInitial_, initialAmount_, "Should store the correct initialAmount");
         assertEq(storedMax, maxAmount_, "Should store correct max");
@@ -277,11 +277,11 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
         bytes memory execData_ = encodeSingleExecution(address(basicERC20), 0, callData_);
 
         // Calls beforeHook expecting no tokens to be spendable => must revert
-        vm.expectRevert("StreamingERC20Enforcer:allowance-exceeded");
-        streamingERC20Enforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+        vm.expectRevert("ERC20StreamingEnforcer:allowance-exceeded");
+        erc20StreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
 
         // Checking getAvailableAmount directly also returns 0
-        uint256 available_ = streamingERC20Enforcer.getAvailableAmount(bytes32(0), address(this));
+        uint256 available_ = erc20StreamingEnforcer.getAvailableAmount(bytes32(0), address(this));
         assertEq(available_, 0, "Expected 0 tokens available before start time");
     }
 
@@ -298,25 +298,25 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
         // Transfer 2 => should succeed
         bytes memory callData_ = encodeERC20Transfer(bob, 2 ether);
         bytes memory execData_ = encodeSingleExecution(address(basicERC20), 0, callData_);
-        streamingERC20Enforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+        erc20StreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
 
         // 3 were available, 2 spent => 1 remains
-        uint256 available_ = streamingERC20Enforcer.getAvailableAmount(bytes32(0), address(this));
+        uint256 available_ = erc20StreamingEnforcer.getAvailableAmount(bytes32(0), address(this));
         assertEq(available_, 1 ether, "1 ether left after spending 2 of 3");
 
         // Warp forward 10 seconds => total unlocked=13, but clamp by max=5 => totalUnlocked=5
         // Spent=2 => 3 remain
         vm.warp(block.timestamp + 10);
-        available_ = streamingERC20Enforcer.getAvailableAmount(bytes32(0), address(this));
+        available_ = erc20StreamingEnforcer.getAvailableAmount(bytes32(0), address(this));
         assertEq(available_, 3 ether, "Clamped at 5 total unlocked, 2 spent => 3 remain");
 
         // Transfer 3 => should succeed
         callData_ = encodeERC20Transfer(bob, 3 ether);
         execData_ = encodeSingleExecution(address(basicERC20), 0, callData_);
-        streamingERC20Enforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+        erc20StreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
 
         // No available amount
-        available_ = streamingERC20Enforcer.getAvailableAmount(bytes32(0), address(this));
+        available_ = erc20StreamingEnforcer.getAvailableAmount(bytes32(0), address(this));
         assertEq(available_, 0, "Available amount should be 0");
     }
 
@@ -332,22 +332,22 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
         // Transfer 10 right away => chunk #1
         bytes memory callData1_ = encodeERC20Transfer(bob, 10 ether);
         bytes memory execData1_ = encodeSingleExecution(address(basicERC20), 0, callData1_);
-        streamingERC20Enforcer.beforeHook(terms, bytes(""), mode, execData1_, bytes32(0), address(0), alice);
+        erc20StreamingEnforcer.beforeHook(terms, bytes(""), mode, execData1_, bytes32(0), address(0), alice);
 
         // spent=10 => 0 remain from first chunk
         // Warp 2 sec => chunk #2 => totalUnlocked=20 => spent=10 => 10 remain
         vm.warp(block.timestamp + 2);
-        uint256 availNow_ = streamingERC20Enforcer.getAvailableAmount(bytes32(0), address(this));
+        uint256 availNow_ = erc20StreamingEnforcer.getAvailableAmount(bytes32(0), address(this));
         assertEq(availNow_, 10 ether, "Second chunk unlocked => total=20, spent=10 => 10 remain");
 
         // Transfer 10 => spent=20 => 0 remain
         bytes memory callData2_ = encodeERC20Transfer(bob, 10 ether);
         bytes memory execData2_ = encodeSingleExecution(address(basicERC20), 0, callData2_);
-        streamingERC20Enforcer.beforeHook(terms, bytes(""), mode, execData2_, bytes32(0), address(0), alice);
+        erc20StreamingEnforcer.beforeHook(terms, bytes(""), mode, execData2_, bytes32(0), address(0), alice);
 
         // Warp 2 more sec => chunk #3 => totalUnlocked=30 => clamp to max=25 => spent=20 => 5 remain
         vm.warp(block.timestamp + 2);
-        uint256 availClamped_ = streamingERC20Enforcer.getAvailableAmount(bytes32(0), address(this));
+        uint256 availClamped_ = erc20StreamingEnforcer.getAvailableAmount(bytes32(0), address(this));
         assertEq(availClamped_, 5 ether, "Clamped at max=25, spent=20 => 5 left");
     }
 
@@ -391,6 +391,6 @@ contract StreamingERC20EnforcerTest is CaveatEnforcerBaseTest {
     }
 
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {
-        return ICaveatEnforcer(address(streamingERC20Enforcer));
+        return ICaveatEnforcer(address(erc20StreamingEnforcer));
     }
 }
