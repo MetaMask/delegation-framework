@@ -5,11 +5,12 @@ import "forge-std/Test.sol";
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
-import { ModeCode } from "../../src/utils/Types.sol";
+import { ModeCode, Caveat, Delegation, Execution } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { ERC20PeriodAllowanceEnforcer } from "../../src/enforcers/ERC20PeriodAllowanceEnforcer.sol";
 import { BasicERC20, IERC20 } from "../utils/BasicERC20.t.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
+import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 
 contract ERC20PeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
     using ModeLib for ModeCode;
@@ -46,33 +47,44 @@ contract ERC20PeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
 
     //////////////////// Error / Revert Tests //////////////////////
 
-    /**
-     * @notice Ensures it reverts if `_terms.length != 148`.
-     */
+    /// @notice Ensures it reverts if _terms length is not exactly 116 bytes.
     function testInvalidTermsLength() public {
         bytes memory invalidTerms = new bytes(115); // one byte short
         vm.expectRevert("ERC20PeriodAllowanceEnforcer:invalid-terms-length");
         erc20PeriodAllowanceEnforcer.getTermsInfo(invalidTerms);
     }
 
+    /// @notice Reverts if the start date is zero.
     function testInvalidZeroStartDate() public {
         bytes memory terms = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, uint256(0));
+
+        bytes memory callData_ = _encodeERC20Transfer(bob, 100);
+        bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
         vm.expectRevert("ERC20PeriodAllowanceEnforcer:invalid-zero-start-date");
-        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, hex"", delegationHash, address(0), redeemer);
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execData_, delegationHash, address(0), redeemer);
     }
 
+    /// @notice Reverts if the period duration is zero.
     function testInvalidZeroPeriodDuration() public {
         bytes memory terms = abi.encodePacked(address(basicERC20), periodAmount, uint256(0), startDate);
+
+        bytes memory callData_ = _encodeERC20Transfer(bob, 100);
+        bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
         vm.expectRevert("ERC20PeriodAllowanceEnforcer:invalid-zero-period-duration");
-        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, hex"", delegationHash, address(0), redeemer);
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execData_, delegationHash, address(0), redeemer);
     }
 
+    /// @notice Reverts if the period amount is zero.
     function testInvalidZeroPeriodAmount() public {
         bytes memory terms = abi.encodePacked(address(basicERC20), uint256(0), periodDuration, startDate);
+
+        bytes memory callData_ = _encodeERC20Transfer(bob, 100);
+        bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
         vm.expectRevert("ERC20PeriodAllowanceEnforcer:invalid-zero-period-amount");
-        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, hex"", delegationHash, address(0), redeemer);
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execData_, delegationHash, address(0), redeemer);
     }
 
+    /// @notice Reverts if the claim period has not started yet.
     function testClaimNotStarted() public {
         uint256 futureStart = block.timestamp + 100;
         bytes memory terms = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, futureStart);
@@ -84,6 +96,7 @@ contract ERC20PeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
         erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execData_, delegationHash, address(0), redeemer);
     }
 
+    /// @notice Reverts if the execution call data length is not 68 bytes.
     function testInvalidExecutionLength() public {
         bytes memory terms = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
         // Create call data with invalid length (not 68 bytes)
@@ -92,369 +105,267 @@ contract ERC20PeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
         erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, invalidExecCallData, delegationHash, address(0), redeemer);
     }
 
+    /// @notice Reverts if the target contract in execution data does not match the token in terms.
     function testInvalidContract() public {
         bytes memory terms = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
-        bytes memory callData = abi.encodeWithSelector(basicERC20.transfer.selector, redeemer, 500);
-        // Create execution call data with a wrong target (simulate by prepending a different address)
-        bytes memory invalidExecCallData = abi.encodePacked(address(0xdead), callData);
 
+        // Create execution call data with a wrong target (simulate by prepending a different address)
         bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
-        bytes memory execData_ = _encodeSingleExecution(address(0xdead), 0, callData_);
+        bytes memory invalidExecCallData = _encodeSingleExecution(address(0xdead), 0, callData_);
 
         vm.expectRevert("ERC20PeriodAllowanceEnforcer:invalid-contract");
         erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, invalidExecCallData, delegationHash, address(0), redeemer);
     }
 
+    /// @notice Reverts if the method selector in call data is not for IERC20.transfer.
     function testInvalidMethod() public {
         bytes memory terms = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
         // Create call data with an invalid function selector (not IERC20.transfer.selector)
         bytes memory invalidCallData = abi.encodeWithSelector(IERC20.transferFrom.selector, redeemer, 500);
-        bytes memory execCallData = abi.encodePacked(address(basicERC20), invalidCallData);
+        bytes memory invalidExecCallData = _encodeSingleExecution(address(basicERC20), 0, invalidCallData);
+
         vm.expectRevert("ERC20PeriodAllowanceEnforcer:invalid-method");
-        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execCallData, delegationHash, address(0), redeemer);
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, invalidExecCallData, delegationHash, address(0), redeemer);
     }
 
+    /// @notice Reverts if a claim exceeds the available allowance in the current period.
     function testClaimAmountExceeded() public {
         bytes memory terms = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
-        // First claim: 800 tokens
-        bytes memory execCallData1 = _encodeSingleExecution(address(basicERC20), _encodeERC20Transfer(800));
-        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execCallData1, delegationHash, address(0), redeemer);
+
+        // First claim: 800 tokens.
+        bytes memory callData1_ = _encodeERC20Transfer(bob, 800);
+        bytes memory execData1_ = _encodeSingleExecution(address(basicERC20), 0, callData1_);
+
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execData1_, delegationHash, address(0), redeemer);
 
         // Second claim: attempt to claim 300 tokens, which exceeds the remaining 200 tokens.
-        bytes memory execCallData2 = _encodeSingleExecution(address(basicERC20), _encodeERC20Transfer(300));
+        bytes memory callData2_ = _encodeERC20Transfer(bob, 300);
+        bytes memory execData2_ = _encodeSingleExecution(address(basicERC20), 0, callData2_);
+
         vm.expectRevert("ERC20PeriodAllowanceEnforcer:claim-amount-exceeded");
-        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execCallData2, delegationHash, address(0), redeemer);
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execData2_, delegationHash, address(0), redeemer);
     }
 
-    // /**
-    //  * @notice Checks revert if `maxAmount < initialAmount`.
-    //  */
-    // function test_invalidMaxAmount() public {
-    //     // initial=100, max=50 => revert
-    //     bytes memory terms = encodeTerms(
-    //         address(basicERC20),
-    //         100 ether, // initial
-    //         50 ether, // max < initial
-    //         1 ether,
-    //         block.timestamp + 10
-    //     );
+    /// @notice Tests a successful claim and verifies that the ClaimUpdated event is emitted correctly.
+    function testSuccessfulClaimAndEvent() public {
+        uint256 claimAmount = 500;
 
-    //     bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
-    //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
+        bytes memory terms = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
+        bytes memory callData_ = _encodeERC20Transfer(bob, claimAmount);
+        bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
 
-    //     vm.expectRevert(bytes("ERC20PeriodAllowanceEnforcer:invalid-max-amount"));
-    //     erc20PeriodAllowanceEnforcer.beforeHook(terms, bytes(""), mode, execData_, bytes32(0), address(0), alice);
-    // }
+        // Expect the ClaimUpdated event with matching parameters.
+        vm.expectEmit(true, true, true, true);
+        emit ERC20PeriodAllowanceEnforcer.ClaimUpdated(
+            address(this),
+            redeemer,
+            delegationHash,
+            address(basicERC20),
+            periodAmount,
+            periodDuration,
+            startDate,
+            claimAmount,
+            block.timestamp
+        );
 
-    // /**
-    //  * @notice Test that it reverts if startTime == 0.
-    //  */
-    // function test_invalidZeroStartTime() public {
-    //     // Prepare valid basicERC20 and amounts, but zero start time
-    //     uint256 startTime_ = 0;
-    //     bytes memory terms_ = encodeTerms(address(basicERC20), 10 ether, 100 ether, 1 ether, startTime_);
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execData_, delegationHash, address(0), redeemer);
 
-    //     bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
-    //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
+        // Verify available amount is reduced by the claimed amount.
+        (uint256 available_,,) = erc20PeriodAllowanceEnforcer.getAvailableAmount(delegationHash, address(this));
+        assertEq(available_, periodAmount - claimAmount);
+    }
 
-    //     vm.expectRevert(bytes("ERC20PeriodAllowanceEnforcer:invalid-zero-start-time"));
-    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
-    // }
+    /// @notice Tests multiple claims within the same period and confirms that an over-claim reverts.
+    function testMultipleClaimsInSamePeriod() public {
+        bytes memory terms = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
+        // First claim: 400 tokens.
+        bytes memory callData1_ = _encodeERC20Transfer(bob, 400);
+        bytes memory execData1_ = _encodeSingleExecution(address(basicERC20), 0, callData1_);
 
-    // /**
-    //  * @notice Test that it reverts with `ERC20PeriodAllowanceEnforcer:allowance-exceeded`
-    //  *         if the transfer request exceeds the currently unlocked amount.
-    //  */
-    // function test_allowanceExceeded() public {
-    //     // Start in the future => 0 available now
-    //     uint256 start_ = block.timestamp + 100;
-    //     bytes memory terms_ = encodeTerms(address(basicERC20), 10 ether, 50 ether, 1 ether, start_);
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execData1_, delegationHash, address(0), bob);
 
-    //     // Trying to transfer more than is available (which is 0 if we call now).
-    //     bytes memory callData_ = _encodeERC20Transfer(bob, 50 ether);
-    //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
+        // Second claim: 300 tokens.
+        bytes memory callData2_ = _encodeERC20Transfer(bob, 300);
+        bytes memory execData2_ = _encodeSingleExecution(address(basicERC20), 0, callData2_);
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execData2_, delegationHash, address(0), bob);
 
-    //     vm.expectRevert(bytes("ERC20PeriodAllowanceEnforcer:allowance-exceeded"));
-    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
-    // }
+        // Available tokens should now be 1000 - 400 - 300 = 300.
+        (uint256 available_,,) = erc20PeriodAllowanceEnforcer.getAvailableAmount(delegationHash, address(this));
+        assertEq(available_, 300);
 
-    // /**
-    //  * @notice Test chunk logic revert if `initialAmount` > 0 but `amountPerSecond=0`.
-    //  */
-    // function test_zeroAmountPerSecondChunkLogic() public {
-    //     bytes memory terms_ = encodeTerms(
-    //         address(basicERC20),
-    //         100 ether, // initial
-    //         500 ether, // max
-    //         0, // amountPerSecond=0
-    //         block.timestamp
-    //     );
+        // Third claim: attempt to claim 400 tokens, which should exceed available amount.
+        bytes memory callData3_ = _encodeERC20Transfer(bob, 400);
+        bytes memory execData3_ = _encodeSingleExecution(address(basicERC20), 0, callData3_);
+        vm.expectRevert("ERC20PeriodAllowanceEnforcer:claim-amount-exceeded");
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execData3_, delegationHash, address(0), bob);
+    }
 
-    //     // The call data is valid
-    //     bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
-    //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
+    /// @notice Tests that the allowance resets when a new period begins.
+    function testNewPeriodResetsAllowance() public {
+        bytes memory terms = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
+        // First claim: 800 tokens.
+        bytes memory callData1_ = _encodeERC20Transfer(bob, 800);
+        bytes memory execData1_ = _encodeSingleExecution(address(basicERC20), 0, callData1_);
 
-    //     // Because initialAmount > 0 and amountPerSecond = 0, chunk logic triggers the revert
-    //     vm.warp(block.timestamp + 1);
-    //     vm.expectRevert(bytes("ERC20PeriodAllowanceEnforcer:zero-amount-per-second"));
-    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
-    // }
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execData1_, delegationHash, address(0), redeemer);
 
-    // /// @notice Test chunk logic revert if initialAmount < amountPerSecond.
-    // function test_initialAmountTooLow() public {
-    //     // initial=1, rate=2 => revert
-    //     bytes memory terms_ = encodeTerms(address(basicERC20), 1 ether, 10 ether, 2 ether, block.timestamp);
+        // Verify available tokens have been reduced.
+        (uint256 availableAfter1,,) = erc20PeriodAllowanceEnforcer.getAvailableAmount(delegationHash, address(this));
+        assertEq(availableAfter1, periodAmount - 800);
 
-    //     bytes memory callData_ = _encodeERC20Transfer(bob, 1 ether);
-    //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
+        // Warp to the next period.
+        vm.warp(block.timestamp + periodDuration + 1);
 
-    //     vm.expectRevert(bytes("ERC20PeriodAllowanceEnforcer:initial-amount-is-too-low"));
-    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
-    // }
+        // Now the available amount should reset to the full periodAmount.
+        (uint256 available, bool isNewPeriod,) = erc20PeriodAllowanceEnforcer.getAvailableAmount(delegationHash, address(this));
+        assertEq(available, periodAmount);
+        assertTrue(isNewPeriod);
 
-    // /// @notice Test that it reverts with `ERC20PeriodAllowanceEnforcer:invalid-execution-length` if the callData_ is not 68
-    // bytes.
-    // function test_invalidExecutionLength() public {
-    //     // valid `_terms`
-    //     bytes memory terms_ = encodeTerms(address(basicERC20), 100 ether, 1 ether, 1 ether, block.timestamp + 10);
-    //     // Provide some random data that is not exactly 68 bytes
-    //     bytes memory callData_ = new bytes(40);
-    //     // _encodeSingleExecution
-    //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
+        // Make a claim in the new period.
+        bytes memory callData2_ = _encodeERC20Transfer(bob, 600);
+        bytes memory execData2_ = _encodeSingleExecution(address(basicERC20), 0, callData2_);
 
-    //     vm.expectRevert(bytes("ERC20PeriodAllowanceEnforcer:invalid-execution-length"));
-    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
-    // }
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execData2_, delegationHash, address(0), redeemer);
 
-    // /// @notice Test that it reverts with `ERC20PeriodAllowanceEnforcer:invalid-method` if the selector isn't `transfer`.
-    // function test_invalidMethodSelector() public {
-    //     bytes memory terms_ = encodeTerms(address(basicERC20), 100 ether, 100 ether, 1 ether, block.timestamp + 10);
+        // Verify available tokens have been reduced.
+        (uint256 availableAfter2,,) = erc20PeriodAllowanceEnforcer.getAvailableAmount(delegationHash, address(this));
+        assertEq(availableAfter2, periodAmount - 600);
+    }
 
-    //     // Calling transferFrom() method instead of the valid transfer method
-    //     bytes memory badCallData_ = abi.encodeWithSelector(IERC20.transferFrom.selector, bob, 10 ether);
+    ////////////////////// Integration Tests //////////////////////
 
-    //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, badCallData_);
+    /// @notice Integration: Successfully claim tokens within the allowance and update state.
+    function test_integration_SuccessfulClaim() public {
+        uint256 claimAmount = 500;
+        bytes memory terms = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
+        // Build execution: transfer claimAmount from token to redeemer.
+        bytes memory callData = _encodeERC20Transfer(bob, claimAmount);
 
-    //     vm.expectRevert(bytes("ERC20PeriodAllowanceEnforcer:invalid-method"));
-    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
-    // }
+        // Build and sign the delegation.
+        Caveat[] memory caveats = new Caveat[](1);
+        caveats[0] = Caveat({ args: hex"", enforcer: address(erc20PeriodAllowanceEnforcer), terms: terms });
+        Delegation memory delegation =
+            Delegation({ delegate: bob, delegator: alice, authority: ROOT_AUTHORITY, caveats: caveats, salt: 0, signature: hex"" });
+        delegation = signDelegation(users.alice, delegation);
+        bytes32 delegationHash_ = EncoderLib._getDelegationHash(delegation);
 
-    // /// @notice Test that it reverts with `ERC20PeriodAllowanceEnforcer:invalid-contract` if the basicERC20 address doesn't match
-    // the
-    // /// target.
-    // function test_invalidContract() public {
-    //     // Terms says the basicERC20 is `basicERC20`, but we call a different target in `execData_`
-    //     bytes memory terms_ = encodeTerms(address(basicERC20), 100 ether, 100 ether, 1 ether, block.timestamp + 10);
+        // Invoke the user operation via delegation manager.
+        invokeDelegation_UserOp(
+            users.bob, toDelegationArray(delegation), Execution({ target: address(basicERC20), value: 0, callData: callData })
+        );
 
-    //     // Encode callData_ with correct selector but to a different contract address
-    //     BasicERC20 otherToken_ = new BasicERC20(alice, "TestToken2", "TestToken2", 100 ether);
-    //     bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
-    //     bytes memory execData_ = _encodeSingleExecution(address(otherToken_), 0, callData_);
+        // After claiming, available tokens should reduce.
+        (uint256 availableAfter,,) = erc20PeriodAllowanceEnforcer.getAvailableAmount(delegationHash_, address(delegationManager));
+        assertEq(availableAfter, periodAmount - claimAmount, "Available reduced by claim amount");
+    }
 
-    //     vm.expectRevert(bytes("ERC20PeriodAllowanceEnforcer:invalid-contract"));
-    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
-    // }
+    /// @notice Integration: Fails if a claim exceeds the available tokens in the current period.
+    function test_integration_OverClaimFails() public {
+        uint256 claimAmount1 = 800;
+        uint256 claimAmount2 = 300; // total would be 1100, over the periodAmount of 1000
+        bytes memory terms = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
+        bytes memory callData1 = _encodeERC20Transfer(bob, claimAmount1);
 
-    // //////////////////// Valid cases //////////////////////
+        // Build and sign delegation.
+        Caveat[] memory caveats = new Caveat[](1);
+        caveats[0] = Caveat({ args: hex"", enforcer: address(erc20PeriodAllowanceEnforcer), terms: terms });
+        Delegation memory delegation =
+            Delegation({ delegate: bob, delegator: alice, authority: ROOT_AUTHORITY, caveats: caveats, salt: 0, signature: hex"" });
+        delegation = signDelegation(users.alice, delegation);
+        bytes32 delHash = EncoderLib._getDelegationHash(delegation);
 
-    // /// @notice Test that getTermsInfo() decodes valid 148-byte terms correctly.
-    // function test_getTermsInfoHappyPath() public {
-    //     address token_ = address(basicERC20);
-    //     uint256 initialAmount_ = 100 ether;
-    //     uint256 maxAmount_ = 50 ether;
-    //     uint256 amountPerSecond_ = 1 ether;
-    //     uint256 startTime_ = block.timestamp + 100;
+        // First claim succeeds.
+        invokeDelegation_UserOp(
+            users.bob, toDelegationArray(delegation), Execution({ target: address(basicERC20), value: 0, callData: callData1 })
+        );
 
-    //     bytes memory termsData_ = encodeTerms(token_, initialAmount_, maxAmount_, amountPerSecond_, startTime_);
+        // Second claim should revert.
+        bytes memory callData2 = _encodeERC20Transfer(bob, claimAmount2);
+        bytes memory execCallData2 = _encodeSingleExecution(address(basicERC20), 0, callData2);
+        vm.prank(address(delegationManager));
+        vm.expectRevert("ERC20PeriodAllowanceEnforcer:claim-amount-exceeded");
+        erc20PeriodAllowanceEnforcer.beforeHook(terms, "", singleMode, execCallData2, delHash, address(0), redeemer);
+    }
 
-    //     (
-    //         address decodedToken_,
-    //         uint256 decodedInitialAmount_,
-    //         uint256 decodedMaxAmount_,
-    //         uint256 decodedAmountPerSecond_,
-    //         uint256 decodedStartTime_
-    //     ) = erc20PeriodAllowanceEnforcer.getTermsInfo(termsData_);
+    /// @notice Integration: Verifies that the allowance resets in a new period.
+    function test_integration_NewPeriodReset() public {
+        uint256 claimAmount = 800;
+        bytes memory terms = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
+        bytes memory callData1 = _encodeERC20Transfer(bob, claimAmount);
 
-    //     assertEq(decodedToken_, token_, "Token mismatch");
-    //     assertEq(decodedInitialAmount_, initialAmount_, "Initial amount mismatch");
-    //     assertEq(decodedMaxAmount_, maxAmount_, "Max amount mismatch");
-    //     assertEq(decodedAmountPerSecond_, amountPerSecond_, "Amount per second mismatch");
-    //     assertEq(decodedStartTime_, startTime_, "Start time mismatch");
-    // }
+        // Build and sign delegation.
+        Caveat[] memory caveats = new Caveat[](1);
+        caveats[0] = Caveat({ args: hex"", enforcer: address(erc20PeriodAllowanceEnforcer), terms: terms });
+        Delegation memory delegation =
+            Delegation({ delegate: bob, delegator: alice, authority: ROOT_AUTHORITY, caveats: caveats, salt: 0, signature: hex"" });
+        delegation = signDelegation(users.alice, delegation);
+        bytes32 delHash = EncoderLib._getDelegationHash(delegation);
 
-    // /// @notice Test that getTermsInfo() reverts with `ERC20PeriodAllowanceEnforcer:invalid-terms-length` if `_terms` is not 148
-    // /// bytes.
-    // function test_getTermsInfoInvalidLength() public {
-    //     // Create an array shorter than 1 bytes
-    //     bytes memory shortTermsData = new bytes(100);
+        // First claim in current period.
+        invokeDelegation_UserOp(
+            users.bob, toDelegationArray(delegation), Execution({ target: address(basicERC20), value: 0, callData: callData1 })
+        );
 
-    //     // Expect the specific revert
-    //     vm.expectRevert(bytes("ERC20PeriodAllowanceEnforcer:invalid-terms-length"));
-    //     erc20PeriodAllowanceEnforcer.getTermsInfo(shortTermsData);
-    // }
+        (uint256 availableBefore,, uint256 currentPeriodBefore) =
+            erc20PeriodAllowanceEnforcer.getAvailableAmount(delHash, address(delegationManager));
+        assertEq(availableBefore, periodAmount - claimAmount, "Allowance reduced after claim");
 
-    // /**
-    //  * @notice Confirms the `IncreasedSpentMap` event is emitted for a valid transfer.
-    //  */
-    // function test_increasedSpentMapEvent() public {
-    //     uint256 initialAmount_ = 1 ether;
-    //     uint256 maxAmount_ = 10 ether;
-    //     uint256 amountPerSecond_ = 1 ether;
-    //     uint256 startTime_ = block.timestamp;
-    //     bytes memory terms_ = encodeTerms(address(basicERC20), initialAmount_, maxAmount_, amountPerSecond_, startTime_);
+        // Warp to next period.
+        vm.warp(startDate + periodDuration + 1);
 
-    //     // Transfer 0.5 ether, which is below the allowance so it should succeed.
-    //     uint256 transferAmount_ = 0.5 ether;
-    //     bytes memory callData_ = _encodeERC20Transfer(bob, transferAmount_);
-    //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
+        (uint256 availableAfter, bool isNewPeriod, uint256 currentPeriodAfter) =
+            erc20PeriodAllowanceEnforcer.getAvailableAmount(delHash, address(delegationManager));
+        assertEq(availableAfter, periodAmount, "Allowance resets in new period");
+        assertTrue(isNewPeriod, "isNewPeriod flag true");
+        assertGt(currentPeriodAfter, currentPeriodBefore, "Period index increased");
 
-    //     vm.expectEmit(true, true, true, true, address(erc20PeriodAllowanceEnforcer));
-    //     emit ERC20PeriodAllowanceEnforcer.IncreasedSpentMap(
-    //         address(this), // sender = this test contract is calling beforeHook()
-    //         alice, // redeemer = alice is the original message sender in this scenario
-    //         bytes32(0), // example delegationHash (we're using 0 here)
-    //         address(basicERC20), // basicERC20
-    //         initialAmount_,
-    //         maxAmount_,
-    //         amountPerSecond_,
-    //         startTime_,
-    //         transferAmount_, // spent amount after this transfer
-    //         block.timestamp // lastUpdateTimestamp (the event uses current block timestamp)
-    //     );
+        // Claim in new period.
+        uint256 newClaim = 300;
+        bytes memory callData2 = _encodeERC20Transfer(bob, newClaim);
+        invokeDelegation_UserOp(
+            users.bob, toDelegationArray(delegation), Execution({ target: address(basicERC20), value: 0, callData: callData2 })
+        );
+        (uint256 availableAfterClaim,,) = erc20PeriodAllowanceEnforcer.getAvailableAmount(delHash, address(delegationManager));
+        assertEq(availableAfterClaim, periodAmount - newClaim, "New period allowance reduced by new claim");
+    }
 
-    //     erc20PeriodAllowanceEnforcer.beforeHook(
-    //         terms_,
-    //         bytes(""), // no additional data
-    //         mode, // single execution mode
-    //         execData_,
-    //         bytes32(0), // example delegation hash
-    //         address(0), // extra param (unused here)
-    //         alice // redeemer
-    //     );
+    /// @notice Integration: Confirms that different delegation hashes are tracked independently.
+    function test_integration_MultipleDelegations() public {
+        bytes memory terms = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
 
-    //     // Verify final storage
-    //     (uint256 storedInitial_, uint256 storedMax, uint256 storedRate_, uint256 storedStart_, uint256 storedSpent_) =
-    //         erc20PeriodAllowanceEnforcer.streamingAllowances(address(this), bytes32(0));
+        // Build two delegations with different hashes.
+        Caveat[] memory caveats = new Caveat[](1);
+        caveats[0] = Caveat({ args: hex"", enforcer: address(erc20PeriodAllowanceEnforcer), terms: terms });
+        Delegation memory delegation1 =
+            Delegation({ delegate: bob, delegator: alice, authority: ROOT_AUTHORITY, caveats: caveats, salt: 0, signature: hex"" });
+        Delegation memory delegation2 =
+            Delegation({ delegate: bob, delegator: alice, authority: ROOT_AUTHORITY, caveats: caveats, salt: 1, signature: hex"" });
+        delegation1 = signDelegation(users.alice, delegation1);
+        delegation2 = signDelegation(users.alice, delegation2);
+        // Use the computed delegation hashes.
+        bytes32 computedDelHash1 = EncoderLib._getDelegationHash(delegation1);
+        bytes32 computedDelHash2 = EncoderLib._getDelegationHash(delegation2);
 
-    //     assertEq(storedInitial_, initialAmount_, "Should store the correct initialAmount");
-    //     assertEq(storedMax, maxAmount_, "Should store correct max");
-    //     assertEq(storedRate_, amountPerSecond_, "Should store the correct amountPerSecond");
-    //     assertEq(storedStart_, startTime_, "Should store the correct startTime");
-    //     assertEq(storedSpent_, transferAmount_, "Should record the correct spent");
-    // }
+        // For delegation1, claim 600 tokens.
+        bytes memory callData1 = _encodeERC20Transfer(bob, 600);
+        invokeDelegation_UserOp(
+            users.bob, toDelegationArray(delegation1), Execution({ target: address(basicERC20), value: 0, callData: callData1 })
+        );
 
-    // ////////////////////// Valid cases //////////////////////
+        // For delegation1, claim 600 tokens.
+        bytes memory callData2 = _encodeERC20Transfer(bob, 900);
+        invokeDelegation_UserOp(
+            users.bob, toDelegationArray(delegation2), Execution({ target: address(basicERC20), value: 0, callData: callData2 })
+        );
 
-    // /// @notice Tests that no tokens are available before the configured start time.
-    // function test_getAvailableAmountBeforeStartTime() public {
-    //     // This start time is in the future
-    //     uint256 futureStart_ = block.timestamp + 1000;
-    //     bytes memory terms_ = encodeTerms(address(basicERC20), 50 ether, 100 ether, 1 ether, futureStart_);
+        // // delegation2 remains unused.
+        (uint256 available1,,) = erc20PeriodAllowanceEnforcer.getAvailableAmount(computedDelHash1, address(delegationManager));
+        (uint256 available2,,) = erc20PeriodAllowanceEnforcer.getAvailableAmount(computedDelHash2, address(delegationManager));
+        assertEq(available1, periodAmount - 600, "Delegation1 allowance not reduced correctly");
+        assertEq(available2, periodAmount - 900, "Delegation2 allowance not reduced correctly");
+    }
 
-    //     // Prepare a valid IERC20.transfer call
-    //     bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
-    //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
-
-    //     // Calls beforeHook expecting no tokens to be spendable => must revert
-    //     vm.expectRevert("ERC20PeriodAllowanceEnforcer:allowance-exceeded");
-    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
-
-    //     // Checking getAvailableAmount directly also returns 0
-    //     uint256 available_ = erc20PeriodAllowanceEnforcer.getAvailableAmount(bytes32(0), address(this));
-    //     assertEq(available_, 0, "Expected 0 tokens available before start time");
-    // }
-
-    // /**
-    //  * @notice Demonstrates a linear streaming scenario (initial=0, max>0, rate>0).
-    //  */
-    // function test_linearStreamingHappyPath() public {
-    //     // initial=0 => purely linear, max=5, rate=1, start=now
-    //     bytes memory terms_ = encodeTerms(address(basicERC20), 0, 5 ether, 1 ether, block.timestamp);
-
-    //     // Warp forward 3 seconds => 3 unlocked, but clamp at max=5
-    //     vm.warp(block.timestamp + 3);
-
-    //     // Transfer 2 => should succeed
-    //     bytes memory callData_ = _encodeERC20Transfer(bob, 2 ether);
-    //     bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
-    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
-
-    //     // 3 were available, 2 spent => 1 remains
-    //     uint256 available_ = erc20PeriodAllowanceEnforcer.getAvailableAmount(bytes32(0), address(this));
-    //     assertEq(available_, 1 ether, "1 ether left after spending 2 of 3");
-
-    //     // Warp forward 10 seconds => total unlocked=13, but clamp by max=5 => totalUnlocked=5
-    //     // Spent=2 => 3 remain
-    //     vm.warp(block.timestamp + 10);
-    //     available_ = erc20PeriodAllowanceEnforcer.getAvailableAmount(bytes32(0), address(this));
-    //     assertEq(available_, 3 ether, "Clamped at 5 total unlocked, 2 spent => 3 remain");
-
-    //     // Transfer 3 => should succeed
-    //     callData_ = _encodeERC20Transfer(bob, 3 ether);
-    //     execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
-    //     erc20PeriodAllowanceEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
-
-    //     // No available amount
-    //     available_ = erc20PeriodAllowanceEnforcer.getAvailableAmount(bytes32(0), address(this));
-    //     assertEq(available_, 0, "Available amount should be 0");
-    // }
-
-    // /**
-    //  * @notice Demonstrates chunk streaming scenario (initial>0) with partial spending
-    //  *         and hitting maxAmount clamp.
-    //  */
-    // function test_chunkStreamingHitsMaxAmount() public {
-    //     // initial=10, max=25, rate=5 => chunkDuration=10/5=2 seconds
-    //     // 1st chunk=10 at start, 2nd chunk after 2 sec, 3rd chunk after 4 sec, etc.
-    //     bytes memory terms = encodeTerms(address(basicERC20), 10 ether, 25 ether, 5 ether, block.timestamp);
-
-    //     // Transfer 10 right away => chunk #1
-    //     bytes memory callData1_ = _encodeERC20Transfer(bob, 10 ether);
-    //     bytes memory execData1_ = _encodeSingleExecution(address(basicERC20), 0, callData1_);
-    //     erc20PeriodAllowanceEnforcer.beforeHook(terms, bytes(""), mode, execData1_, bytes32(0), address(0), alice);
-
-    //     // spent=10 => 0 remain from first chunk
-    //     // Warp 2 sec => chunk #2 => totalUnlocked=20 => spent=10 => 10 remain
-    //     vm.warp(block.timestamp + 2);
-    //     uint256 availNow_ = erc20PeriodAllowanceEnforcer.getAvailableAmount(bytes32(0), address(this));
-    //     assertEq(availNow_, 10 ether, "Second chunk unlocked => total=20, spent=10 => 10 remain");
-
-    //     // Transfer 10 => spent=20 => 0 remain
-    //     bytes memory callData2_ = _encodeERC20Transfer(bob, 10 ether);
-    //     bytes memory execData2_ = _encodeSingleExecution(address(basicERC20), 0, callData2_);
-    //     erc20PeriodAllowanceEnforcer.beforeHook(terms, bytes(""), mode, execData2_, bytes32(0), address(0), alice);
-
-    //     // Warp 2 more sec => chunk #3 => totalUnlocked=30 => clamp to max=25 => spent=20 => 5 remain
-    //     vm.warp(block.timestamp + 2);
-    //     uint256 availClamped_ = erc20PeriodAllowanceEnforcer.getAvailableAmount(bytes32(0), address(this));
-    //     assertEq(availClamped_, 5 ether, "Clamped at max=25, spent=20 => 5 left");
-    // }
-
-    ////////////////////// Helper fucntions //////////////////////
-
-    // /**
-    //  * @notice Builds a 148-byte `_terms` data for the new streaming logic:
-    //  *   [0..20]   = basicERC20 address
-    //  *   [20..52]  = initial amount
-    //  *   [52..84]  = max amount
-    //  *   [84..116] = amount per second
-    //  *   [116..148]= start time
-    //  */
-    // function encodeTerms(
-    //     address basicERC20,
-    //     uint256 initialAmount,
-    //     uint256 maxAmount,
-    //     uint256 amountPerSecond,
-    //     uint256 startTime
-    // )
-    //     internal
-    //     pure
-    //     returns (bytes memory)
-    // {
-    //     return abi.encodePacked(
-    //         bytes20(basicERC20), bytes32(initialAmount), bytes32(maxAmount), bytes32(amountPerSecond), bytes32(startTime)
-    //     );
-    // }
+    ////////////////////// Helper Functions //////////////////////
 
     /**
      * @dev Construct the callData_ for `IERC20.transfer(address,uint256)`.
@@ -475,6 +386,13 @@ contract ERC20PeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
 
     function _encodeSingleExecution(address target, uint256 value, bytes memory callData_) internal pure returns (bytes memory) {
         return abi.encodePacked(target, value, callData_);
+    }
+
+    /// @dev Helper to convert a single delegation to an array.
+    function toDelegationArray(Delegation memory delegation) internal pure returns (Delegation[] memory) {
+        Delegation[] memory arr = new Delegation[](1);
+        arr[0] = delegation;
+        return arr;
     }
 
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {
