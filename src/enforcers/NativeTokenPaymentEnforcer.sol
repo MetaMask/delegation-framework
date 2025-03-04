@@ -5,7 +5,7 @@ import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
-import { Execution, Delegation, ModeCode } from "../utils/Types.sol";
+import { Delegation, ModeCode } from "../utils/Types.sol";
 import { IDelegationManager } from "../interfaces/IDelegationManager.sol";
 
 /**
