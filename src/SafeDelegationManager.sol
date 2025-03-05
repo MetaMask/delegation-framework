@@ -30,6 +30,10 @@ contract SafeDelegationManager is DelegationManager {
                 for (uint256 delegationIndex_; delegationIndex_ < readableDelegations_.length; ++delegationIndex_) {
                     ReadableDelegation memory readableDelegation_ = readableDelegations_[delegationIndex_];
                     
+                    if (readableDelegation_.readableTerms.length == 0) {
+                        revert("This safe delegation manager does not currently permit unconditional delegations");
+                    }
+
                     // Convert readable terms to caveats
                     Caveat[] memory caveats_ = new Caveat[](readableDelegation_.readableTerms.length);
                     for (uint256 termIndex_; termIndex_ < readableDelegation_.readableTerms.length; ++termIndex_) {
