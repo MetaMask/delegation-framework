@@ -32,17 +32,18 @@ contract SafeDelegationManager is DelegationManager {
                     
                     // Convert readable terms to caveats
                     Caveat[] memory caveats_ = new Caveat[](readableDelegation_.readableTerms.length);
-                    
                     for (uint256 termIndex_; termIndex_ < readableDelegation_.readableTerms.length; ++termIndex_) {
                         ReadableTerm memory term_ = readableDelegation_.readableTerms[termIndex_];
                         address enforcer_ = termsToEnforcer[term_.permissionName];
                         if (enforcer_ == address(0)) revert("Unknown permission type");
                         
-                        caveats_[termIndex_] = Caveat({
-                            enforcer: enforcer_,
-                            terms: term_.terms,
-                            args: term_.args
-                        });
+                        // Convert readable terms to caveats using enforcer's conversion method
+                        ReadableTerm[] memory singleTerm_ = new ReadableTerm[](1);
+                        singleTerm_[0] = term_;
+                        Caveat[] memory convertedCaveats_ = ICaveatEnforcer(enforcer_)._convertReadableTermsToCaveats(singleTerm_);
+                        
+                        // Take first caveat since we only passed one term
+                        caveats_[termIndex_] = convertedCaveats_[0];
                     }
 
                     standardDelegations_[delegationIndex_] = Delegation({
