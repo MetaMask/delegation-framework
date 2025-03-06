@@ -166,14 +166,14 @@ contract NativeTokenStreamingEnforcerTest is CaveatEnforcerBaseTest {
         nativeTokenStreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
 
         // Verify final storage
-        (uint256 storedInit_, uint256 storedMax_, uint256 storedRate_, uint256 storedStart_, uint256 storedSpent_) =
+        (uint256 storedInit_, uint256 storedMax__, uint256 storedRate__, uint256 storedStart__, uint256 storedSpent__) =
             nativeTokenStreamingEnforcer.streamingAllowances(address(this), bytes32(0));
 
         assertEq(storedInit_, initialAmount_, "Initial amount not stored correctly");
-        assertEq(storedMax_, maxAmount_, "Max amount not stored correctly");
-        assertEq(storedRate_, amountPerSecond_, "Rate not stored correctly");
-        assertEq(storedStart_, startTime_, "Start time not stored correctly");
-        assertEq(storedSpent_, transferAmount_, "Spent amount not updated correctly");
+        assertEq(storedMax__, maxAmount_, "Max amount not stored correctly");
+        assertEq(storedRate__, amountPerSecond_, "Rate not stored correctly");
+        assertEq(storedStart__, startTime_, "Start time not stored correctly");
+        assertEq(storedSpent__, transferAmount_, "Spent amount not updated correctly");
     }
 
     /**
@@ -191,7 +191,7 @@ contract NativeTokenStreamingEnforcerTest is CaveatEnforcerBaseTest {
         nativeTokenStreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
 
         // Checking getAvailableAmount directly also returns 0
-        uint256 available_ = nativeTokenStreamingEnforcer.getAvailableAmount(address(this), bytes32(0));
+        uint256 available_ = nativeTokenStreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
         assertEq(available_, 0, "Expected 0 tokens available before startTime");
     }
 
@@ -207,7 +207,7 @@ contract NativeTokenStreamingEnforcerTest is CaveatEnforcerBaseTest {
             block.timestamp
         );
 
-        uint256 available_ = nativeTokenStreamingEnforcer.getAvailableAmount(address(this), bytes32(0));
+        uint256 available_ = nativeTokenStreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
         assertEq(available_, 0, "Should have 0 tokens available initially");
 
         // After 3 seconds => 3 unlocked (since initial=0)
@@ -218,12 +218,12 @@ contract NativeTokenStreamingEnforcerTest is CaveatEnforcerBaseTest {
         nativeTokenStreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
 
         // 3 were unlocked, spent=2 => 1 left
-        available_ = nativeTokenStreamingEnforcer.getAvailableAmount(address(this), bytes32(0));
+        available_ = nativeTokenStreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
         assertEq(available_, 1 ether, "Expected 1 ether remaining after transfer");
 
         // Another 10 seconds => total unlocked=3+10=13, but clamp at max=5 => total=5 => spent=2 => 3 left
         vm.warp(block.timestamp + 10);
-        available_ = nativeTokenStreamingEnforcer.getAvailableAmount(address(this), bytes32(0));
+        available_ = nativeTokenStreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
         assertEq(available_, 3 ether, "Expected 3 ether remaining after clamping at max");
     }
 
@@ -235,26 +235,26 @@ contract NativeTokenStreamingEnforcerTest is CaveatEnforcerBaseTest {
         // initial=10 => available at startTime, rate=2 => 2 tokens added each second, up to max=20
 
         uint256 startTime_ = block.timestamp;
-        bytes memory terms = _encodeTerms(10 ether, 20 ether, 2 ether, startTime_);
+        bytes memory terms_ = _encodeTerms(10 ether, 20 ether, 2 ether, startTime_);
 
         // Transfer 5 immediately => 5 left (spent=5)
         bytes memory execData_ = _encodeNativeTokenExecution(5 ether);
-        nativeTokenStreamingEnforcer.beforeHook(terms, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+        nativeTokenStreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
 
         // spent=5, unlocked=10 => 5 remain
-        uint256 available_ = nativeTokenStreamingEnforcer.getAvailableAmount(address(this), bytes32(0));
+        uint256 available_ = nativeTokenStreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
         assertEq(available_, 5 ether, "Expected 5 ether remaining from initial chunk after spending 5");
 
         // warp 5 seconds => totalUnlocked=10 + (2*5)=20 => at or beyond max=20 => clamp=20 => spent=5 => 15 left
         vm.warp(block.timestamp + 5);
-        available_ = nativeTokenStreamingEnforcer.getAvailableAmount(address(this), bytes32(0));
+        available_ = nativeTokenStreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
         assertEq(available_, 15 ether, "Expected 15 ether remaining after accrual, clamped at 20");
 
         // Transfer 15 => total spent=20 => 0 remain
         execData_ = _encodeNativeTokenExecution(15 ether);
-        nativeTokenStreamingEnforcer.beforeHook(terms, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+        nativeTokenStreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
 
-        available_ = nativeTokenStreamingEnforcer.getAvailableAmount(address(this), bytes32(0));
+        available_ = nativeTokenStreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
         assertEq(available_, 0, "Expected 0 remaining after full consumption");
     }
 
@@ -292,13 +292,35 @@ contract NativeTokenStreamingEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory execData_ = _encodeNativeTokenExecution(8 ether);
         nativeTokenStreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
 
-        uint256 available_ = nativeTokenStreamingEnforcer.getAvailableAmount(address(this), bytes32(0));
+        uint256 available_ = nativeTokenStreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
         assertEq(available_, 0, "After transferring the initial amount 8 ether, 0 should remain at start date");
 
         // 5 seconds after start time, it should have accruied 10 ether
         vm.warp(block.timestamp + 5);
-        available_ = nativeTokenStreamingEnforcer.getAvailableAmount(address(this), bytes32(0));
+        available_ = nativeTokenStreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
         assertEq(available_, 10 ether, "After 10 seconds, 10 ether should be available");
+    }
+
+    ////////////////////// Simulation Tests //////////////////////
+
+    /// @notice Tests simulation of getAvailableAmount before and after the start date.
+    ///         Initially, when the start date is in the future, the available_ amount is zero.
+    ///         After warping time past the start date, the available_ amount increments
+    function test_getAvailableAmountSimulationBeforeInitialization() public {
+        // Set start date in the future.
+        uint256 futureStart_ = block.timestamp + 100;
+        bytes memory terms_ = _encodeTerms(8 ether, 50 ether, 2 ether, futureStart_);
+
+        // Before the start date, available_ amount should be 0.
+        uint256 availableBefore_ = nativeTokenStreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
+        assertEq(availableBefore_, 0, "Available amount should be zero before start date");
+
+        // Warp time to after the future start date.
+        vm.warp(futureStart_ + 2);
+
+        // Now, with no claims, available_ amount should equal periodAmount.
+        uint256 availableAfter_ = nativeTokenStreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
+        assertEq(availableAfter_, 8 ether + 4 ether, "Available amount should equal periodAmount after start date");
     }
 
     ////////////////////// Integration //////////////////////
@@ -315,71 +337,74 @@ contract NativeTokenStreamingEnforcerTest is CaveatEnforcerBaseTest {
         // max = 20 ether (the cap),
         // rate = 2 ether per second,
         // startTime = current block timestamp.
-        uint256 startTime = block.timestamp;
-        bytes memory terms = _encodeTerms(5 ether, 20 ether, 2 ether, startTime);
+        uint256 startTime_ = block.timestamp;
+        bytes memory terms_ = _encodeTerms(5 ether, 20 ether, 2 ether, startTime_);
 
         // Create a caveat that uses the native token streaming enforcer.
-        Caveat[] memory caveats = new Caveat[](1);
-        caveats[0] = Caveat({ args: hex"", enforcer: address(nativeTokenStreamingEnforcer), terms: terms });
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(nativeTokenStreamingEnforcer), terms: terms_ });
 
         // Build a delegation using the caveats array.
-        Delegation memory delegation =
-            Delegation({ delegate: bob, delegator: alice, authority: ROOT_AUTHORITY, caveats: caveats, salt: 0, signature: hex"" });
-        delegation = signDelegation(users.alice, delegation);
-        bytes32 delegationHash = EncoderLib._getDelegationHash(delegation);
+        Delegation memory delegation_ =
+            Delegation({ delegate: bob, delegator: alice, authority: ROOT_AUTHORITY, caveats: caveats_, salt: 0, signature: hex"" });
+        delegation_ = signDelegation(users.alice, delegation_);
+        bytes32 delegationHash = EncoderLib._getDelegationHash(delegation_);
 
-        Delegation[] memory delegations = new Delegation[](1);
-        delegations[0] = delegation;
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation_;
 
-        uint256 balanceCarol = carol.balance;
+        uint256 balanceCarol_ = carol.balance;
 
         // --- First UserOp: Transfer 3 native tokens ---
         // Create an execution that represents a native token transfer of 3 ether to Carol
-        Execution memory execution1 = Execution({
+        Execution memory execution1_ = Execution({
             target: carol,
             value: 3 ether,
             callData: "" // no callData needed for native token transfer
          });
 
         // Invoke the delegation user op.
-        invokeDelegation_UserOp(users.bob, delegations, execution1);
+        invokeDelegation_UserOp(users.bob, delegations_, execution1_);
 
-        balanceCarol += 3 ether;
-        assertEq(carol.balance, balanceCarol, "Carol should have received 3 ether");
-
-        // At this point, the enforcer should have recorded 3 ether as spent.
-        (uint256 storedInitial, uint256 storedMax, uint256 storedRate, uint256 storedStart, uint256 storedSpent) =
-            nativeTokenStreamingEnforcer.streamingAllowances(address(delegationManager), delegationHash);
-        assertEq(storedInitial, 5 ether, "Initial amount should be 5 ether");
-        assertEq(storedMax, 20 ether, "Max amount should be 20 ether");
-        assertEq(storedRate, 2 ether, "Stored rate should be 2 ether");
-        assertEq(storedStart, startTime, "Stored start should be startTime");
-        assertEq(storedSpent, 3 ether, "Spent should be 3 ether after first op");
+        balanceCarol_ += 3 ether;
+        assertEq(carol.balance, balanceCarol_, "Carol should have received 3 ether");
+        {
+            // At this point, the enforcer should have recorded 3 ether as spent.
+            (uint256 storedInitial_, uint256 storedMax_, uint256 storedRate_, uint256 storedStart_, uint256 storedSpent_) =
+                nativeTokenStreamingEnforcer.streamingAllowances(address(delegationManager), delegationHash);
+            assertEq(storedInitial_, 5 ether, "Initial amount should be 5 ether");
+            assertEq(storedMax_, 20 ether, "Max amount should be 20 ether");
+            assertEq(storedRate_, 2 ether, "Stored rate should be 2 ether");
+            assertEq(storedStart_, startTime_, "Stored start should be startTime");
+            assertEq(storedSpent_, 3 ether, "Spent should be 3 ether after first op");
+        }
 
         // The unlocked amount at startTime is initial (5 ether), so available should be 5-3 = 2 ether.
-        uint256 availableAfter1 = nativeTokenStreamingEnforcer.getAvailableAmount(address(delegationManager), delegationHash);
-        assertEq(availableAfter1, 2 ether, "Available should be 2 ether after first op");
+        uint256 availableAfter1_ =
+            nativeTokenStreamingEnforcer.getAvailableAmount(delegationHash, address(delegationManager), terms_);
+        assertEq(availableAfter1_, 2 ether, "Available should be 2 ether after first op");
 
         // --- Second UserOp: Transfer 4 native tokens after time warp ---
         // Warp forward 5 seconds. Now unlocked = 5 + (2 * 5) = 15 ether, cap is 20.
         vm.warp(block.timestamp + 5);
 
         // Create an execution for transferring 4 ether.
-        Execution memory execution2 = Execution({ target: carol, value: 4 ether, callData: "" });
+        Execution memory execution2_ = Execution({ target: carol, value: 4 ether, callData: "" });
 
         // Invoke the user op.
-        invokeDelegation_UserOp(users.bob, delegations, execution2);
+        invokeDelegation_UserOp(users.bob, delegations_, execution2_);
 
-        balanceCarol += 4 ether;
-        assertEq(carol.balance, balanceCarol, "Carol should have received 4 ether");
+        balanceCarol_ += 4 ether;
+        assertEq(carol.balance, balanceCarol_, "Carol should have received 4 ether");
 
         // Total spent should now be 3 + 4 = 7 ether.
-        (,,,, uint256 spentAfter2) = nativeTokenStreamingEnforcer.streamingAllowances(address(delegationManager), delegationHash);
-        assertEq(spentAfter2, 7 ether, "Spent should be 7 ether after second op");
+        (,,,, uint256 spentAfter2_) = nativeTokenStreamingEnforcer.streamingAllowances(address(delegationManager), delegationHash);
+        assertEq(spentAfter2_, 7 ether, "Spent should be 7 ether after second op");
 
         // Available should now be unlocked (15) - spent (7) = 8 ether.
-        uint256 availableAfter2 = nativeTokenStreamingEnforcer.getAvailableAmount(address(delegationManager), delegationHash);
-        assertEq(availableAfter2, 8 ether, "Available should be 8 ether after second op");
+        uint256 availableAfter2_ =
+            nativeTokenStreamingEnforcer.getAvailableAmount(delegationHash, address(delegationManager), terms_);
+        assertEq(availableAfter2_, 8 ether, "Available should be 8 ether after second op");
     }
 
     /**
@@ -390,36 +415,36 @@ contract NativeTokenStreamingEnforcerTest is CaveatEnforcerBaseTest {
     function test_nativeTokenStreamingIntegration_ExceedsAllowance() public {
         // Set streaming terms:
         // initial = 5 ether, max = 5 ether (so no accrual beyond startTime), rate = 1 ether/sec.
-        uint256 startTime = block.timestamp;
-        bytes memory terms = _encodeTerms(5 ether, 5 ether, 1 ether, startTime);
+        uint256 startTime_ = block.timestamp;
+        bytes memory terms_ = _encodeTerms(5 ether, 5 ether, 1 ether, startTime_);
 
         // Create caveats and delegation
-        Caveat[] memory caveats = new Caveat[](1);
-        caveats[0] = Caveat({ args: hex"", enforcer: address(nativeTokenStreamingEnforcer), terms: terms });
-        Delegation memory delegation =
-            Delegation({ delegate: bob, delegator: alice, authority: ROOT_AUTHORITY, caveats: caveats, salt: 0, signature: hex"" });
-        delegation = signDelegation(users.alice, delegation);
-        bytes32 delegationHash = EncoderLib._getDelegationHash(delegation);
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(nativeTokenStreamingEnforcer), terms: terms_ });
+        Delegation memory delegation_ =
+            Delegation({ delegate: bob, delegator: alice, authority: ROOT_AUTHORITY, caveats: caveats_, salt: 0, signature: hex"" });
+        delegation_ = signDelegation(users.alice, delegation_);
+        bytes32 delegationHash = EncoderLib._getDelegationHash(delegation_);
 
-        Delegation[] memory delegations = new Delegation[](1);
-        delegations[0] = delegation;
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation_;
 
         uint256 balanceCarol = carol.balance;
 
         // First, invoke a user op to transfer the full 5 ether.
-        Execution memory execution1 = Execution({ target: carol, value: 5 ether, callData: "" });
-        invokeDelegation_UserOp(users.bob, delegations, execution1);
+        Execution memory execution1_ = Execution({ target: carol, value: 5 ether, callData: "" });
+        invokeDelegation_UserOp(users.bob, delegations_, execution1_);
 
         balanceCarol += 5 ether;
         assertEq(carol.balance, balanceCarol, "Carol should have received 5 ether");
 
         // Now the allowance is fully consumed (spent == max = 5 ether). Available = 0.
-        uint256 available = nativeTokenStreamingEnforcer.getAvailableAmount(address(delegationManager), delegationHash);
-        assertEq(available, 0, "Available should be 0 after full consumption");
+        uint256 available_ = nativeTokenStreamingEnforcer.getAvailableAmount(delegationHash, address(delegationManager), terms_);
+        assertEq(available_, 0, "Available should be 0 after full consumption");
 
         // Next, attempt another native token transfer of 1 ether.
-        Execution memory execution2 = Execution({ target: carol, value: 1 ether, callData: "" });
-        invokeDelegation_UserOp(users.bob, delegations, execution2);
+        Execution memory execution2_ = Execution({ target: carol, value: 1 ether, callData: "" });
+        invokeDelegation_UserOp(users.bob, delegations_, execution2_);
 
         assertEq(carol.balance, balanceCarol, "Carol should not have received anything");
     }

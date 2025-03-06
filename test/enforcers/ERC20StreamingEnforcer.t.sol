@@ -253,7 +253,7 @@ contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
         erc20StreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
 
         // Checking getAvailableAmount directly also returns 0
-        uint256 available_ = erc20StreamingEnforcer.getAvailableAmount(address(this), bytes32(0));
+        uint256 available_ = erc20StreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
         assertEq(available_, 0, "Expected 0 tokens available before start time");
     }
 
@@ -271,7 +271,7 @@ contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
             block.timestamp
         );
 
-        uint256 available_ = erc20StreamingEnforcer.getAvailableAmount(address(this), bytes32(0));
+        uint256 available_ = erc20StreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
         assertEq(available_, 0, "Should have 0 tokens available");
 
         // After 3 seconds => 3 unlocked (since initial=0)
@@ -283,12 +283,12 @@ contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
         erc20StreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
 
         // 3 were unlocked, spent=2 => 1 left
-        available_ = erc20StreamingEnforcer.getAvailableAmount(address(this), bytes32(0));
+        available_ = erc20StreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
         assertEq(available_, 1 ether, "Should have 1 ether left after spending 2 of 3");
 
         // Another 10 seconds => total unlocked=3+10=13, but clamp at max=5 => total=5 => spent=2 => 3 left
         vm.warp(block.timestamp + 10);
-        available_ = erc20StreamingEnforcer.getAvailableAmount(address(this), bytes32(0));
+        available_ = erc20StreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
         assertEq(available_, 3 ether, "Should clamp at max=5, spent=2 => 3 remain");
     }
 
@@ -307,12 +307,12 @@ contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
         erc20StreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
 
         // spent=5, unlocked=10 => 5 remain
-        uint256 available_ = erc20StreamingEnforcer.getAvailableAmount(address(this), bytes32(0));
+        uint256 available_ = erc20StreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
         assertEq(available_, 5 ether, "Should have 5 left from the initial chunk after spending 5");
 
         // warp 5 seconds => totalUnlocked=10 + (2*5)=20 => at or beyond max=20 => clamp=20 => spent=5 => 15 left
         vm.warp(block.timestamp + 5);
-        available_ = erc20StreamingEnforcer.getAvailableAmount(address(this), bytes32(0));
+        available_ = erc20StreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
         assertEq(available_, 15 ether, "Should have 15 left after 5 seconds of linear accrual, clamped at 20");
 
         // Transfer 15 => total spent=20 => 0 remain
@@ -320,7 +320,7 @@ contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
         execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
         erc20StreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
 
-        available_ = erc20StreamingEnforcer.getAvailableAmount(address(this), bytes32(0));
+        available_ = erc20StreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
         assertEq(available_, 0, "Should have 0 left after spending 20 total");
     }
 
@@ -356,22 +356,44 @@ contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
     function test_availableAtExactStartTime() public {
         uint256 startTime_ = block.timestamp + 10;
         // initial=8, max=50, rate=2 => at startTime
-        bytes memory terms = _encodeTerms(address(basicERC20), 8 ether, 50 ether, 2 ether, startTime_);
+        bytes memory terms_ = _encodeTerms(address(basicERC20), 8 ether, 50 ether, 2 ether, startTime_);
         vm.warp(startTime_);
 
         // Transfer the full 8 => should succeed
         bytes memory callData_ = _encodeERC20Transfer(bob, 8 ether);
         bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
 
-        erc20StreamingEnforcer.beforeHook(terms, bytes(""), mode, execData_, bytes32(0), address(0), alice);
+        erc20StreamingEnforcer.beforeHook(terms_, bytes(""), mode, execData_, bytes32(0), address(0), alice);
 
-        uint256 available_ = erc20StreamingEnforcer.getAvailableAmount(address(this), bytes32(0));
+        uint256 available_ = erc20StreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
         assertEq(available_, 0, "After transferring the initial amount 8 ether, 0 should remain at start date");
 
         // 5 seconds after start time, it should have accruied 10 ether
         vm.warp(block.timestamp + 5);
-        available_ = erc20StreamingEnforcer.getAvailableAmount(address(this), bytes32(0));
+        available_ = erc20StreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
         assertEq(available_, 10 ether, "After 10 seconds, 10 ether should be available");
+    }
+
+    ////////////////////// Simulation Tests //////////////////////
+
+    /// @notice Tests simulation of getAvailableAmount before and after the start date.
+    ///         Initially, when the start date is in the future, the available_ amount is zero.
+    ///         After warping time past the start date, the available_ amount increments
+    function test_getAvailableAmountSimulationBeforeInitialization() public {
+        // Set start date in the future.
+        uint256 futureStart_ = block.timestamp + 100;
+        bytes memory terms_ = _encodeTerms(address(basicERC20), 8 ether, 50 ether, 2 ether, futureStart_);
+
+        // Before the start date, available_ amount should be 0.
+        uint256 availableBefore_ = erc20StreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
+        assertEq(availableBefore_, 0, "Available amount should be zero before start date");
+
+        // Warp time to after the future start date.
+        vm.warp(futureStart_ + 2);
+
+        // Now, with no claims, available_ amount should equal periodAmount.
+        uint256 availableAfter_ = erc20StreamingEnforcer.getAvailableAmount(bytes32(0), address(this), terms_);
+        assertEq(availableAfter_, 8 ether + 4 ether, "Available amount should equal periodAmount after start date");
     }
 
     ////////////////////// Integration //////////////////////
@@ -389,15 +411,15 @@ contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
         // rate = 2 ether per second,
         // startTime = current block timestamp.
         uint256 startTime = block.timestamp;
-        bytes memory terms = _encodeTerms(address(basicERC20), 5 ether, 20 ether, 2 ether, startTime);
+        bytes memory terms_ = _encodeTerms(address(basicERC20), 5 ether, 20 ether, 2 ether, startTime);
 
         // Create a caveat that uses the native token streaming enforcer.
-        Caveat[] memory caveats = new Caveat[](1);
-        caveats[0] = Caveat({ args: hex"", enforcer: address(erc20StreamingEnforcer), terms: terms });
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(erc20StreamingEnforcer), terms: terms_ });
 
         // Build a delegation using the caveats array.
         Delegation memory delegation =
-            Delegation({ delegate: bob, delegator: alice, authority: ROOT_AUTHORITY, caveats: caveats, salt: 0, signature: hex"" });
+            Delegation({ delegate: bob, delegator: alice, authority: ROOT_AUTHORITY, caveats: caveats_, salt: 0, signature: hex"" });
         delegation = signDelegation(users.alice, delegation);
         delegationHash = EncoderLib._getDelegationHash(delegation);
 
@@ -417,18 +439,22 @@ contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
         balanceCarol += 3 ether;
         assertEq(basicERC20.balanceOf(carol), balanceCarol, "Carol should have received 3 ether");
 
-        // At this point, the enforcer should have recorded 3 ether as spent.
-        (uint256 storedInitial, uint256 storedMax, uint256 storedRate, uint256 storedStart, uint256 storedSpent) =
-            erc20StreamingEnforcer.streamingAllowances(address(delegationManager), delegationHash);
-        assertEq(storedInitial, 5 ether, "Initial amount should be 5 ether");
-        assertEq(storedMax, 20 ether, "Max amount should be 20 ether");
-        assertEq(storedRate, 2 ether, "Stored rate should be 2 ether");
-        assertEq(storedStart, startTime, "Stored start should be startTime");
-        assertEq(storedSpent, 3 ether, "Spent should be 3 ether after first op");
-
+        {
+            // At this point, the enforcer should have recorded 3 ether as spent.
+            (uint256 storedInitial, uint256 storedMax, uint256 storedRate, uint256 storedStart, uint256 storedSpent) =
+                erc20StreamingEnforcer.streamingAllowances(address(delegationManager), delegationHash);
+            assertEq(storedInitial, 5 ether, "Initial amount should be 5 ether");
+            assertEq(storedMax, 20 ether, "Max amount should be 20 ether");
+            assertEq(storedRate, 2 ether, "Stored rate should be 2 ether");
+            assertEq(storedStart, startTime, "Stored start should be startTime");
+            assertEq(storedSpent, 3 ether, "Spent should be 3 ether after first op");
+        }
         // The unlocked amount at startTime is initial (5 ether), so available should be 5-3 = 2 ether.
-        uint256 availableAfter1 = erc20StreamingEnforcer.getAvailableAmount(address(delegationManager), delegationHash);
-        assertEq(availableAfter1, 2 ether, "Available should be 2 ether after first op");
+        assertEq(
+            erc20StreamingEnforcer.getAvailableAmount(delegationHash, address(delegationManager), terms_),
+            2 ether,
+            "Available should be 2 ether after first op"
+        );
 
         // --- Second UserOp: Transfer 4 native tokens after time warp ---
         // Warp forward 5 seconds. Now unlocked = 5 + (2 * 5) = 15 ether, cap is 20.
@@ -449,7 +475,7 @@ contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(spentAfter2, 7 ether, "Spent should be 7 ether after second op");
 
         // Available should now be unlocked (15) - spent (7) = 8 ether.
-        uint256 availableAfter2 = erc20StreamingEnforcer.getAvailableAmount(address(delegationManager), delegationHash);
+        uint256 availableAfter2 = erc20StreamingEnforcer.getAvailableAmount(delegationHash, address(delegationManager), terms_);
         assertEq(availableAfter2, 8 ether, "Available should be 8 ether after second op");
     }
 
@@ -462,13 +488,13 @@ contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
         // Set streaming terms:
         // initial = 5 ether, max = 5 ether (so no accrual beyond startTime), rate = 1 ether/sec.
         uint256 startTime = block.timestamp;
-        bytes memory terms = _encodeTerms(address(basicERC20), 5 ether, 5 ether, 1 ether, startTime);
+        bytes memory terms_ = _encodeTerms(address(basicERC20), 5 ether, 5 ether, 1 ether, startTime);
 
         // Create caveats and delegation
-        Caveat[] memory caveats = new Caveat[](1);
-        caveats[0] = Caveat({ args: hex"", enforcer: address(erc20StreamingEnforcer), terms: terms });
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(erc20StreamingEnforcer), terms: terms_ });
         Delegation memory delegation =
-            Delegation({ delegate: bob, delegator: alice, authority: ROOT_AUTHORITY, caveats: caveats, salt: 0, signature: hex"" });
+            Delegation({ delegate: bob, delegator: alice, authority: ROOT_AUTHORITY, caveats: caveats_, salt: 0, signature: hex"" });
         delegation = signDelegation(users.alice, delegation);
         delegationHash = EncoderLib._getDelegationHash(delegation);
 
@@ -486,13 +512,12 @@ contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(basicERC20.balanceOf(carol), balanceCarol, "Carol should have received 5 ether");
 
         // Now the allowance is fully consumed (spent == max = 5 ether). Available = 0.
-        uint256 available = erc20StreamingEnforcer.getAvailableAmount(address(delegationManager), delegationHash);
+        uint256 available = erc20StreamingEnforcer.getAvailableAmount(delegationHash, address(delegationManager), terms_);
         assertEq(available, 0, "Available should be 0 after full consumption");
 
         // Next, attempt another native token transfer of 1 ether.
         callData_ = _encodeERC20Transfer(carol, 1 ether);
         Execution memory execution2 = Execution({ target: address(basicERC20), value: 0, callData: callData_ });
-        // vm.expectRevert(bytes("erc20StreamingEnforcer:allowance-exceeded"));
         invokeDelegation_UserOp(users.bob, delegations, execution2);
 
         assertEq(basicERC20.balanceOf(carol), balanceCarol, "Carol should not have received anything");
