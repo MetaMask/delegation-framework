@@ -7,24 +7,24 @@ import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";
 
 /**
- * @title NativeTokenPeriodAllowanceEnforcer
- * @notice Enforces periodic claim limits for native token (ETH) transfers.
- * @dev This contract implements a mechanism by which a user may claim up to a fixed amount of ETH (the period amount)
- *      during a given time period. The claimable amount resets at the beginning of each period and unclaimed ETH is
- *      forfeited once the period ends. Partial claims within a period are allowed, but the total claim in any period
+ * @title NativeTokenPeriodTransferEnforcer
+ * @notice Enforces periodic transfer limits for native token (ETH) transfers.
+ * @dev This contract implements a mechanism by which a user may transfer up to a fixed amount of ETH (the period amount)
+ *      during a given time period. The transferable amount resets at the beginning of each period and any unused ETH is
+ *      forfeited once the period ends. Partial transfers within a period are allowed, but the total transfer in any period
  *      cannot exceed the specified limit. This enforcer is designed to work only in single execution mode (ModeCode.Single).
  */
-contract NativeTokenPeriodAllowanceEnforcer is CaveatEnforcer {
+contract NativeTokenPeriodTransferEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
 
     ////////////////////////////// State //////////////////////////////
 
     struct PeriodicAllowance {
-        uint256 periodAmount; // Maximum claimable ETH (in wei) per period.
+        uint256 periodAmount; // Maximum transferable ETH (in wei) per period.
         uint256 periodDuration; // Duration of each period in seconds.
         uint256 startDate; // Timestamp when the first period begins.
-        uint256 lastClaimPeriod; // The period index in which the last claim was made.
-        uint256 claimedInCurrentPeriod; // Cumulative amount claimed in the current period.
+        uint256 lastTransferPeriod; // The period index in which the last transfer was made.
+        uint256 transferredInCurrentPeriod; // Cumulative amount transferred in the current period.
     }
 
     /**
@@ -35,25 +35,25 @@ contract NativeTokenPeriodAllowanceEnforcer is CaveatEnforcer {
     ////////////////////////////// Events //////////////////////////////
 
     /**
-     * @notice Emitted when a native token claim is made, updating the claimed amount in the active period.
-     * @param sender The address initiating the claim.
+     * @notice Emitted when a native token transfer is made, updating the transferred amount in the active period.
+     * @param sender The address initiating the transfer.
      * @param redeemer The address that receives the ETH.
      * @param delegationHash The hash identifying the delegation.
-     * @param periodAmount The maximum ETH (in wei) claimable per period.
+     * @param periodAmount The maximum ETH (in wei) transferable per period.
      * @param periodDuration The duration of each period (in seconds).
      * @param startDate The timestamp when the first period begins.
-     * @param claimedInCurrentPeriod The total ETH (in wei) claimed in the current period after this claim.
-     * @param claimTimestamp The block timestamp at which the claim was executed.
+     * @param transferredInCurrentPeriod The total ETH (in wei) transferred in the current period after this transfer.
+     * @param transferTimestamp The block timestamp at which the transfer was executed.
      */
-    event ClaimUpdated(
+    event TransferUpdated(
         address indexed sender,
         address indexed redeemer,
         bytes32 indexed delegationHash,
         uint256 periodAmount,
         uint256 periodDuration,
         uint256 startDate,
-        uint256 claimedInCurrentPeriod,
-        uint256 claimTimestamp
+        uint256 transferredInCurrentPeriod,
+        uint256 transferTimestamp
     );
 
     ////////////////////////////// Public Methods //////////////////////////////
@@ -88,14 +88,14 @@ contract NativeTokenPeriodAllowanceEnforcer is CaveatEnforcer {
             periodAmount: periodAmount_,
             periodDuration: periodDuration_,
             startDate: startDate_,
-            lastClaimPeriod: 0,
-            claimedInCurrentPeriod: 0
+            lastTransferPeriod: 0,
+            transferredInCurrentPeriod: 0
         });
         return _getAvailableAmount(allowance_);
     }
 
     /**
-     * @notice Hook called before a native ETH transfer to enforce the periodic claim limit.
+     * @notice Hook called before a native ETH transfer to enforce the periodic transfer limit.
      * @dev Reverts if the transfer value exceeds the available ETH for the current period.
      *      Expects `_terms` to be a 96-byte blob encoding: periodAmount, periodDuration, and startDate.
      * @param _terms 96 packed bytes:
@@ -120,17 +120,17 @@ contract NativeTokenPeriodAllowanceEnforcer is CaveatEnforcer {
         override
         onlySingleExecutionMode(_mode)
     {
-        _validateAndConsumeClaim(_terms, _executionCallData, _delegationHash, _redeemer);
+        _validateAndConsumeTransfer(_terms, _executionCallData, _delegationHash, _redeemer);
     }
 
     /**
-     * @notice Decodes the native claim terms.
+     * @notice Decodes the native transfer terms.
      * @dev Expects a 96-byte blob and extracts: periodAmount, periodDuration, and startDate.
      * @param _terms 96 packed bytes:
      *  - 32 bytes: periodAmount.
      *  - 32 bytes: periodDuration (in seconds).
      *  - 32 bytes: startDate.
-     * @return periodAmount_ The maximum ETH (in wei) claimable per period.
+     * @return periodAmount_ The maximum ETH (in wei) transferable per period.
      * @return periodDuration_ The duration of each period in seconds.
      * @return startDate_ The timestamp when the first period begins.
      */
@@ -139,7 +139,7 @@ contract NativeTokenPeriodAllowanceEnforcer is CaveatEnforcer {
         pure
         returns (uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_)
     {
-        require(_terms.length == 96, "NativeTokenPeriodAllowanceEnforcer:invalid-terms-length");
+        require(_terms.length == 96, "NativeTokenPeriodTransferEnforcer:invalid-terms-length");
         periodAmount_ = uint256(bytes32(_terms[0:32]));
         periodDuration_ = uint256(bytes32(_terms[32:64]));
         startDate_ = uint256(bytes32(_terms[64:96]));
@@ -148,15 +148,15 @@ contract NativeTokenPeriodAllowanceEnforcer is CaveatEnforcer {
     ////////////////////////////// Internal Methods //////////////////////////////
 
     /**
-     * @notice Validates and consumes a claim by ensuring the transfer value does not exceed the available ETH.
+     * @notice Validates and consumes a transfer by ensuring the transfer value does not exceed the available ETH.
      * @dev Uses _getAvailableAmount to determine the available ETH and whether a new period has started.
-     *      If a new period is detected, the claimed amount is reset before consuming the claim.
-     * @param _terms The encoded claim terms (periodAmount, periodDuration, startDate).
+     *      If a new period is detected, the transferred amount is reset before consuming the transfer.
+     * @param _terms The encoded transfer terms (periodAmount, periodDuration, startDate).
      * @param _executionCallData The execution data (expected to be encoded via ExecutionLib.encodeSingle).
      *        For native transfers, decodeSingle returns (target, value, callData) and callData must be empty.
      * @param _delegationHash The hash identifying the delegation.
      */
-    function _validateAndConsumeClaim(
+    function _validateAndConsumeTransfer(
         bytes calldata _terms,
         bytes calldata _executionCallData,
         bytes32 _delegationHash,
@@ -169,12 +169,12 @@ contract NativeTokenPeriodAllowanceEnforcer is CaveatEnforcer {
         (uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) = getTermsInfo(_terms);
 
         // Validate terms.
-        require(startDate_ > 0, "NativeTokenPeriodAllowanceEnforcer:invalid-zero-start-date");
-        require(periodDuration_ > 0, "NativeTokenPeriodAllowanceEnforcer:invalid-zero-period-duration");
-        require(periodAmount_ > 0, "NativeTokenPeriodAllowanceEnforcer:invalid-zero-period-amount");
+        require(startDate_ > 0, "NativeTokenPeriodTransferEnforcer:invalid-zero-start-date");
+        require(periodDuration_ > 0, "NativeTokenPeriodTransferEnforcer:invalid-zero-period-duration");
+        require(periodAmount_ > 0, "NativeTokenPeriodTransferEnforcer:invalid-zero-period-amount");
 
-        // Ensure the claim period has started.
-        require(block.timestamp >= startDate_, "NativeTokenPeriodAllowanceEnforcer:claim-not-started");
+        // Ensure the transfer period has started.
+        require(block.timestamp >= startDate_, "NativeTokenPeriodTransferEnforcer:transfer-not-started");
 
         PeriodicAllowance storage allowance_ = periodicAllowances[msg.sender][_delegationHash];
 
@@ -183,44 +183,44 @@ contract NativeTokenPeriodAllowanceEnforcer is CaveatEnforcer {
             allowance_.periodAmount = periodAmount_;
             allowance_.periodDuration = periodDuration_;
             allowance_.startDate = startDate_;
-            allowance_.lastClaimPeriod = 0;
-            allowance_.claimedInCurrentPeriod = 0;
+            allowance_.lastTransferPeriod = 0;
+            allowance_.transferredInCurrentPeriod = 0;
         }
 
-        // Calculate available tokens using the current allowance state.
+        // Calculate available ETH using the current allowance state.
         (uint256 available_, bool isNewPeriod_, uint256 currentPeriod_) = _getAvailableAmount(allowance_);
 
-        require(value_ <= available_, "NativeTokenPeriodAllowanceEnforcer:claim-amount-exceeded");
+        require(value_ <= available_, "NativeTokenPeriodTransferEnforcer:transfer-amount-exceeded");
 
-        // If a new period has started, update state before processing the claim.
+        // If a new period has started, update state before processing the transfer.
         if (isNewPeriod_) {
-            allowance_.lastClaimPeriod = currentPeriod_;
-            allowance_.claimedInCurrentPeriod = 0;
+            allowance_.lastTransferPeriod = currentPeriod_;
+            allowance_.transferredInCurrentPeriod = 0;
         }
-        allowance_.claimedInCurrentPeriod += value_;
+        allowance_.transferredInCurrentPeriod += value_;
 
-        emit ClaimUpdated(
+        emit TransferUpdated(
             msg.sender,
             _redeemer,
             _delegationHash,
             periodAmount_,
             periodDuration_,
             allowance_.startDate,
-            allowance_.claimedInCurrentPeriod,
+            allowance_.transferredInCurrentPeriod,
             block.timestamp
         );
     }
 
     /**
-     * @notice Computes the available tokens that can be claimed in the current period.
+     * @notice Computes the available ETH that can be transferred in the current period.
      * @dev Calculates the current period index based on `startDate` and `periodDuration`. Returns a tuple:
-     *      - availableAmount_: Remaining tokens claimable in the current period.
-     *      - isNewPeriod_: True if the last claim period is not equal to the current period.
-     *      - currentPeriod_: The current period index, first period starts at 1.
+     *      - availableAmount_: Remaining ETH transferable in the current period.
+     *      - isNewPeriod_: True if the last transfer period is not equal to the current period.
+     *      - currentPeriod_: The current period index, with the first period starting at 1.
      *      If the current time is before the start date, availableAmount_ is 0.
      * @param _allowance The PeriodicAllowance struct.
-     * @return availableAmount_ The tokens still available to claim in the current period.
-     * @return isNewPeriod_ True if a new period has started since the last claim.
+     * @return availableAmount_ The ETH still available to transfer in the current period.
+     * @return isNewPeriod_ True if a new period has started since the last transfer.
      * @return currentPeriod_ The current period index calculated from the start date.
      */
     function _getAvailableAmount(PeriodicAllowance memory _allowance)
@@ -230,8 +230,8 @@ contract NativeTokenPeriodAllowanceEnforcer is CaveatEnforcer {
     {
         if (block.timestamp < _allowance.startDate) return (0, false, 0);
         currentPeriod_ = (block.timestamp - _allowance.startDate) / _allowance.periodDuration + 1;
-        isNewPeriod_ = _allowance.lastClaimPeriod != currentPeriod_;
-        uint256 claimed = isNewPeriod_ ? 0 : _allowance.claimedInCurrentPeriod;
-        availableAmount_ = _allowance.periodAmount > claimed ? _allowance.periodAmount - claimed : 0;
+        isNewPeriod_ = _allowance.lastTransferPeriod != currentPeriod_;
+        uint256 transferred = isNewPeriod_ ? 0 : _allowance.transferredInCurrentPeriod;
+        availableAmount_ = _allowance.periodAmount > transferred ? _allowance.periodAmount - transferred : 0;
     }
 }

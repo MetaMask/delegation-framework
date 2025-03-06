@@ -7,15 +7,15 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { ModeCode, Caveat, Delegation, Execution } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
-import { NativeTokenPeriodAllowanceEnforcer } from "../../src/enforcers/NativeTokenPeriodAllowanceEnforcer.sol";
+import { NativeTokenPeriodTransferEnforcer } from "../../src/enforcers/NativeTokenPeriodTransferEnforcer.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 
-contract NativeTokenPeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
+contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     using ModeLib for ModeCode;
 
     ////////////////////////////// State //////////////////////////////
-    NativeTokenPeriodAllowanceEnforcer public nativeEnforcer;
+    NativeTokenPeriodTransferEnforcer public nativeEnforcer;
     ModeCode public singleMode = ModeLib.encodeSimpleSingle();
     address public delegator;
     address public redeemer;
@@ -32,7 +32,7 @@ contract NativeTokenPeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
     ////////////////////// Set up //////////////////////
     function setUp() public override {
         super.setUp();
-        nativeEnforcer = new NativeTokenPeriodAllowanceEnforcer();
+        nativeEnforcer = new NativeTokenPeriodTransferEnforcer();
         vm.label(address(nativeEnforcer), "Native Token Period Allowance Enforcer");
 
         // For testing, we use these addresses.
@@ -53,7 +53,7 @@ contract NativeTokenPeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
     /// @notice Ensures it reverts if _terms length is not exactly 96 bytes.
     function testInvalidTermsLength() public {
         bytes memory invalidTerms_ = new bytes(95); // one byte short
-        vm.expectRevert("NativeTokenPeriodAllowanceEnforcer:invalid-terms-length");
+        vm.expectRevert("NativeTokenPeriodTransferEnforcer:invalid-terms-length");
         nativeEnforcer.getTermsInfo(invalidTerms_);
     }
 
@@ -62,7 +62,7 @@ contract NativeTokenPeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, uint256(0));
         // Build execution call data: encode native transfer with beneficiary as target and 0.5 ether value.
         bytes memory execData_ = _encodeNativeTransfer(beneficiary, 0.5 ether);
-        vm.expectRevert("NativeTokenPeriodAllowanceEnforcer:invalid-zero-start-date");
+        vm.expectRevert("NativeTokenPeriodTransferEnforcer:invalid-zero-start-date");
         nativeEnforcer.beforeHook(terms_, "", singleMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
@@ -70,7 +70,7 @@ contract NativeTokenPeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
     function testInvalidZeroPeriodDuration() public {
         bytes memory terms_ = abi.encodePacked(periodAmount, uint256(0), startDate);
         bytes memory execData_ = _encodeNativeTransfer(beneficiary, 0.5 ether);
-        vm.expectRevert("NativeTokenPeriodAllowanceEnforcer:invalid-zero-period-duration");
+        vm.expectRevert("NativeTokenPeriodTransferEnforcer:invalid-zero-period-duration");
         nativeEnforcer.beforeHook(terms_, "", singleMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
@@ -78,59 +78,59 @@ contract NativeTokenPeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
     function testInvalidZeroPeriodAmount() public {
         bytes memory terms_ = abi.encodePacked(uint256(0), periodDuration, startDate);
         bytes memory execData_ = _encodeNativeTransfer(beneficiary, 0.5 ether);
-        vm.expectRevert("NativeTokenPeriodAllowanceEnforcer:invalid-zero-period-amount");
+        vm.expectRevert("NativeTokenPeriodTransferEnforcer:invalid-zero-period-amount");
         nativeEnforcer.beforeHook(terms_, "", singleMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
-    /// @notice Reverts if the claim period has not started yet.
-    function testClaimNotStarted() public {
+    /// @notice Reverts if the transfer period has not started yet.
+    function testTransferNotStarted() public {
         uint256 futureStart_ = block.timestamp + 100;
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, futureStart_);
         bytes memory execData_ = _encodeNativeTransfer(beneficiary, 0.5 ether);
-        vm.expectRevert("NativeTokenPeriodAllowanceEnforcer:claim-not-started");
+        vm.expectRevert("NativeTokenPeriodTransferEnforcer:transfer-not-started");
         nativeEnforcer.beforeHook(terms_, "", singleMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
-    /// @notice Reverts if a claim exceeds the available_ ETH allowance.
-    function testclaimAmount_Exceeded() public {
+    /// @notice Reverts if a transfer exceeds the available ETH allowance.
+    function testTransferAmount_Exceeded() public {
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
-        // First claim: 0.8 ether.
+        // First transfer: 0.8 ether.
         bytes memory execData1_ = _encodeNativeTransfer(beneficiary, 0.8 ether);
         nativeEnforcer.beforeHook(terms_, "", singleMode, execData1_, dummyDelegationHash, address(0), redeemer);
 
-        // Second claim: attempt to claim 0.3 ether, which exceeds remaining 0.2 ether.
+        // Second transfer: attempt to transfer 0.3 ether, which exceeds remaining 0.2 ether.
         bytes memory execData2_ = _encodeNativeTransfer(beneficiary, 0.3 ether);
-        vm.expectRevert("NativeTokenPeriodAllowanceEnforcer:claim-amount-exceeded");
+        vm.expectRevert("NativeTokenPeriodTransferEnforcer:transfer-amount-exceeded");
         nativeEnforcer.beforeHook(terms_, "", singleMode, execData2_, dummyDelegationHash, address(0), redeemer);
     }
 
-    ////////////////////// Successful and Multiple Claims //////////////////////
+    ////////////////////// Successful and Multiple Transfers //////////////////////
 
-    /// @notice Tests a successful native ETH claim and verifies that the ClaimUpdated event is emitted.
-    function testSuccessfulClaimAndEvent() public {
-        uint256 claimAmount_ = 0.5 ether;
+    /// @notice Tests a successful native ETH transfer and verifies that the TransferUpdated event is emitted.
+    function testSuccessfulTransferAndEvent() public {
+        uint256 transferAmount_ = 0.5 ether;
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
-        bytes memory execData_ = _encodeNativeTransfer(beneficiary, claimAmount_);
+        bytes memory execData_ = _encodeNativeTransfer(beneficiary, transferAmount_);
 
         vm.expectEmit(true, true, true, true);
-        emit NativeTokenPeriodAllowanceEnforcer.ClaimUpdated(
-            address(this), redeemer, dummyDelegationHash, periodAmount, periodDuration, startDate, claimAmount_, block.timestamp
+        emit NativeTokenPeriodTransferEnforcer.TransferUpdated(
+            address(this), redeemer, dummyDelegationHash, periodAmount, periodDuration, startDate, transferAmount_, block.timestamp
         );
 
         nativeEnforcer.beforeHook(terms_, "", singleMode, execData_, dummyDelegationHash, address(0), redeemer);
 
         (uint256 availableAfter_,,) = nativeEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_);
-        assertEq(availableAfter_, periodAmount - claimAmount_, "Available reduced by claim");
+        assertEq(availableAfter_, periodAmount - transferAmount_, "Available reduced by transfer");
     }
 
-    /// @notice Tests multiple native ETH claims within the same period and confirms that an over-claim reverts.
-    function testMultipleClaimsInSamePeriod() public {
+    /// @notice Tests multiple native ETH transfers within the same period and confirms that an over-transfer reverts.
+    function testMultipleTransfersInSamePeriod() public {
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
-        // First claim: 0.4 ether.
+        // First transfer: 0.4 ether.
         bytes memory execData1_ = _encodeNativeTransfer(beneficiary, 0.4 ether);
         nativeEnforcer.beforeHook(terms_, "", singleMode, execData1_, dummyDelegationHash, address(0), redeemer);
 
-        // Second claim: 0.3 ether.
+        // Second transfer: 0.3 ether.
         bytes memory execData2_ = _encodeNativeTransfer(beneficiary, 0.3 ether);
         nativeEnforcer.beforeHook(terms_, "", singleMode, execData2_, dummyDelegationHash, address(0), redeemer);
 
@@ -138,22 +138,22 @@ contract NativeTokenPeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
         // Expected remaining: 1 ether - 0.4 ether - 0.3 ether = 0.3 ether.
         assertEq(available_, 0.3 ether, "Remaining allowance should be 0.3 ETH");
 
-        // Third claim: attempt to claim 0.4 ether, which should revert.
+        // Third transfer: attempt to transfer 0.4 ether, which should revert.
         bytes memory execData3_ = _encodeNativeTransfer(beneficiary, 0.4 ether);
-        vm.expectRevert("NativeTokenPeriodAllowanceEnforcer:claim-amount-exceeded");
+        vm.expectRevert("NativeTokenPeriodTransferEnforcer:transfer-amount-exceeded");
         nativeEnforcer.beforeHook(terms_, "", singleMode, execData3_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Tests that the allowance resets when a new period begins.
     function testNewPeriodResetsAllowance() public {
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
-        // First claim: 0.8 ether.
+        // First transfer: 0.8 ether.
         bytes memory execData1_ = _encodeNativeTransfer(beneficiary, 0.8 ether);
         nativeEnforcer.beforeHook(terms_, "", singleMode, execData1_, dummyDelegationHash, address(0), redeemer);
 
         (uint256 availableBefore_,, uint256 periodBefore_) =
             nativeEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_);
-        assertEq(availableBefore_, periodAmount - 0.8 ether, "Allowance reduced after claim");
+        assertEq(availableBefore_, periodAmount - 0.8 ether, "Allowance reduced after transfer");
 
         // Warp time to next period.
         vm.warp(startDate + periodDuration + 1);
@@ -163,18 +163,18 @@ contract NativeTokenPeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
         assertTrue(isPeriodNew_, "isNewPeriod flag true");
         assertGt(periodAfter_, periodBefore_, "Period index increased");
 
-        // Claim in new period: 0.3 ether.
+        // Transfer in new period: 0.3 ether.
         bytes memory execData2_ = _encodeNativeTransfer(beneficiary, 0.3 ether);
         nativeEnforcer.beforeHook(terms_, "", singleMode, execData2_, dummyDelegationHash, address(0), redeemer);
-        (uint256 availableAfterClaim_,,) = nativeEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_);
-        assertEq(availableAfterClaim_, periodAmount - 0.3 ether, "New period allowance reduced by new claim");
+        (uint256 availableAfterTransfer_,,) = nativeEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_);
+        assertEq(availableAfterTransfer_, periodAmount - 0.3 ether, "New period allowance reduced by new transfer");
     }
 
     ////////////////////// Integration Tests //////////////////////
 
-    /// @notice Integration: Simulates a full native ETH claim via delegation and verifies allowance update.
-    function test_integration_SuccessfulClaim() public {
-        uint256 claimAmount_ = 0.5 ether;
+    /// @notice Integration: Simulates a full native ETH transfer via delegation and verifies allowance update.
+    function test_integration_SuccessfulTransfer() public {
+        uint256 transferAmount_ = 0.5 ether;
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
 
         // Build and sign the delegation.
@@ -193,17 +193,17 @@ contract NativeTokenPeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
 
         // Simulate a native transfer user operation.
         invokeDelegation_UserOp(
-            users.bob, toDelegationArray(delegation), Execution({ target: beneficiary, value: claimAmount_, callData: hex"" })
+            users.bob, toDelegationArray(delegation), Execution({ target: beneficiary, value: transferAmount_, callData: hex"" })
         );
 
         (uint256 availableAfter_,,) = nativeEnforcer.getAvailableAmount(delHash, address(delegationManager), terms_);
-        assertEq(availableAfter_, periodAmount - claimAmount_, "Available reduced by claim");
+        assertEq(availableAfter_, periodAmount - transferAmount_, "Available reduced by transfer");
     }
 
-    /// @notice Integration: Fails if a native claim exceeds the available_ ETH allowance.
-    function test_integration_OverClaimFails() public {
-        uint256 claimAmount_1 = 0.8 ether;
-        uint256 claimAmount_2 = 0.3 ether; // total 1.1 ether, exceeds periodAmount = 1 ether
+    /// @notice Integration: Fails if a native transfer exceeds the available ETH allowance.
+    function test_integration_OverTransferFails() public {
+        uint256 transferAmount_1 = 0.8 ether;
+        uint256 transferAmount_2 = 0.3 ether; // total 1.1 ether, exceeds periodAmount = 1 ether
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
 
         // Build and sign delegation.
@@ -220,23 +220,22 @@ contract NativeTokenPeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
         delegation = signDelegation(users.alice, delegation);
         bytes32 delHash = EncoderLib._getDelegationHash(delegation);
 
-        // First claim succeeds.
+        // First transfer succeeds.
         invokeDelegation_UserOp(
-            users.bob, toDelegationArray(delegation), Execution({ target: beneficiary, value: claimAmount_1, callData: hex"" })
+            users.bob, toDelegationArray(delegation), Execution({ target: beneficiary, value: transferAmount_1, callData: hex"" })
         );
 
-        // Second claim should revert.
-        bytes memory execData2_ = _encodeNativeTransfer(beneficiary, claimAmount_2);
+        // Second transfer should revert.
+        bytes memory execData2_ = _encodeNativeTransfer(beneficiary, transferAmount_2);
         vm.prank(address(delegationManager));
-        vm.expectRevert("NativeTokenPeriodAllowanceEnforcer:claim-amount-exceeded");
+        vm.expectRevert("NativeTokenPeriodTransferEnforcer:transfer-amount-exceeded");
         nativeEnforcer.beforeHook(terms_, "", singleMode, execData2_, delHash, address(0), redeemer);
     }
 
     /// @notice Integration: Verifies that the allowance resets in a new period for native transfers.
     function test_integration_NewPeriodReset() public {
-        uint256 claimAmount_ = 0.8 ether;
+        uint256 transferAmount_ = 0.8 ether;
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
-        // bytes memory execData_ = _encodeNativeTransfer(beneficiary, claimAmount_);
 
         // Build and sign delegation.
         Caveat[] memory caveats_ = new Caveat[](1);
@@ -252,14 +251,14 @@ contract NativeTokenPeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
         delegation = signDelegation(users.alice, delegation);
         bytes32 delHash = EncoderLib._getDelegationHash(delegation);
 
-        // First claim in current period.
+        // First transfer in current period.
         invokeDelegation_UserOp(
-            users.bob, toDelegationArray(delegation), Execution({ target: beneficiary, value: claimAmount_, callData: hex"" })
+            users.bob, toDelegationArray(delegation), Execution({ target: beneficiary, value: transferAmount_, callData: hex"" })
         );
 
         (uint256 availableBefore_,, uint256 periodBefore_) =
             nativeEnforcer.getAvailableAmount(delHash, address(delegationManager), terms_);
-        assertEq(availableBefore_, periodAmount - claimAmount_, "Allowance reduced after claim");
+        assertEq(availableBefore_, periodAmount - transferAmount_, "Allowance reduced after transfer");
 
         // Warp to next period.
         vm.warp(startDate + periodDuration + 1);
@@ -269,13 +268,13 @@ contract NativeTokenPeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
         assertTrue(isNew, "isNewPeriod flag true");
         assertGt(periodAfter_, periodBefore_, "Period index increased");
 
-        // Claim in new period.
-        uint256 newClaim_ = 0.3 ether;
+        // Transfer in new period.
+        uint256 newTransfer_ = 0.3 ether;
         invokeDelegation_UserOp(
-            users.bob, toDelegationArray(delegation), Execution({ target: beneficiary, value: newClaim_, callData: hex"" })
+            users.bob, toDelegationArray(delegation), Execution({ target: beneficiary, value: newTransfer_, callData: hex"" })
         );
-        (uint256 availableAfterClaim_,,) = nativeEnforcer.getAvailableAmount(delHash, address(delegationManager), terms_);
-        assertEq(availableAfterClaim_, periodAmount - newClaim_, "New period allowance reduced by new claim");
+        (uint256 availableAfterTransfer_,,) = nativeEnforcer.getAvailableAmount(delHash, address(delegationManager), terms_);
+        assertEq(availableAfterTransfer_, periodAmount - newTransfer_, "New period allowance reduced by new transfer");
     }
 
     /// @notice Integration: Confirms that different delegation hashes are tracked independently.
@@ -306,12 +305,12 @@ contract NativeTokenPeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
         bytes32 computedDelHash1_ = EncoderLib._getDelegationHash(delegation1_);
         bytes32 computedDelHash2_ = EncoderLib._getDelegationHash(delegation2_);
 
-        // For delegation1_, claim 0.6 ether.
+        // For delegation1_, transfer 0.6 ether.
         invokeDelegation_UserOp(
             users.bob, toDelegationArray(delegation1_), Execution({ target: beneficiary, value: 0.6 ether, callData: hex"" })
         );
 
-        // For delegation2_, claim 0.9 ether.
+        // For delegation2_, transfer 0.9 ether.
         invokeDelegation_UserOp(
             users.bob, toDelegationArray(delegation2_), Execution({ target: beneficiary, value: 0.9 ether, callData: hex"" })
         );
@@ -325,13 +324,13 @@ contract NativeTokenPeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
     ////////////////////// New Simulation Tests //////////////////////
 
     /// @notice Tests simulation of getAvailableAmount when no allowance is stored.
-    ///         Initially, if the start date is in the future, available_ amount is zero;
-    ///         after warping time past the start, available_ equals periodAmount.
+    ///         Initially, if the start date is in the future, available amount is zero;
+    ///         after warping time past the start, available equals periodAmount.
     function test_getAvailableAmountSimulationBeforeInitialization() public {
         uint256 futureStart_ = block.timestamp + 100;
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, futureStart_);
 
-        // Before the start date, available_ should be 0.
+        // Before the start date, available should be 0.
         (uint256 availableBefore_, bool isNewPeriodBefore, uint256 currentPeriodBefore) =
             nativeEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_);
         assertEq(availableBefore_, 0, "Available should be 0 before start");
@@ -341,12 +340,12 @@ contract NativeTokenPeriodAllowanceEnforcerTest is CaveatEnforcerBaseTest {
         // Warp time to after the start date.
         vm.warp(futureStart_ + 1);
 
-        // Now, with no claims, available_ amount should equal periodAmount.
+        // Now, with no transfer made, available amount should equal periodAmount.
         (uint256 availableAfter_, bool isNewPeriodAfter_, uint256 currentPeriodAfter_) =
             nativeEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_);
         assertEq(availableAfter_, periodAmount, "Available equals periodAmount after start");
 
-        // Since no claim was made, lastClaimPeriod remains 0 so currentPeriod should be > 0 => isNewPeriodAfter_ true.
+        // Since no transfer was made, lastTransferPeriod remains 0 so currentPeriod should be > 0 => isNewPeriodAfter_ true.
         assertTrue(isNewPeriodAfter_, "isNewPeriod should be true after start");
 
         // Optionally, verify the current period calculation.
