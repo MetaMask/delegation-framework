@@ -24,7 +24,7 @@ contract ExactExecutionBatchEnforcerTest is CaveatEnforcerBaseTest {
     function setUp() public override {
         super.setUp();
         exactExecutionBatchEnforcer = new ExactExecutionBatchEnforcer();
-        vm.label(address(exactExecutionBatchEnforcer), "Exact Calldata Batch Enforcer");
+        vm.label(address(exactExecutionBatchEnforcer), "Exact Execution Batch Enforcer");
         basicCF20 = new BasicERC20(address(users.alice.deleGator), "TestToken1", "TestToken1", 100 ether);
     }
 

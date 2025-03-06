@@ -44,14 +44,11 @@ contract ExactExecutionBatchEnforcer is CaveatEnforcer {
         // Validate that the number of executions matches
         require(executions_.length == termsExecutions_.length, "ExactExecutionBatchEnforcer:invalid-batch-size");
 
-        // Check each execution matches exactly (target, value, and calldata)
-        for (uint256 i = 0; i < executions_.length; i++) {
-            require(
-                termsExecutions_[i].target == executions_[i].target && termsExecutions_[i].value == executions_[i].value
-                    && keccak256(termsExecutions_[i].callData) == keccak256(executions_[i].callData),
-                "ExactExecutionBatchEnforcer:invalid-execution"
-            );
-        }
+        // Encode both sets of executions and compare the hashes
+        require(
+            keccak256(abi.encode(executions_)) == keccak256(abi.encode(termsExecutions_)),
+            "ExactExecutionBatchEnforcer:invalid-execution"
+        );
     }
 
     /**
