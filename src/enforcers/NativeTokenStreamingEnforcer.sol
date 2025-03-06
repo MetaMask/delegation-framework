@@ -56,20 +56,38 @@ contract NativeTokenStreamingEnforcer is CaveatEnforcer {
 
     /**
      * @notice Retrieves the current available allowance for a given delegation.
-     * @param _delegationManager The delegation manager address.
      * @param _delegationHash The hash of the delegation.
+     * @param _delegationManager The delegation manager address.
+     * @param _terms 128 packed bytes where:
+     * - 32 bytes: initial amount.
+     * - 32 bytes: max amount.
+     * - 32 bytes: amount per second.
+     * - 32 bytes: start time for the streaming allowance.
      * @return availableAmount_ The native token amount available (capped by `maxAmount`).
      */
     function getAvailableAmount(
+        bytes32 _delegationHash,
         address _delegationManager,
-        bytes32 _delegationHash
+        bytes calldata _terms
     )
         external
         view
         returns (uint256 availableAmount_)
     {
-        StreamingAllowance storage allowance_ = streamingAllowances[_delegationManager][_delegationHash];
-        availableAmount_ = _getAvailableAmount(allowance_);
+        StreamingAllowance memory storedAllowance_ = streamingAllowances[_delegationManager][_delegationHash];
+        if (storedAllowance_.spent != 0) return _getAvailableAmount(storedAllowance_);
+
+        // Not yet initialized: simulate using provided terms.
+        (uint256 initialAmount_, uint256 maxAmount_, uint256 amountPerSecond_, uint256 startTime_) = getTermsInfo(_terms);
+
+        StreamingAllowance memory allowance_ = StreamingAllowance({
+            initialAmount: initialAmount_,
+            maxAmount: maxAmount_,
+            amountPerSecond: amountPerSecond_,
+            startTime: startTime_,
+            spent: 0
+        });
+        return _getAvailableAmount(allowance_);
     }
 
     /**

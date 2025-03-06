@@ -59,21 +59,40 @@ contract ERC20StreamingEnforcer is CaveatEnforcer {
 
     /**
      * @notice Retrieves the current available allowance for a specific delegation.
-     * @param _delegationManager The address of the delegation manager.
      * @param _delegationHash The hash of the delegation being queried.
+     * @param _delegationManager The address of the delegation manager.
+     * @param _terms 148 packed bytes where:
+     * - 20 bytes: ERC20 token address.
+     * - 32 bytes: initial amount.
+     * - 32 bytes: max amount.
+     * - 32 bytes: amount per second.
+     * - 32 bytes: start time for the streaming allowance.
      * @return availableAmount_ The number of tokens that are currently spendable
      * under this streaming allowance (capped by `maxAmount`).
      */
     function getAvailableAmount(
+        bytes32 _delegationHash,
         address _delegationManager,
-        bytes32 _delegationHash
+        bytes calldata _terms
     )
         external
         view
         returns (uint256 availableAmount_)
     {
-        StreamingAllowance storage allowance_ = streamingAllowances[_delegationManager][_delegationHash];
-        availableAmount_ = _getAvailableAmount(allowance_);
+        StreamingAllowance memory storedAllowance_ = streamingAllowances[_delegationManager][_delegationHash];
+        if (storedAllowance_.spent != 0) return _getAvailableAmount(storedAllowance_);
+
+        // Not yet initialized: simulate using provided terms.
+        (, uint256 initialAmount_, uint256 maxAmount_, uint256 amountPerSecond_, uint256 startTime_) = getTermsInfo(_terms);
+
+        StreamingAllowance memory allowance_ = StreamingAllowance({
+            initialAmount: initialAmount_,
+            maxAmount: maxAmount_,
+            amountPerSecond: amountPerSecond_,
+            startTime: startTime_,
+            spent: 0
+        });
+        return _getAvailableAmount(allowance_);
     }
 
     /**
