@@ -29,7 +29,7 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
     string public constant NAME = "DelegationManager";
 
     /// @dev The full version of the contract
-    string public constant VERSION = "1.2.0";
+    string public constant VERSION = "1.3.0";
 
     /// @dev The version used in the domainSeparator for EIP712
     string public constant DOMAIN_VERSION = "1";
@@ -160,11 +160,6 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
                 for (uint256 delegationsIndex_; delegationsIndex_ < delegations_.length; ++delegationsIndex_) {
                     Delegation memory delegation_ = delegations_[delegationsIndex_];
                     delegationHashes_[delegationsIndex_] = EncoderLib._getDelegationHash(delegation_);
-
-                    if (delegation_.signature.length == 0) {
-                        // Ensure that delegations without signatures revert
-                        revert EmptySignature();
-                    }
 
                     if (delegation_.delegator.code.length == 0) {
                         // Validate delegation if it's an EOA

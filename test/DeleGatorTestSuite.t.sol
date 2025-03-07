@@ -278,8 +278,8 @@ abstract contract DeleGatorTestSuite is BaseTest {
         submitUserOp_Bundler(userOp_);
     }
 
-    // should not allow using a delegation without a signature
-    function test_notAllow_delegationWithoutSignature() public {
+    // should not allow using a delegation without a contract signature
+    function test_notAllow_delegationWithoutContactSignature() public {
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
@@ -304,7 +304,36 @@ abstract contract DeleGatorTestSuite is BaseTest {
         bytes[] memory executionCallDatas_ = new bytes[](1);
         executionCallDatas_[0] = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
-        vm.expectRevert(abi.encodeWithSelector(IDelegationManager.EmptySignature.selector));
+        vm.expectRevert(abi.encodeWithSelector(IDelegationManager.InvalidERC1271Signature.selector));
+
+        vm.prank(address(users.bob.deleGator));
+        users.bob.deleGator.redeemDelegations(permissionContexts_, oneSingularMode, executionCallDatas_);
+    }
+
+    // should not allow using a delegation without an EOA signature
+    function test_notAllow_delegationWithoutEOASignature() public {
+        (address someEOAUser_) = makeAddr("SomeEOAUser");
+
+        Delegation memory delegation_ = Delegation({
+            delegate: address(users.bob.deleGator),
+            delegator: someEOAUser_,
+            authority: ROOT_AUTHORITY,
+            caveats: new Caveat[](0),
+            salt: 0,
+            signature: hex""
+        });
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation_;
+
+        bytes[] memory permissionContexts_ = new bytes[](1);
+        permissionContexts_[0] = abi.encode(delegations_);
+
+        Execution memory execution_;
+        bytes[] memory executionCallDatas_ = new bytes[](1);
+        executionCallDatas_[0] = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSA.ECDSAInvalidSignatureLength.selector, uint256(0)));
 
         vm.prank(address(users.bob.deleGator));
         users.bob.deleGator.redeemDelegations(permissionContexts_, oneSingularMode, executionCallDatas_);
@@ -2019,7 +2048,6 @@ abstract contract DeleGatorTestSuite is BaseTest {
         bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
 
         vm.expectEmit(true, true, false, true, address(entryPoint));
-        // expect an event containing EmptySignature error
         emit UserOperationRevertReason(
             userOpHash_, address(users.carol.deleGator), 0, abi.encodeWithSelector(IDelegationManager.InvalidDelegate.selector)
         );
