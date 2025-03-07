@@ -21,6 +21,7 @@ import { ERC721TransferEnforcer } from "../src/enforcers/ERC721TransferEnforcer.
 import { ERC1155BalanceGteEnforcer } from "../src/enforcers/ERC1155BalanceGteEnforcer.sol";
 import { ExactCalldataEnforcer } from "../src/enforcers/ExactCalldataEnforcer.sol";
 import { ExactExecutionBatchEnforcer } from "../src/enforcers/ExactExecutionBatchEnforcer.sol";
+import { ExactCalldataBatchEnforcer } from "../src/enforcers/ExactCalldataBatchEnforcer.sol";
 import { ExactExecutionEnforcer } from "../src/enforcers/ExactExecutionEnforcer.sol";
 import { IdEnforcer } from "../src/enforcers/IdEnforcer.sol";
 import { LimitedCallsEnforcer } from "../src/enforcers/LimitedCallsEnforcer.sol";
@@ -104,6 +105,9 @@ contract DeployCaveatEnforcers is Script {
 
         deployedAddress = address(new ExactCalldataEnforcer{ salt: salt }());
         console2.log("ExactCalldataEnforcer: %s", deployedAddress);
+
+        deployedAddress = address(new ExactCalldataBatchEnforcer{ salt: salt }());
+        console2.log("ExactCalldataBatchEnforcer: %s", deployedAddress);
 
         deployedAddress = address(new ExactExecutionBatchEnforcer{ salt: salt }());
         console2.log("ExactExecutionBatchEnforcer: %s", deployedAddress);
