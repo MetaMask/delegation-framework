@@ -39,6 +39,9 @@ import { DeleGatorCore } from "../src/DeleGatorCore.sol";
 import { EncoderLib } from "../src/libraries/EncoderLib.sol";
 import { AllowedMethodsEnforcer } from "../src/enforcers/AllowedMethodsEnforcer.sol";
 import { AllowedTargetsEnforcer } from "../src/enforcers/AllowedTargetsEnforcer.sol";
+import { HybridDeleGator } from "../src/HybridDeleGator.sol";
+import { MultiSigDeleGator } from "../src/MultiSigDeleGator.sol";
+import { EIP7702StatelessDeleGator } from "../src/EIP7702/EIP7702StatelessDeleGator.sol";
 
 abstract contract DeleGatorTestSuite is BaseTest {
     using ModeLib for ModeCode;
@@ -2241,6 +2244,75 @@ abstract contract DeleGatorTestSuite is BaseTest {
             userOpHash_, address(users.carol.deleGator), 0, abi.encodeWithSelector(IDelegationManager.InvalidAuthority.selector)
         );
         entryPoint.handleOps(userOps_, bundler);
+    }
+
+    function test_replayAttackAcrossEntryPoints() public {
+        // Deploy a second EntryPoint
+        EntryPoint newEntryPoint_ = new EntryPoint();
+        vm.label(address(newEntryPoint_), "New EntryPoint");
+
+        // 1. Create a UserOp that will be valid with the original EntryPoint
+        address aliceDeleGatorAddr_ = address(users.alice.deleGator);
+
+        // A simple operation to transfer ETH to Bob
+        Execution memory execution_ = Execution({ target: users.bob.addr, value: 1 ether, callData: hex"" });
+
+        // Create the UserOp with current EntryPoint
+        bytes memory userOpCallData_ = abi.encodeWithSignature(EXECUTE_SINGULAR_SIGNATURE, execution_);
+        PackedUserOperation memory userOp_ = createUserOp(aliceDeleGatorAddr_, userOpCallData_);
+
+        // Alice signs it with the current EntryPoint's context
+        userOp_.signature = signHash(users.alice, getPackedUserOperationTypedDataHash(userOp_));
+
+        // Bob's initial balance for verification
+        uint256 bobInitialBalance = users.bob.addr.balance;
+
+        // 1. Execute the original UserOp through the first EntryPoint
+        PackedUserOperation[] memory userOps_ = new PackedUserOperation[](1);
+        userOps_[0] = userOp_;
+        vm.prank(bundler);
+        entryPoint.handleOps(userOps_, bundler);
+
+        // Verify first execution worked
+        uint256 bobBalanceAfterExecution_ = users.bob.addr.balance;
+        assertEq(bobBalanceAfterExecution_, bobInitialBalance + 1 ether);
+
+        // 2. Upgrade the code implementation
+        vm.startPrank(address(entryPoint));
+
+        // Upgrade to a new implementation and validate that the signers remain the same.
+        if (IMPLEMENTATION == Implementation.Hybrid) {
+            address newImpl_ = address(new HybridDeleGator(delegationManager, newEntryPoint_));
+            users.alice.deleGator.upgradeToAndCallAndRetainStorage(newImpl_, hex"");
+            HybridDeleGator hybridDeleGator_ = HybridDeleGator(payable(aliceDeleGatorAddr_));
+            assertEq(hybridDeleGator_.owner(), users.alice.addr);
+            (uint256 x_, uint256 y_) = hybridDeleGator_.getKey(users.alice.name);
+            assertEq(x_, users.alice.x);
+            assertEq(y_, users.alice.y);
+        } else if (IMPLEMENTATION == Implementation.MultiSig) {
+            address newImpl_ = address(new MultiSigDeleGator(delegationManager, newEntryPoint_));
+            users.alice.deleGator.upgradeToAndCallAndRetainStorage(newImpl_, hex"");
+            MultiSigDeleGator multiSigDeleGator_ = MultiSigDeleGator(payable(aliceDeleGatorAddr_));
+            assertTrue(multiSigDeleGator_.isSigner(users.alice.addr));
+        } else if (IMPLEMENTATION == Implementation.EIP7702Stateless) {
+            address newImpl_ = address(new EIP7702StatelessDeleGator(delegationManager, newEntryPoint_));
+            vm.etch(aliceDeleGatorAddr_, bytes.concat(hex"ef0100", abi.encodePacked(newImpl_)));
+        } else {
+            revert("Invalid Implementation");
+        }
+        vm.stopPrank();
+
+        // Verify the implementation was updated
+        assertEq(address(users.alice.deleGator.entryPoint()), address(newEntryPoint_));
+
+        // 3. Attempt to replay the original UserOp through the new EntryPoint
+        vm.prank(bundler);
+
+        vm.expectRevert(abi.encodeWithSelector(IEntryPoint.FailedOp.selector, 0, "AA24 signature error"));
+        newEntryPoint_.handleOps(userOps_, bundler);
+
+        // 4. Verify if the attack did not succeed - check if Bob received ETH again
+        assertEq(users.bob.addr.balance, bobBalanceAfterExecution_);
     }
 }
 

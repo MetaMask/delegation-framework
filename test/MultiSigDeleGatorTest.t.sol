@@ -139,7 +139,12 @@ contract MultiSigDeleGatorTest is BaseTest {
         userOperation_.signature = signHash(
             users.bob,
             UserOperationLib.getPackedUserOperationTypedDataHash(
-                multiSigDeleGatorImpl.NAME(), multiSigDeleGatorImpl.DOMAIN_VERSION(), block.chainid, predictedAddr_, userOperation_
+                multiSigDeleGatorImpl.NAME(),
+                multiSigDeleGatorImpl.DOMAIN_VERSION(),
+                block.chainid,
+                predictedAddr_,
+                userOperation_,
+                address(entryPoint)
             )
         );
 

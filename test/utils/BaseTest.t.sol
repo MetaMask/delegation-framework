@@ -64,7 +64,8 @@ abstract contract BaseTest is Test {
     address payable bundler;
 
     // Tracks the user's nonce
-    mapping(address user => uint256 nonce) public senderNonce;
+    mapping(address entryPoint => mapping(address user => uint256 nonce)) public senderNonce;
+    // mapping(address user => uint256 nonce) public senderNonce;
 
     ////////////////////////////// Set Up //////////////////////////////
 
@@ -159,16 +160,17 @@ abstract contract BaseTest is Test {
         uint256 _preVerificationGas,
         bytes32 _gasFees,
         bytes memory _paymasterAndData,
-        bytes memory _signature
+        bytes memory _signature,
+        address _entryPoint
     )
         public
         returns (PackedUserOperation memory userOperation_)
     {
         vm.txGasPrice(2);
 
-        userOperation_ = PackedUserOperation({
+        return PackedUserOperation({
             sender: _sender,
-            nonce: senderNonce[_sender]++,
+            nonce: senderNonce[_entryPoint][_sender]++,
             initCode: _initCode,
             callData: _callData,
             accountGasLimits: _accountGasLimits,
@@ -177,6 +179,33 @@ abstract contract BaseTest is Test {
             paymasterAndData: _paymasterAndData,
             signature: _signature
         });
+    }
+
+    /// @notice Creates an unsigned UserOperation with the nonce prefilled.
+    function createUserOp(
+        address _sender,
+        bytes memory _callData,
+        bytes memory _initCode,
+        bytes32 _accountGasLimits,
+        uint256 _preVerificationGas,
+        bytes32 _gasFees,
+        bytes memory _paymasterAndData,
+        bytes memory _signature
+    )
+        public
+        returns (PackedUserOperation memory userOperation_)
+    {
+        return createUserOp(
+            _sender,
+            _callData,
+            _initCode,
+            _accountGasLimits,
+            _preVerificationGas,
+            _gasFees,
+            _paymasterAndData,
+            _signature,
+            address(entryPoint)
+        );
     }
 
     /// @notice Creates an unsigned UserOperation with paymaster with default values.
@@ -188,6 +217,18 @@ abstract contract BaseTest is Test {
         returns (PackedUserOperation memory PackedUserOperation_)
     {
         return createUserOp(_sender, _callData, hex"", hex"");
+    }
+
+    /// @notice Creates an unsigned UserOperation with paymaster with default values.
+    function createUserOp(
+        address _sender,
+        bytes memory _callData,
+        address _entryPoint
+    )
+        public
+        returns (PackedUserOperation memory PackedUserOperation_)
+    {
+        return createUserOp(_sender, _callData, hex"", hex"", _entryPoint);
     }
 
     /// @notice Creates an unsigned UserOperation with paymaster with default values.
@@ -207,19 +248,35 @@ abstract contract BaseTest is Test {
         address _sender,
         bytes memory _callData,
         bytes memory _initCode,
-        bytes memory _paymasterAndData
+        bytes memory _paymasterAndData,
+        address _entryPoint
     )
         public
         returns (PackedUserOperation memory userOperation_)
     {
         uint128 verificationGasLimit_ = 30000000;
         uint128 callGasLimit_ = 30000000;
-        uint128 maxPriorityFeePerGas = 1;
-        uint128 maxFeePerGas_ = 1;
         bytes32 accountGasLimits_ = bytes32(abi.encodePacked(verificationGasLimit_, callGasLimit_));
-        bytes32 gasFees_ = bytes32(abi.encodePacked(maxPriorityFeePerGas, maxFeePerGas_));
 
-        return createUserOp(_sender, _callData, _initCode, accountGasLimits_, 30000000, gasFees_, _paymasterAndData, hex"");
+        // maxPriorityFeePerGas = 1, maxFeePerGas_ = 1;
+        bytes32 gasFees_ = bytes32(abi.encodePacked(uint128(1), uint128(1)));
+
+        return createUserOp(
+            _sender, _callData, _initCode, accountGasLimits_, 30000000, gasFees_, _paymasterAndData, hex"", _entryPoint
+        );
+    }
+
+    /// @notice Creates an unsigned UserOperation with paymaster with default values.
+    function createUserOp(
+        address _sender,
+        bytes memory _callData,
+        bytes memory _initCode,
+        bytes memory _paymasterAndData
+    )
+        public
+        returns (PackedUserOperation memory userOperation_)
+    {
+        return createUserOp(_sender, _callData, _initCode, _paymasterAndData, address(entryPoint));
     }
 
     // NOTE: This is a big assumption about how signatures for DeleGators are made. The hash to sign could come in many forms
