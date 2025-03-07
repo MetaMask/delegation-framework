@@ -79,6 +79,11 @@ contract AllowedTargetsEnforcerTest is CaveatEnforcerBaseTest {
 
     // should FAIL to get terms info when passing an invalid terms length
     function test_getTermsInfoFailsForInvalidLength() public {
+        // 0 bytes
+        vm.expectRevert("AllowedTargetsEnforcer:invalid-terms-length");
+        allowedTargetsEnforcer.getTermsInfo(hex"");
+
+        // Less than 4 bytes
         vm.expectRevert("AllowedTargetsEnforcer:invalid-terms-length");
         allowedTargetsEnforcer.getTermsInfo(bytes("1"));
     }

@@ -62,7 +62,7 @@ contract AllowedMethodsEnforcer is CaveatEnforcer {
     function getTermsInfo(bytes calldata _terms) public pure returns (bytes4[] memory allowedMethods_) {
         uint256 j = 0;
         uint256 termsLength_ = _terms.length;
-        require(termsLength_ % 4 == 0, "AllowedMethodsEnforcer:invalid-terms-length");
+        require(termsLength_ % 4 == 0 && termsLength_ != 0, "AllowedMethodsEnforcer:invalid-terms-length");
         allowedMethods_ = new bytes4[](termsLength_ / 4);
         for (uint256 i = 0; i < termsLength_; i += 4) {
             allowedMethods_[j] = bytes4(_terms[i:i + 4]);

@@ -57,7 +57,7 @@ contract AllowedTargetsEnforcer is CaveatEnforcer {
     function getTermsInfo(bytes calldata _terms) public pure returns (address[] memory allowedTargets_) {
         uint256 j = 0;
         uint256 termsLength_ = _terms.length;
-        require(termsLength_ % 20 == 0, "AllowedTargetsEnforcer:invalid-terms-length");
+        require(termsLength_ % 20 == 0 && termsLength_ != 0, "AllowedTargetsEnforcer:invalid-terms-length");
         allowedTargets_ = new address[](termsLength_ / 20);
         for (uint256 i = 0; i < termsLength_; i += 20) {
             allowedTargets_[j] = address(bytes20(_terms[i:i + 20]));
