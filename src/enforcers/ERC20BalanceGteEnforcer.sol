@@ -37,8 +37,8 @@ contract ERC20BalanceGteEnforcer is CaveatEnforcer {
 
     /**
      * @notice This function caches the delegators ERC20 balance before the delegation is executed.
-     * @param _terms 72 packed bytes where: the first 20 bytes are the address of the recipient, the next 20 bytes
-     * are the address of the token, the next 32 bytes are the amount the balance should be greater than
+     * @param _terms 72 packed bytes where: the first 20 bytes is the address of the recipient, the next 20 bytes
+     * is the address of the token, the next 32 bytes is the amount of tokens the balance should be greater than or equal to
      */
     function beforeHook(
         bytes calldata _terms,
@@ -62,8 +62,8 @@ contract ERC20BalanceGteEnforcer is CaveatEnforcer {
 
     /**
      * @notice This function enforces that the delegators ERC20 balance has increased by at least the amount provided.
-     * @param _terms 72 packed bytes where: the first 20 bytes are the address of the recipient, the next 20 bytes
-     * are the address of the token, the next 32 bytes are the amount the balance should be greater than
+     * @param _terms 72 packed bytes where: the first 20 bytes is the address of the recipient, the next 20 bytes
+     * is the address of the token, the next 32 bytes is the amount the balance should be greater than
      */
     function afterHook(
         bytes calldata _terms,
