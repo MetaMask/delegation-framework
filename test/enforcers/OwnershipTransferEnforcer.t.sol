@@ -45,7 +45,7 @@ contract OwnershipTransferEnforcerTest is CaveatEnforcerBaseTest {
 
     // Validates that a valid ownership transfer is allowed
     function test_allow_validOwnershipTransfer() public {
-        address newOwner = address(0x5678);
+        address newOwner = delegate;
         bytes memory terms_ = abi.encodePacked(mockContract);
         transferOwnershipExecution = Execution({
             target: mockContract,
@@ -56,7 +56,10 @@ contract OwnershipTransferEnforcerTest is CaveatEnforcerBaseTest {
             transferOwnershipExecution.target, transferOwnershipExecution.value, transferOwnershipExecution.callData
         );
 
-        vm.prank(dm);
+        vm.startPrank(dm);
+
+        vm.expectEmit(true, true, true, true, address(enforcer));
+        emit OwnershipTransferEnforcer.OwnershipTransferEnforced(dm, delegate, bytes32(0), newOwner);
         enforcer.beforeHook(terms_, hex"", mode, transferOwnershipExecutionCallData, bytes32(0), delegator, delegate);
     }
 
