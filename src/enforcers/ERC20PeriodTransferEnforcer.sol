@@ -47,7 +47,7 @@ contract ERC20PeriodTransferEnforcer is CaveatEnforcer {
      * @param transferredInCurrentPeriod The total tokens transferred in the current period after this transfer.
      * @param transferTimestamp The block timestamp at which the transfer was executed.
      */
-    event TransferUpdated(
+    event TransferredInPeriod(
         address indexed sender,
         address indexed recipient,
         bytes32 indexed delegationHash,
@@ -218,7 +218,7 @@ contract ERC20PeriodTransferEnforcer is CaveatEnforcer {
 
         allowance_.transferredInCurrentPeriod += transferAmount_;
 
-        emit TransferUpdated(
+        emit TransferredInPeriod(
             msg.sender,
             _redeemer,
             _delegationHash,

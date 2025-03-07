@@ -106,14 +106,14 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
 
     ////////////////////// Successful and Multiple Transfers //////////////////////
 
-    /// @notice Tests a successful native ETH transfer and verifies that the TransferUpdated event is emitted.
+    /// @notice Tests a successful native ETH transfer and verifies that the TransferredInPeriod event is emitted.
     function testSuccessfulTransferAndEvent() public {
         uint256 transferAmount_ = 0.5 ether;
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
         bytes memory execData_ = _encodeNativeTransfer(beneficiary, transferAmount_);
 
         vm.expectEmit(true, true, true, true);
-        emit NativeTokenPeriodTransferEnforcer.TransferUpdated(
+        emit NativeTokenPeriodTransferEnforcer.TransferredInPeriod(
             address(this), redeemer, dummyDelegationHash, periodAmount, periodDuration, startDate, transferAmount_, block.timestamp
         );
 

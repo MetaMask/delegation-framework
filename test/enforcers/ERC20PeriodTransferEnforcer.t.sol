@@ -137,7 +137,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleMode, execData2_, dummyDelegationHash, address(0), redeemer);
     }
 
-    /// @notice Tests a successful transfer and verifies that the TransferUpdated event is emitted correctly.
+    /// @notice Tests a successful transfer and verifies that the TransferredInPeriod event is emitted correctly.
     function testSuccessfulTransferAndEvent() public {
         uint256 transferAmount_ = 500;
         bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
@@ -145,7 +145,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
 
         vm.expectEmit(true, true, true, true);
-        emit ERC20PeriodTransferEnforcer.TransferUpdated(
+        emit ERC20PeriodTransferEnforcer.TransferredInPeriod(
             address(this),
             redeemer,
             dummyDelegationHash,

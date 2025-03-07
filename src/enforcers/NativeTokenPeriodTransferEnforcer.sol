@@ -45,7 +45,7 @@ contract NativeTokenPeriodTransferEnforcer is CaveatEnforcer {
      * @param transferredInCurrentPeriod The total ETH (in wei) transferred in the current period after this transfer.
      * @param transferTimestamp The block timestamp at which the transfer was executed.
      */
-    event TransferUpdated(
+    event TransferredInPeriod(
         address indexed sender,
         address indexed redeemer,
         bytes32 indexed delegationHash,
@@ -199,7 +199,7 @@ contract NativeTokenPeriodTransferEnforcer is CaveatEnforcer {
         }
         allowance_.transferredInCurrentPeriod += value_;
 
-        emit TransferUpdated(
+        emit TransferredInPeriod(
             msg.sender,
             _redeemer,
             _delegationHash,
