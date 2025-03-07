@@ -11,6 +11,9 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
  * @notice This enforcer restricts the action of a UserOp to the transfer of a specific ERC721 token.
  */
 contract ERC721TransferEnforcer is CaveatEnforcer {
+    bytes4 private constant SAFE_TRANSFER_FROM_SELECTOR_1 = bytes4(keccak256("safeTransferFrom(address,address,uint256)"));
+    bytes4 private constant SAFE_TRANSFER_FROM_SELECTOR_2 = bytes4(keccak256("safeTransferFrom(address,address,uint256,bytes)"));
+
     /**
      * @notice Enforces that the contract and tokenId are permitted for transfer
      * @param _terms abi encoded address of the contract and uint256 of the tokenId
@@ -51,9 +54,16 @@ contract ERC721TransferEnforcer is CaveatEnforcer {
 
         if (target_ != permittedContract_) {
             revert("ERC721TransferEnforcer:unauthorized-contract-target");
-        } else if (selector_ != IERC721.transferFrom.selector) {
+        }
+
+        if (
+            selector_ != IERC721.transferFrom.selector && selector_ != SAFE_TRANSFER_FROM_SELECTOR_1
+                && selector_ != SAFE_TRANSFER_FROM_SELECTOR_2
+        ) {
             revert("ERC721TransferEnforcer:unauthorized-selector");
-        } else if (transferTokenId_ != permittedTokenId_) {
+        }
+
+        if (transferTokenId_ != permittedTokenId_) {
             revert("ERC721TransferEnforcer:unauthorized-token-id");
         }
     }
