@@ -62,6 +62,9 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /// @dev Error thrown when the call is not made by this contract itself.
     error NotSelf();
 
+    /// @dev Error thrown when msg.sender is not the leaf delegatior.
+    error NotLeafDelegator();
+
     /// @dev Error thrown when an execution with an unsupported CallType is made.
     error UnsupportedCallType(CallType callType);
 
@@ -71,7 +74,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /// @dev Error thrown when the input and output tokens are the same.
     error InvalidIdenticalTokens();
 
-    /// @dev  Error thrown when delegations input is an empty array.
+    /// @dev Error thrown when delegations input is an empty array.
     error InvalidEmptyDelegations();
 
     /// @dev Error while transferring the native token to the recipient.
@@ -134,8 +137,9 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
 
     /**
      * @notice Executes a token swap using a delegation and transfers the swapped tokens to the root delegator.
+     * @dev The msg.sender must be the leaf delegator
      * @param _apiData Encoded swap parameters, used by the aggregator.
-     * @param _delegations Array of Delegation objects containing delegation-specific data.
+     * @param _delegations Array of Delegation objects containing delegation-specific data, sorted leaf to root.
      */
     function swapByDelegation(bytes calldata _apiData, Delegation[] memory _delegations) external {
         (string memory aggregatorId_, IERC20 tokenFrom_, IERC20 tokenTo_, uint256 amountFrom_, bytes memory swapData_) =
@@ -147,6 +151,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         if (!isTokenAllowed[tokenFrom_]) revert TokenFromIsNotAllowed(tokenFrom_);
         if (!isTokenAllowed[tokenTo_]) revert TokenToIsNotAllowed(tokenTo_);
         if (!isAggregatorAllowed[keccak256(abi.encode(aggregatorId_))]) revert AggregatorIdIsNotAllowed(aggregatorId_);
+        if (_delegations[0].delegator != msg.sender) revert NotLeafDelegator();
 
         // Prepare the call that will be executed internally via onlySelf
         bytes memory encodedSwap_ = abi.encodeWithSelector(
