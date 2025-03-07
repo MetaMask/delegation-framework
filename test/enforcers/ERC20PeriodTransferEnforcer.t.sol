@@ -2,10 +2,9 @@
 pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
-import { ModeCode, Caveat, Delegation, Execution } from "../../src/utils/Types.sol";
+import { Caveat, Delegation, Execution } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { ERC20PeriodTransferEnforcer } from "../../src/enforcers/ERC20PeriodTransferEnforcer.sol";
 import { BasicERC20, IERC20 } from "../utils/BasicERC20.t.sol";
@@ -13,12 +12,9 @@ import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 
 contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////////////// State //////////////////////////////
     ERC20PeriodTransferEnforcer public erc20PeriodTransferEnforcer;
     BasicERC20 public basicERC20;
-    ModeCode public singleMode = ModeLib.encodeSimpleSingle();
     address public alice;
     address public bob;
 
@@ -59,7 +55,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory callData_ = _encodeERC20Transfer(bob, 100);
         bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
         vm.expectRevert("ERC20PeriodTransferEnforcer:invalid-zero-start-date");
-        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleMode, execData_, dummyDelegationHash, address(0), redeemer);
+        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Reverts if the period duration is zero.
@@ -68,7 +64,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory callData_ = _encodeERC20Transfer(bob, 100);
         bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
         vm.expectRevert("ERC20PeriodTransferEnforcer:invalid-zero-period-duration");
-        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleMode, execData_, dummyDelegationHash, address(0), redeemer);
+        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Reverts if the period amount is zero.
@@ -77,7 +73,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory callData_ = _encodeERC20Transfer(bob, 100);
         bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
         vm.expectRevert("ERC20PeriodTransferEnforcer:invalid-zero-period-amount");
-        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleMode, execData_, dummyDelegationHash, address(0), redeemer);
+        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Reverts if the transfer period has not started yet.
@@ -87,7 +83,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
         bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
         vm.expectRevert("ERC20PeriodTransferEnforcer:transfer-not-started");
-        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleMode, execData_, dummyDelegationHash, address(0), redeemer);
+        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Reverts if the execution call data length is not 68 bytes.
@@ -96,7 +92,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory invalidExecCallData_ = new bytes(67);
         vm.expectRevert("ERC20PeriodTransferEnforcer:invalid-execution-length");
         erc20PeriodTransferEnforcer.beforeHook(
-            terms_, "", singleMode, invalidExecCallData_, dummyDelegationHash, address(0), redeemer
+            terms_, "", singleDefaultMode, invalidExecCallData_, dummyDelegationHash, address(0), redeemer
         );
     }
 
@@ -107,7 +103,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory invalidExecCallData_ = _encodeSingleExecution(address(0xdead), 0, callData_);
         vm.expectRevert("ERC20PeriodTransferEnforcer:invalid-contract");
         erc20PeriodTransferEnforcer.beforeHook(
-            terms_, "", singleMode, invalidExecCallData_, dummyDelegationHash, address(0), redeemer
+            terms_, "", singleDefaultMode, invalidExecCallData_, dummyDelegationHash, address(0), redeemer
         );
     }
 
@@ -118,7 +114,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory invalidExecCallData_ = _encodeSingleExecution(address(basicERC20), 0, invalidCallData_);
         vm.expectRevert("ERC20PeriodTransferEnforcer:invalid-method");
         erc20PeriodTransferEnforcer.beforeHook(
-            terms_, "", singleMode, invalidExecCallData_, dummyDelegationHash, address(0), redeemer
+            terms_, "", singleDefaultMode, invalidExecCallData_, dummyDelegationHash, address(0), redeemer
         );
     }
 
@@ -128,13 +124,13 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         // First transfer: 800 tokens.
         bytes memory callData1_ = _encodeERC20Transfer(bob, 800);
         bytes memory execData1_ = _encodeSingleExecution(address(basicERC20), 0, callData1_);
-        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleMode, execData1_, dummyDelegationHash, address(0), redeemer);
+        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleDefaultMode, execData1_, dummyDelegationHash, address(0), redeemer);
 
         // Second transfer: attempt to transfer 300 tokens, which exceeds the remaining 200 tokens.
         bytes memory callData2_ = _encodeERC20Transfer(bob, 300);
         bytes memory execData2_ = _encodeSingleExecution(address(basicERC20), 0, callData2_);
         vm.expectRevert("ERC20PeriodTransferEnforcer:transfer-amount-exceeded");
-        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleMode, execData2_, dummyDelegationHash, address(0), redeemer);
+        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleDefaultMode, execData2_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Tests a successful transfer and verifies that the TransferredInPeriod event is emitted correctly.
@@ -157,7 +153,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
             block.timestamp
         );
 
-        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleMode, execData_, dummyDelegationHash, address(0), redeemer);
+        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
 
         // Verify available tokens are reduced by the transferred amount.
         (uint256 available_,,) = erc20PeriodTransferEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_);
@@ -170,12 +166,12 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         // First transfer: 400 tokens.
         bytes memory callData1_ = _encodeERC20Transfer(bob, 400);
         bytes memory execData1_ = _encodeSingleExecution(address(basicERC20), 0, callData1_);
-        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleMode, execData1_, dummyDelegationHash, address(0), bob);
+        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleDefaultMode, execData1_, dummyDelegationHash, address(0), bob);
 
         // Second transfer: 300 tokens.
         bytes memory callData2_ = _encodeERC20Transfer(bob, 300);
         bytes memory execData2_ = _encodeSingleExecution(address(basicERC20), 0, callData2_);
-        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleMode, execData2_, dummyDelegationHash, address(0), bob);
+        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleDefaultMode, execData2_, dummyDelegationHash, address(0), bob);
 
         // Available tokens should now be 1000 - 400 - 300 = 300.
         (uint256 available_,,) = erc20PeriodTransferEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_);
@@ -185,7 +181,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory callData3_ = _encodeERC20Transfer(bob, 400);
         bytes memory execData3_ = _encodeSingleExecution(address(basicERC20), 0, callData3_);
         vm.expectRevert("ERC20PeriodTransferEnforcer:transfer-amount-exceeded");
-        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleMode, execData3_, dummyDelegationHash, address(0), bob);
+        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleDefaultMode, execData3_, dummyDelegationHash, address(0), bob);
     }
 
     /// @notice Tests that the allowance resets when a new period begins.
@@ -194,7 +190,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         // First transfer: 800 tokens.
         bytes memory callData1_ = _encodeERC20Transfer(bob, 800);
         bytes memory execData1_ = _encodeSingleExecution(address(basicERC20), 0, callData1_);
-        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleMode, execData1_, dummyDelegationHash, address(0), redeemer);
+        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleDefaultMode, execData1_, dummyDelegationHash, address(0), redeemer);
 
         // Verify available tokens have been reduced.
         (uint256 availableAfter1,,) = erc20PeriodTransferEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_);
@@ -212,11 +208,22 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         // Make a transfer in the new period.
         bytes memory callData2_ = _encodeERC20Transfer(bob, 600);
         bytes memory execData2_ = _encodeSingleExecution(address(basicERC20), 0, callData2_);
-        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleMode, execData2_, dummyDelegationHash, address(0), redeemer);
+        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleDefaultMode, execData2_, dummyDelegationHash, address(0), redeemer);
 
         // Verify available tokens have been reduced.
         (uint256 availableAfter2,,) = erc20PeriodTransferEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_);
         assertEq(availableAfter2, periodAmount - 600);
+    }
+
+    // should fail with invalid call type mode (batch instead of single mode)
+    function test_revertWithInvalidCallTypeMode() public {
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(new Execution[](2));
+
+        vm.expectRevert("CaveatEnforcer:invalid-call-type");
+
+        erc20PeriodTransferEnforcer.beforeHook(
+            hex"", hex"", batchDefaultMode, executionCallData_, bytes32(0), address(0), address(0)
+        );
     }
 
     ////////////////////// Integration Tests //////////////////////
@@ -272,7 +279,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory execCallData2_ = _encodeSingleExecution(address(basicERC20), 0, callData2_);
         vm.prank(address(delegationManager));
         vm.expectRevert("ERC20PeriodTransferEnforcer:transfer-amount-exceeded");
-        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleMode, execCallData2_, delegationHash_, address(0), redeemer);
+        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleDefaultMode, execCallData2_, delegationHash_, address(0), redeemer);
     }
 
     /// @notice Integration: Verifies that the allowance resets in a new period.

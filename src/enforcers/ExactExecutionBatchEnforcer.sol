@@ -36,7 +36,7 @@ contract ExactExecutionBatchEnforcer is CaveatEnforcer {
         public
         pure
         override
-        onlyBatchExecutionMode(_mode)
+        onlyBatchCallTypeMode(_mode)
     {
         Execution[] calldata executions_ = _executionCallData.decodeBatch();
         Execution[] memory termsExecutions_ = getTermsInfo(_terms);

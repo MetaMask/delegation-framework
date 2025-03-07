@@ -126,7 +126,7 @@ contract ERC20PeriodTransferEnforcer is CaveatEnforcer {
     )
         public
         override
-        onlySingleExecutionMode(_mode)
+        onlySingleCallTypeMode(_mode)
     {
         _validateAndConsumeTransfer(_terms, _executionCallData, _delegationHash, _redeemer);
     }

@@ -2,7 +2,6 @@
 pragma solidity 0.8.23;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
@@ -16,8 +15,6 @@ contract ExactExecutionBatchEnforcerTest is CaveatEnforcerBaseTest {
 
     ExactExecutionBatchEnforcer public exactExecutionBatchEnforcer;
     BasicERC20 public basicCF20;
-    ModeCode public singleMode = ModeLib.encodeSimpleSingle();
-    ModeCode public batchMode = ModeLib.encodeSimpleBatch();
 
     ////////////////////////////// Set up //////////////////////////////
 
@@ -48,7 +45,9 @@ contract ExactExecutionBatchEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = _encodeTerms(executions_);
 
         vm.prank(address(delegationManager));
-        exactExecutionBatchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256(""), address(0), address(0));
+        exactExecutionBatchEnforcer.beforeHook(
+            terms_, hex"", batchDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     ////////////////////////////// Invalid cases //////////////////////////////
@@ -81,7 +80,9 @@ contract ExactExecutionBatchEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         vm.expectRevert("ExactExecutionBatchEnforcer:invalid-execution");
-        exactExecutionBatchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256(""), address(0), address(0));
+        exactExecutionBatchEnforcer.beforeHook(
+            terms_, hex"", batchDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     /// @notice Test that the enforcer reverts when value doesn't match.
@@ -112,7 +113,9 @@ contract ExactExecutionBatchEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         vm.expectRevert("ExactExecutionBatchEnforcer:invalid-execution");
-        exactExecutionBatchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256(""), address(0), address(0));
+        exactExecutionBatchEnforcer.beforeHook(
+            terms_, hex"", batchDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     /// @notice Test that the enforcer reverts when calldata doesn't match.
@@ -143,7 +146,9 @@ contract ExactExecutionBatchEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         vm.expectRevert("ExactExecutionBatchEnforcer:invalid-execution");
-        exactExecutionBatchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256(""), address(0), address(0));
+        exactExecutionBatchEnforcer.beforeHook(
+            terms_, hex"", batchDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     /// @notice Test that the enforcer reverts when batch size doesn't match.
@@ -169,11 +174,13 @@ contract ExactExecutionBatchEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         vm.expectRevert("ExactExecutionBatchEnforcer:invalid-batch-size");
-        exactExecutionBatchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256(""), address(0), address(0));
+        exactExecutionBatchEnforcer.beforeHook(
+            terms_, hex"", batchDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     /// @notice Test that the enforcer reverts when single mode is used.
-    function test_singleModeReverts() public {
+    function test_singleDefaultModeReverts() public {
         Execution[] memory executions_ = new Execution[](2);
         executions_[0] = Execution({
             target: address(basicCF20),
@@ -191,7 +198,22 @@ contract ExactExecutionBatchEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         vm.expectRevert("CaveatEnforcer:invalid-call-type");
-        exactExecutionBatchEnforcer.beforeHook(terms_, hex"", singleMode, executionCallData_, keccak256(""), address(0), address(0));
+        exactExecutionBatchEnforcer.beforeHook(
+            terms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
+    }
+
+    // should fail with invalid call type mode (single mode instead of batch)
+    function test_revertWithInvalidMode() public {
+        Execution[] memory executions_ = new Execution[](2);
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
+        bytes memory terms_ = _encodeTerms(executions_);
+
+        vm.prank(address(delegationManager));
+        vm.expectRevert("CaveatEnforcer:invalid-call-type");
+        exactExecutionBatchEnforcer.beforeHook(
+            terms_, hex"", singleDefaultMode, executionCallData_, keccak256("test"), address(0), address(0)
+        );
     }
 
     ////////////////////////////// Integration Tests //////////////////////////////
@@ -240,12 +262,12 @@ contract ExactExecutionBatchEnforcerTest is CaveatEnforcerBaseTest {
         executionCallDatas_[0] = ExecutionLib.encodeBatch(executions_);
 
         // Set up batch mode
-        ModeCode[] memory oneBatchMode_ = new ModeCode[](1);
-        oneBatchMode_[0] = batchMode;
+        ModeCode[] memory onebatchDefaultMode_ = new ModeCode[](1);
+        onebatchDefaultMode_[0] = batchDefaultMode;
 
         // Bob redeems the delegation to execute the batch
         vm.prank(address(users.bob.deleGator));
-        delegationManager.redeemDelegations(permissionContexts_, oneBatchMode_, executionCallDatas_);
+        delegationManager.redeemDelegations(permissionContexts_, onebatchDefaultMode_, executionCallDatas_);
 
         // Verify balances changed correctly
         assertEq(basicCF20.balanceOf(address(users.bob.deleGator)), bobInitialBalance_ + 1 ether);
@@ -304,13 +326,13 @@ contract ExactExecutionBatchEnforcerTest is CaveatEnforcerBaseTest {
         executionCallDatas_[0] = ExecutionLib.encodeBatch(executions_);
 
         // Set up batch mode
-        ModeCode[] memory oneBatchMode_ = new ModeCode[](1);
-        oneBatchMode_[0] = batchMode;
+        ModeCode[] memory onebatchDefaultMode_ = new ModeCode[](1);
+        onebatchDefaultMode_[0] = batchDefaultMode;
 
         // Bob redeems the delegation to execute the batch
         vm.prank(address(users.bob.deleGator));
         vm.expectRevert("ExactExecutionBatchEnforcer:invalid-execution");
-        delegationManager.redeemDelegations(permissionContexts_, oneBatchMode_, executionCallDatas_);
+        delegationManager.redeemDelegations(permissionContexts_, onebatchDefaultMode_, executionCallDatas_);
 
         // Verify balances remain unchanged
         assertEq(basicCF20.balanceOf(address(users.bob.deleGator)), bobInitialBalance_);
