@@ -43,7 +43,7 @@ contract IdEnforcer is CaveatEnforcer {
         uint256 id_ = getTermsInfo(_terms);
         require(!getIsUsed(msg.sender, _delegator, id_), "IdEnforcer:id-already-used");
         isUsedId[msg.sender][_delegator].set(id_);
-        emit UsedId(msg.sender, _redeemer, _delegator, id_);
+        emit UsedId(msg.sender, _delegator, _redeemer, id_);
     }
 
     /**
