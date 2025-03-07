@@ -52,8 +52,6 @@ contract EIP7702StatelessDeleGator is EIP7702DeleGatorCore {
      * @return The EIP1271 magic value if the signature is valid, otherwise it reverts
      */
     function _isValidSignature(bytes32 _hash, bytes calldata _signature) internal view override returns (bytes4) {
-        if (_signature.length != SIGNATURE_LENGTH) return ERC1271Lib.SIG_VALIDATION_FAILED;
-
         if (ECDSA.recover(_hash, _signature) == address(this)) return ERC1271Lib.EIP1271_MAGIC_VALUE;
 
         return ERC1271Lib.SIG_VALIDATION_FAILED;

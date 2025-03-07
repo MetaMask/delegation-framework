@@ -7,6 +7,7 @@ import { EntryPoint } from "@account-abstraction/core/EntryPoint.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { ERC1967Proxy as DeleGatorProxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 import { SigningUtilsLib } from "./utils/SigningUtilsLib.t.sol";
 import { Implementation, SignatureType } from "./utils/Types.t.sol";
@@ -177,7 +178,9 @@ contract EIP7702StatelessDeleGatorTest is BaseTest {
         bytes32 hash_ = keccak256("hello world");
 
         bytes memory signature_ = hex"ffff";
-        assertEq(aliceDeleGator.isValidSignature(hash_, signature_), ERC1271Lib.SIG_VALIDATION_FAILED);
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSA.ECDSAInvalidSignatureLength.selector, signature_.length));
+        aliceDeleGator.isValidSignature(hash_, signature_);
     }
 
     ////////////////////// General //////////////////////
