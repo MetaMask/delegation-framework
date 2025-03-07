@@ -511,16 +511,17 @@ abstract contract DeleGatorTestSuite is BaseTest {
 
     // should emit an event when paying the prefund
     function test_emit_sentPrefund() public {
-        PackedUserOperation memory packedUserOperation_;
+        PackedUserOperation memory userOp_ = createAndSignUserOp(users.alice, address(users.alice.deleGator), hex"");
+
         vm.startPrank(address(entryPoint));
 
         vm.expectEmit(true, true, true, true, address(users.alice.deleGator));
         emit SentPrefund(address(entryPoint), 1, true);
-        users.alice.deleGator.validateUserOp(packedUserOperation_, bytes32(0), 1);
+        users.alice.deleGator.validateUserOp(userOp_, bytes32(0), 1);
 
         vm.expectEmit(true, true, true, true, address(users.alice.deleGator));
         emit SentPrefund(address(entryPoint), type(uint256).max, false);
-        users.alice.deleGator.validateUserOp(packedUserOperation_, bytes32(0), type(uint256).max);
+        users.alice.deleGator.validateUserOp(userOp_, bytes32(0), type(uint256).max);
     }
 
     // should allow anyone to redeem an open Delegation (offchain)
