@@ -76,6 +76,11 @@ contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
 
     // should FAIL to get terms info when passing an invalid terms length
     function test_getTermsInfoFailsForInvalidLength() public {
+        // 0 bytes
+        vm.expectRevert("AllowedMethodsEnforcer:invalid-terms-length");
+        allowedMethodsEnforcer.getTermsInfo(hex"");
+
+        // Less than 4 bytes
         vm.expectRevert("AllowedMethodsEnforcer:invalid-terms-length");
         allowedMethodsEnforcer.getTermsInfo(bytes("1"));
     }
