@@ -747,8 +747,8 @@ FNDA:74,CaveatEnforcer.onlySingleExecutionMode
 DA:27,74
 BRDA:27,0,0,-
 BRDA:27,0,1,74
-FN:34,CaveatEnforcer.onlyBatchExecutionMode
-FNDA:0,CaveatEnforcer.onlyBatchExecutionMode
+FN:34,CaveatEnforcer.onlyBatchCallTypeMode
+FNDA:0,CaveatEnforcer.onlyBatchCallTypeMode
 DA:35,0
 BRDA:35,1,0,-
 BRDA:35,1,1,-

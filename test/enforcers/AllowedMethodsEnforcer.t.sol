@@ -3,10 +3,9 @@ pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
-import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
+import { Execution, Caveat, Delegation } from "../../src/utils/Types.sol";
 import { Counter } from "../utils/Counter.t.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { AllowedMethodsEnforcer } from "../../src/enforcers/AllowedMethodsEnforcer.sol";
@@ -15,12 +14,9 @@ import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
 contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////// State //////////////////////
 
     AllowedMethodsEnforcer public allowedMethodsEnforcer;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////// Set up //////////////////////
 
@@ -45,7 +41,13 @@ contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
         // beforeHook, mimicking the behavior of Alice's DeleGator
         vm.prank(address(delegationManager));
         allowedMethodsEnforcer.beforeHook(
-            abi.encodePacked(Counter.increment.selector), hex"", mode, executionCallData_, keccak256(""), address(0), address(0)
+            abi.encodePacked(Counter.increment.selector),
+            hex"",
+            singleDefaultMode,
+            executionCallData_,
+            keccak256(""),
+            address(0),
+            address(0)
         );
     }
 
@@ -64,7 +66,7 @@ contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
         allowedMethodsEnforcer.beforeHook(
             abi.encodePacked(Counter.setCount.selector, Ownable.renounceOwnership.selector, Counter.increment.selector),
             hex"",
-            mode,
+            singleDefaultMode,
             executionCallData_,
             keccak256(""),
             address(0),
@@ -98,7 +100,7 @@ contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
         allowedMethodsEnforcer.beforeHook(
             abi.encodePacked(Counter.setCount.selector, Ownable.renounceOwnership.selector, Ownable.owner.selector),
             hex"",
-            mode,
+            singleDefaultMode,
             executionCallData_,
             keccak256(""),
             address(0),
@@ -122,12 +124,21 @@ contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
         allowedMethodsEnforcer.beforeHook(
             abi.encodePacked(Counter.setCount.selector, Ownable.renounceOwnership.selector, Ownable.owner.selector),
             hex"",
-            mode,
+            singleDefaultMode,
             executionCallData_,
             keccak256(""),
             address(0),
             address(0)
         );
+    }
+
+    // should fail with invalid call type mode (batch instead of single mode)
+    function test_revertWithInvalidCallTypeMode() public {
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(new Execution[](2));
+
+        vm.expectRevert("CaveatEnforcer:invalid-call-type");
+
+        allowedMethodsEnforcer.beforeHook(hex"", hex"", batchDefaultMode, executionCallData_, bytes32(0), address(0), address(0));
     }
 
     ////////////////////// Integration //////////////////////

@@ -36,7 +36,7 @@ contract AllowedMethodsEnforcer is CaveatEnforcer {
         public
         pure
         override
-        onlySingleExecutionMode(_mode)
+        onlySingleCallTypeMode(_mode)
     {
         (,, bytes calldata callData_) = _executionCallData.decodeSingle();
 

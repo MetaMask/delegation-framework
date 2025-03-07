@@ -17,13 +17,14 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 import { P256SCLVerifierLib } from "../../src/libraries/P256SCLVerifierLib.sol";
 import { SCL_Wrapper } from "./SCLWrapperLib.sol";
 
+import { CALLTYPE_SINGLE, CALLTYPE_BATCH, EXECTYPE_TRY, MODE_DEFAULT } from "../../src/utils/Constants.sol";
 import { EXECUTE_SIGNATURE } from "./Constants.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { TestUser, TestUsers, Implementation, SignatureType } from "./Types.t.sol";
 import { SigningUtilsLib } from "./SigningUtilsLib.t.sol";
 import { StorageUtilsLib } from "./StorageUtilsLib.t.sol";
 import { UserOperationLib } from "./UserOperationLib.t.sol";
-import { Execution, PackedUserOperation, Delegation, ModeCode } from "../../src/utils/Types.sol";
+import { Execution, PackedUserOperation, Delegation, ModeCode, ModePayload } from "../../src/utils/Types.sol";
 import { SimpleFactory } from "../../src/utils/SimpleFactory.sol";
 import { DelegationManager } from "../../src/DelegationManager.sol";
 import { DeleGatorCore } from "../../src/DeleGatorCore.sol";
@@ -66,6 +67,12 @@ abstract contract BaseTest is Test {
     // Tracks the user's nonce
     mapping(address entryPoint => mapping(address user => uint256 nonce)) public senderNonce;
     // mapping(address user => uint256 nonce) public senderNonce;
+
+    // Execution modes
+    ModeCode public singleDefaultMode = ModeLib.encodeSimpleSingle();
+    ModeCode public batchDefaultMode = ModeLib.encodeSimpleBatch();
+    ModeCode public singleTryMode = ModeLib.encode(CALLTYPE_SINGLE, EXECTYPE_TRY, MODE_DEFAULT, ModePayload.wrap(0x00));
+    ModeCode public batchTryMode = ModeLib.encode(CALLTYPE_BATCH, EXECTYPE_TRY, MODE_DEFAULT, ModePayload.wrap(0x00));
 
     ////////////////////////////// Set Up //////////////////////////////
 

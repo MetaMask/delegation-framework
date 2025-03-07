@@ -33,7 +33,7 @@ contract ValueLteEnforcer is CaveatEnforcer {
         public
         pure
         override
-        onlySingleExecutionMode(_mode)
+        onlySingleCallTypeMode(_mode)
     {
         (, uint256 value_,) = _executionCallData.decodeSingle();
         uint256 termsValue_ = getTermsInfo(_terms);

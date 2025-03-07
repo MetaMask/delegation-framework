@@ -46,7 +46,8 @@ contract ERC20TransferAmountEnforcer is CaveatEnforcer {
     )
         public
         override
-        onlySingleExecutionMode(_mode)
+        onlySingleCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
         (uint256 limit_, uint256 spent_) = _validateAndIncrease(_terms, _executionCallData, _delegationHash);
         emit IncreasedSpentMap(msg.sender, _redeemer, _delegationHash, limit_, spent_);

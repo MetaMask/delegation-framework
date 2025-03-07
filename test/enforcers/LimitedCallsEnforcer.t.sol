@@ -2,7 +2,6 @@
 pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import "../../src/utils/Types.sol";
@@ -15,8 +14,6 @@ import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol"
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
 contract LimitedCallsEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////////////// Events //////////////////////////////
     event IncreasedCount(
         address indexed sender, address indexed redeemer, bytes32 indexed delegationHash, uint256 limit, uint256 callCount
@@ -25,7 +22,6 @@ contract LimitedCallsEnforcerTest is CaveatEnforcerBaseTest {
     ////////////////////// State //////////////////////
 
     LimitedCallsEnforcer public limitedCallsEnforcer;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////// Set up //////////////////////
 
@@ -65,7 +61,9 @@ contract LimitedCallsEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectEmit(true, true, true, true, address(limitedCallsEnforcer));
         emit IncreasedCount(address(delegationManager), address(0), delegationHash_, 1, 1);
-        limitedCallsEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0));
+        limitedCallsEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
+        );
 
         assertEq(limitedCallsEnforcer.callCounts(address(delegationManager), delegationHash_), transactionsLimit_);
     }
@@ -98,9 +96,13 @@ contract LimitedCallsEnforcerTest is CaveatEnforcerBaseTest {
         bytes32 delegationHash_ = EncoderLib._getDelegationHash(delegation_);
         assertEq(limitedCallsEnforcer.callCounts(address(delegationManager), delegationHash_), 0);
         vm.startPrank(address(delegationManager));
-        limitedCallsEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0));
+        limitedCallsEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
+        );
         vm.expectRevert("LimitedCallsEnforcer:limit-exceeded");
-        limitedCallsEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0));
+        limitedCallsEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
+        );
         assertEq(limitedCallsEnforcer.callCounts(address(delegationManager), delegationHash_), transactionsLimit_);
     }
 
@@ -111,11 +113,11 @@ contract LimitedCallsEnforcerTest is CaveatEnforcerBaseTest {
 
         bytes memory terms_ = abi.encodePacked(uint32(1));
         vm.expectRevert("LimitedCallsEnforcer:invalid-terms-length");
-        limitedCallsEnforcer.beforeHook(terms_, hex"", mode, executionCallData_, bytes32(0), address(0), address(0));
+        limitedCallsEnforcer.beforeHook(terms_, hex"", singleDefaultMode, executionCallData_, bytes32(0), address(0), address(0));
 
         terms_ = abi.encodePacked(uint256(1), uint256(1));
         vm.expectRevert("LimitedCallsEnforcer:invalid-terms-length");
-        limitedCallsEnforcer.beforeHook(terms_, hex"", mode, executionCallData_, bytes32(0), address(0), address(0));
+        limitedCallsEnforcer.beforeHook(terms_, hex"", singleDefaultMode, executionCallData_, bytes32(0), address(0), address(0));
     }
 
     ////////////////////// Integration //////////////////////

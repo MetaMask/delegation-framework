@@ -2,23 +2,19 @@
 pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { BasicCF721 } from "../utils/BasicCF721.t.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
-import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
+import { Execution, Caveat, Delegation } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { ERC721TransferEnforcer } from "../../src/enforcers/ERC721TransferEnforcer.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 contract ERC721TransferEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////// State //////////////////////
 
     ERC721TransferEnforcer public erc721TransferEnforcer;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
     uint256 public constant TOKEN_ID = 0;
     BasicCF721 public token;
 
@@ -49,7 +45,13 @@ contract ERC721TransferEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         erc721TransferEnforcer.beforeHook(
-            abi.encodePacked(address(token), TOKEN_ID), hex"", mode, executionCallData_, keccak256(""), address(0), address(0)
+            abi.encodePacked(address(token), TOKEN_ID),
+            hex"",
+            singleDefaultMode,
+            executionCallData_,
+            keccak256(""),
+            address(0),
+            address(0)
         );
     }
 
@@ -64,7 +66,13 @@ contract ERC721TransferEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         erc721TransferEnforcer.beforeHook(
-            abi.encodePacked(address(token), TOKEN_ID), hex"", mode, executionCallData_, keccak256(""), address(0), address(0)
+            abi.encodePacked(address(token), TOKEN_ID),
+            hex"",
+            singleDefaultMode,
+            executionCallData_,
+            keccak256(""),
+            address(0),
+            address(0)
         );
     }
 
@@ -81,7 +89,13 @@ contract ERC721TransferEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         erc721TransferEnforcer.beforeHook(
-            abi.encodePacked(address(token), TOKEN_ID), hex"", mode, executionCallData_, keccak256(""), address(0), address(0)
+            abi.encodePacked(address(token), TOKEN_ID),
+            hex"",
+            singleDefaultMode,
+            executionCallData_,
+            keccak256(""),
+            address(0),
+            address(0)
         );
     }
 
@@ -105,7 +119,13 @@ contract ERC721TransferEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectRevert("ERC721TransferEnforcer:unauthorized-contract-target");
         erc721TransferEnforcer.beforeHook(
-            abi.encodePacked(address(token), TOKEN_ID), hex"", mode, executionCallData_, keccak256(""), address(0), address(0)
+            abi.encodePacked(address(token), TOKEN_ID),
+            hex"",
+            singleDefaultMode,
+            executionCallData_,
+            keccak256(""),
+            address(0),
+            address(0)
         );
     }
 
@@ -119,7 +139,13 @@ contract ERC721TransferEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectRevert("ERC721TransferEnforcer:unauthorized-selector");
         erc721TransferEnforcer.beforeHook(
-            abi.encodePacked(address(token), TOKEN_ID), hex"", mode, executionCallData_, keccak256(""), address(0), address(0)
+            abi.encodePacked(address(token), TOKEN_ID),
+            hex"",
+            singleDefaultMode,
+            executionCallData_,
+            keccak256(""),
+            address(0),
+            address(0)
         );
     }
 
@@ -135,7 +161,13 @@ contract ERC721TransferEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectRevert("ERC721TransferEnforcer:unauthorized-token-id");
         erc721TransferEnforcer.beforeHook(
-            abi.encodePacked(address(token), TOKEN_ID), hex"", mode, executionCallData_, keccak256(""), address(0), address(0)
+            abi.encodePacked(address(token), TOKEN_ID),
+            hex"",
+            singleDefaultMode,
+            executionCallData_,
+            keccak256(""),
+            address(0),
+            address(0)
         );
     }
 
@@ -151,8 +183,23 @@ contract ERC721TransferEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectRevert("ERC721TransferEnforcer:invalid-calldata-length");
         erc721TransferEnforcer.beforeHook(
-            abi.encodePacked(address(token), TOKEN_ID), hex"", mode, executionCallData_, keccak256(""), address(0), address(0)
+            abi.encodePacked(address(token), TOKEN_ID),
+            hex"",
+            singleDefaultMode,
+            executionCallData_,
+            keccak256(""),
+            address(0),
+            address(0)
         );
+    }
+
+    // should fail with invalid call type mode (batch instead of single mode)
+    function test_revertWithInvalidCallTypeMode() public {
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(new Execution[](2));
+
+        vm.expectRevert("CaveatEnforcer:invalid-call-type");
+
+        erc721TransferEnforcer.beforeHook(hex"", hex"", batchDefaultMode, executionCallData_, bytes32(0), address(0), address(0));
     }
 
     ////////////////////// Integration //////////////////////

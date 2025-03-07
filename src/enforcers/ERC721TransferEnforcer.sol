@@ -32,7 +32,7 @@ contract ERC721TransferEnforcer is CaveatEnforcer {
         public
         virtual
         override
-        onlySingleExecutionMode(_mode)
+        onlySingleCallTypeMode(_mode)
     {
         (address permittedContract_, uint256 permittedTokenId_) = getTermsInfo(_terms);
         (address target_,, bytes calldata callData_) = ExecutionLib.decodeSingle(_executionCallData);

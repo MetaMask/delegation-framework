@@ -44,7 +44,8 @@ contract NativeTokenTransferAmountEnforcer is CaveatEnforcer {
     )
         public
         override
-        onlySingleExecutionMode(_mode)
+        onlySingleCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
         // Decode the total allowance from _terms
         uint256 allowance_ = getTermsInfo(_terms);

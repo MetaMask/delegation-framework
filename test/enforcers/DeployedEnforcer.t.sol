@@ -2,10 +2,9 @@
 pragma solidity 0.8.23;
 
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
-import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
+import { Execution, Caveat, Delegation } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { DeployedEnforcer } from "../../src/enforcers/DeployedEnforcer.sol";
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
@@ -13,13 +12,10 @@ import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
 contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////////////// State //////////////////////////////
 
     DeployedEnforcer public deployedEnforcer;
     bytes32 public salt;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////////////// Events //////////////////////////////
 
@@ -72,7 +68,7 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
         deployedEnforcer.beforeHook(
             abi.encodePacked(predictedAddr_, salt, abi.encodePacked(type(Counter).creationCode)),
             hex"",
-            mode,
+            singleDefaultMode,
             executionCallData_,
             keccak256(""),
             address(0),
@@ -104,7 +100,7 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
         deployedEnforcer.beforeHook(
             abi.encodePacked(predictedAddr_, salt, bytecode_),
             hex"",
-            mode,
+            singleDefaultMode,
             executionCallData_,
             keccak256(""),
             address(0),
@@ -120,7 +116,7 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
         deployedEnforcer.beforeHook(
             abi.encodePacked(predictedAddr_, salt, bytecode_),
             hex"",
-            mode,
+            singleDefaultMode,
             executionCallData_,
             keccak256(""),
             address(0),
@@ -146,7 +142,7 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
         deployedEnforcer.beforeHook(
             abi.encodePacked(users.alice.addr, salt, abi.encodePacked(type(Counter).creationCode)),
             hex"",
-            mode,
+            singleDefaultMode,
             executionCallData_,
             keccak256(""),
             address(0),
@@ -168,12 +164,12 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
 
         // 0 bytes
         vm.expectRevert("DeployedEnforcer:invalid-terms-length");
-        deployedEnforcer.beforeHook(hex"", hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        deployedEnforcer.beforeHook(hex"", hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0));
 
         // 20 bytes
         vm.expectRevert("DeployedEnforcer:invalid-terms-length");
         deployedEnforcer.beforeHook(
-            abi.encodePacked(users.alice.addr), hex"", mode, executionCallData_, keccak256(""), address(0), address(0)
+            abi.encodePacked(users.alice.addr), hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
         );
 
         // 52 bytes
@@ -181,7 +177,7 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
         deployedEnforcer.beforeHook(
             abi.encodePacked(users.alice.addr, bytes32(hex"")),
             hex"",
-            mode,
+            singleDefaultMode,
             executionCallData_,
             keccak256(""),
             address(0),
@@ -211,7 +207,7 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
         deployedEnforcer.beforeHook(
             abi.encodePacked(predictedAddr_, salt, bytecode_),
             hex"",
-            mode,
+            singleDefaultMode,
             executionCallData_,
             keccak256(""),
             address(0),
@@ -245,7 +241,7 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
         deployedEnforcer.beforeHook(
             abi.encodePacked(predictedAddr_, salt, abi.encodePacked(type(Counter).creationCode)),
             hex"",
-            mode,
+            singleDefaultMode,
             executionCallData_,
             keccak256(""),
             address(0),

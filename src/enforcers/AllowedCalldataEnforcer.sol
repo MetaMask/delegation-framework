@@ -40,7 +40,7 @@ contract AllowedCalldataEnforcer is CaveatEnforcer {
         public
         pure
         override
-        onlySingleExecutionMode(_mode)
+        onlySingleCallTypeMode(_mode)
     {
         // Ensure that the first two term values are valid and at least 1 byte for value_
         uint256 dataStart_;

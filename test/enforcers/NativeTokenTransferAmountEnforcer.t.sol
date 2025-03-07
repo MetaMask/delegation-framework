@@ -1,21 +1,15 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
-import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
+import { Execution, Caveat, Delegation } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { NativeTokenTransferAmountEnforcer } from "../../src/enforcers/NativeTokenTransferAmountEnforcer.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
-contract NativeAllowanceEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
-    ////////////////////// State //////////////////////
-    ModeCode mode = ModeLib.encodeSimpleSingle();
-
+contract NativeTokenTransferAmountEnforcerTest is CaveatEnforcerBaseTest {
     ////////////////////// Set up //////////////////////
     NativeTokenTransferAmountEnforcer public nativeTokenTransferAmountEnforcer;
 
@@ -52,7 +46,7 @@ contract NativeAllowanceEnforcerTest is CaveatEnforcerBaseTest {
             address(delegationManager), address(0), delegationHash_, allowance_, 1 ether
         );
         nativeTokenTransferAmountEnforcer.beforeHook(
-            inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0)
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
         );
 
         assertEq(nativeTokenTransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), allowance_);
@@ -78,7 +72,7 @@ contract NativeAllowanceEnforcerTest is CaveatEnforcerBaseTest {
             address(delegationManager), address(0), delegationHash_, allowance_, 1 ether
         );
         nativeTokenTransferAmountEnforcer.beforeHook(
-            inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0)
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
         );
         assertEq(nativeTokenTransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), 1 ether);
 
@@ -88,7 +82,7 @@ contract NativeAllowanceEnforcerTest is CaveatEnforcerBaseTest {
             address(delegationManager), address(0), delegationHash_, allowance_, 2 ether
         );
         nativeTokenTransferAmountEnforcer.beforeHook(
-            inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0)
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
         );
         assertEq(nativeTokenTransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), 2 ether);
 
@@ -98,7 +92,7 @@ contract NativeAllowanceEnforcerTest is CaveatEnforcerBaseTest {
             address(delegationManager), address(0), delegationHash_, allowance_, allowance_
         );
         nativeTokenTransferAmountEnforcer.beforeHook(
-            inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0)
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
         );
         assertEq(nativeTokenTransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), allowance_);
     }
@@ -122,11 +116,29 @@ contract NativeAllowanceEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectRevert("NativeTokenTransferAmountEnforcer:allowance-exceeded");
         nativeTokenTransferAmountEnforcer.beforeHook(
-            inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0)
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
         );
 
         // The allowance does not change
         assertEq(nativeTokenTransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), 0);
+    }
+
+    // should fail with invalid call type mode (batch instead of single mode)
+    function test_revertWithInvalidCallTypeMode() public {
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(new Execution[](2));
+
+        vm.expectRevert("CaveatEnforcer:invalid-call-type");
+
+        nativeTokenTransferAmountEnforcer.beforeHook(
+            hex"", hex"", batchDefaultMode, executionCallData_, bytes32(0), address(0), address(0)
+        );
+    }
+
+    // should fail with invalid execution type mode (try instead of default mode)
+    function test_revertWithInvalidExecutionTypeMode() public {
+        vm.expectRevert("CaveatEnforcer:invalid-execution-type");
+
+        nativeTokenTransferAmountEnforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
     }
 
     function _getExampleDelegation(bytes memory inputTerms_) internal view returns (bytes32 delegationHash_) {

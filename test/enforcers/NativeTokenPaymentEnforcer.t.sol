@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
@@ -17,8 +16,6 @@ import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 import { Counter } from "../utils/Counter.t.sol";
 
 contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////// Set up //////////////////////
     NativeTokenPaymentEnforcer public nativeTokenPaymentEnforcer;
     NativeTokenTransferAmountEnforcer public nativeTokenTransferAmountEnforcer;
@@ -36,7 +33,6 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
     bytes public allowanceTerms;
     bytes public argsEnforcerTerms;
     bytes public argsWithBobAllowance;
-    ModeCode public modeSimpleSingle = ModeLib.encodeSimpleSingle();
 
     function setUp() public override {
         super.setUp();
@@ -107,7 +103,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
-            modeSimpleSingle,
+            singleDefaultMode,
             executionCalldata,
             delegationHash_,
             address(users.alice.deleGator),
@@ -162,7 +158,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
-            modeSimpleSingle,
+            singleDefaultMode,
             executionCalldata,
             delegationHash_,
             address(users.alice.deleGator),
@@ -220,7 +216,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
-            ModeLib.encodeSimpleSingle(),
+            singleDefaultMode,
             executionCalldata,
             delegationHash_,
             address(users.alice.deleGator),
@@ -268,7 +264,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
-            ModeLib.encodeSimpleSingle(),
+            singleDefaultMode,
             executionCalldata,
             delegationHash_,
             address(users.alice.deleGator),
@@ -292,7 +288,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
-            ModeLib.encodeSimpleSingle(),
+            singleDefaultMode,
             executionCalldata,
             delegationHash_,
             address(users.alice.deleGator),
@@ -322,7 +318,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
-            modeSimpleSingle,
+            singleDefaultMode,
             executionCalldata,
             delegationHash_,
             address(0),
@@ -358,7 +354,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
-            modeSimpleSingle,
+            singleDefaultMode,
             executionCalldata,
             delegationHash_,
             address(0),
@@ -389,7 +385,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
-            modeSimpleSingle,
+            singleDefaultMode,
             executionCalldata,
             delegationHash_,
             address(0),
@@ -402,9 +398,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         // Using an invalid sender, it must be the delegation manager
         vm.startPrank(address(users.bob.deleGator));
         vm.expectRevert("NativeTokenPaymentEnforcer:only-delegation-manager");
-        nativeTokenPaymentEnforcer.afterAllHook(
-            hex"", hex"", ModeLib.encodeSimpleSingle(), new bytes(0), bytes32(0), address(0), address(0)
-        );
+        nativeTokenPaymentEnforcer.afterAllHook(hex"", hex"", singleDefaultMode, new bytes(0), bytes32(0), address(0), address(0));
     }
 
     // Should SUCCEED to charge the payment from the allowance delegation
@@ -566,7 +560,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
-            ModeLib.encodeSimpleSingle(),
+            singleDefaultMode,
             executionCalldata,
             maliciousDelegationHash_,
             maliciousPaidDelegation_.delegator,
@@ -577,7 +571,7 @@ contract NativeTokenPaymentEnforcerTest is CaveatEnforcerBaseTest {
         nativeTokenPaymentEnforcer.afterAllHook(
             paymentTerms,
             argsWithBobAllowance,
-            ModeLib.encodeSimpleSingle(),
+            singleDefaultMode,
             executionCalldata,
             originalDelegationHash_,
             originalPaidDelegation_.delegator,

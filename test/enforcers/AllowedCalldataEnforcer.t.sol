@@ -4,11 +4,10 @@ pragma solidity 0.8.23;
 import "forge-std/Test.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { BytesLib } from "@bytes-utils/BytesLib.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { Counter } from "../utils/Counter.t.sol";
-import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
+import { Execution, Caveat, Delegation } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { AllowedCalldataEnforcer } from "../../src/enforcers/AllowedCalldataEnforcer.sol";
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
@@ -23,13 +22,10 @@ contract DummyContract {
 }
 
 contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////////////// State //////////////////////////////
     AllowedCalldataEnforcer public allowedCalldataEnforcer;
     BasicERC20 public basicCF20;
     BasicCF721 public basicCF721;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////// Set up //////////////////////
 
@@ -59,7 +55,9 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory inputTerms_ = abi.encodePacked(paramStart_, paramValue_);
 
         vm.prank(address(delegationManager));
-        allowedCalldataEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        allowedCalldataEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     // should allow a method to be called when a single function parameter that is a dynamic array
@@ -81,9 +79,15 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory parameterTerms_ = abi.encodePacked(uint256(68), BytesLib.slice(execution_.callData, uint256(68), uint256(64)));
 
         vm.prank(address(delegationManager));
-        allowedCalldataEnforcer.beforeHook(offsetTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
-        allowedCalldataEnforcer.beforeHook(lengthTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
-        allowedCalldataEnforcer.beforeHook(parameterTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        allowedCalldataEnforcer.beforeHook(
+            offsetTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
+        allowedCalldataEnforcer.beforeHook(
+            lengthTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
+        allowedCalldataEnforcer.beforeHook(
+            parameterTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     // should allow a single method to be called when a single function parameter that is dynamic is equal
@@ -103,9 +107,15 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory parameterTerms_ = abi.encodePacked(uint256(68), BytesLib.slice(execution_.callData, uint256(68), uint256(32)));
 
         vm.prank(address(delegationManager));
-        allowedCalldataEnforcer.beforeHook(offsetTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
-        allowedCalldataEnforcer.beforeHook(lengthTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
-        allowedCalldataEnforcer.beforeHook(parameterTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        allowedCalldataEnforcer.beforeHook(
+            offsetTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
+        allowedCalldataEnforcer.beforeHook(
+            lengthTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
+        allowedCalldataEnforcer.beforeHook(
+            parameterTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     // should allow Artist to create NFT specific delegations with metadata caveat
@@ -126,7 +136,9 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         // NOTE: Using encodedData_ not  encodedMetadataString_ to ensure the value for the offset is correct
         bytes memory allowedCalldata_ = abi.encodePacked(start_, BytesLib.slice(encodedData_, uint256(start_), uint256(length_)));
-        allowedCalldataEnforcer.beforeHook(allowedCalldata_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        allowedCalldataEnforcer.beforeHook(
+            allowedCalldata_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     ////////////////////// Invalid cases //////////////////////
@@ -148,7 +160,9 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         vm.expectRevert("AllowedCalldataEnforcer:invalid-calldata");
-        allowedCalldataEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        allowedCalldataEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     // should NOT allow to pass an invalid calldata length (invalid terms)
@@ -168,7 +182,9 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         vm.expectRevert("AllowedCalldataEnforcer:invalid-calldata-length");
-        allowedCalldataEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        allowedCalldataEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     // should NOT allow a method to be called when a terms size is invalid
@@ -187,7 +203,18 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         vm.expectRevert("AllowedCalldataEnforcer:invalid-terms-size");
-        allowedCalldataEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        allowedCalldataEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
+    }
+
+    // should fail with invalid call type mode (batch instead of single mode)
+    function test_revertWithInvalidCallTypeMode() public {
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(new Execution[](2));
+
+        vm.expectRevert("CaveatEnforcer:invalid-call-type");
+
+        allowedCalldataEnforcer.beforeHook(hex"", hex"", batchDefaultMode, executionCallData_, bytes32(0), address(0), address(0));
     }
 
     ////////////////////// Integration //////////////////////

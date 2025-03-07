@@ -21,7 +21,7 @@ The order in which the caveat hooks are called can vary depending on the `Delega
 
 ### Execution Modes
 
-Enforcers can target a specific execution mode: **single** or **batch**. Because execution call data is encoded differently for each mode, you can use modifiers like `onlySingleExecutionMode` or `onlyBatchExecutionMode` to restrict an enforcer to the desired mode, using a different would revert.
+Enforcers can target specific call type modes: **single** or **batch**, and execution types: **default** or **revert**. Because execution call data is encoded differently for each mode, you can use modifiers like `onlySingleCallTypeMode`, `onlyBatchCallTypeMode` to restrict a call type, or `onlyDefaultExecutionMode`, `onlyTryExecutionMode` to restrict an execution type, it is possible to combine an execution mode modifier with a call type modifier.
 
 ---
 

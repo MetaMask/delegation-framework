@@ -2,10 +2,8 @@
 pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
-import { BasicERC1155 } from "../utils/BasicERC1155.t.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
-
 import "../../src/utils/Types.sol";
+import { BasicERC1155 } from "../utils/BasicERC1155.t.sol";
 import { Execution } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { ERC1155BalanceGteEnforcer } from "../../src/enforcers/ERC1155BalanceGteEnforcer.sol";
@@ -20,7 +18,6 @@ contract ERC1155BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
     address dm;
     Execution mintExecution;
     bytes mintExecutionCallData;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     uint256 public tokenId = 1;
 
@@ -64,19 +61,19 @@ contract ERC1155BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // Increase by 100
         vm.prank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
         vm.prank(delegator);
         token.mint(delegator, tokenId, 100, "");
         vm.prank(dm);
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
 
         // Increase by 1000
         vm.prank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
         vm.prank(delegator);
         token.mint(delegator, tokenId, 1000, "");
         vm.prank(dm);
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
 
     ////////////////////// Errors //////////////////////
@@ -88,12 +85,12 @@ contract ERC1155BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // Increase by 10, expect revert
         vm.prank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
         vm.prank(delegator);
         token.mint(delegator, tokenId, 10, "");
         vm.prank(dm);
         vm.expectRevert(bytes("ERC1155BalanceGteEnforcer:balance-not-gt"));
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
 
     // Reverts if a balance descreased in between the hooks
@@ -106,7 +103,7 @@ contract ERC1155BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(address(token), address(delegator), uint256(tokenId), uint256(100));
 
         vm.prank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
 
         // Decrease balance by transferring tokens away
         vm.prank(delegator);
@@ -114,7 +111,7 @@ contract ERC1155BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(dm);
         vm.expectRevert(bytes("ERC1155BalanceGteEnforcer:balance-not-gt"));
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
 
     // Allows to check the balance of different recipients
@@ -129,11 +126,11 @@ contract ERC1155BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
             // Increase by 100 for each recipient
             vm.prank(dm);
-            enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(i), address(0), delegate);
+            enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(i), address(0), delegate);
             vm.prank(delegator);
             token.mint(currentRecipient_, tokenId, 100, "");
             vm.prank(dm);
-            enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(i), address(0), delegate);
+            enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(i), address(0), delegate);
         }
     }
 
@@ -147,7 +144,7 @@ contract ERC1155BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(address(token), address(delegator), uint256(tokenId), uint256(100));
 
         vm.prank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
 
         // Increase balance by 100
         vm.prank(delegator);
@@ -155,7 +152,7 @@ contract ERC1155BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(dm);
         vm.expectRevert(bytes("ERC1155BalanceGteEnforcer:balance-not-gt"));
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
 
     // Same delegation hash multiple recipients
@@ -167,10 +164,10 @@ contract ERC1155BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms2_ = abi.encodePacked(address(token), address(recipient2_), uint256(tokenId), uint256(100));
 
         vm.prank(dm);
-        enforcer.beforeHook(terms1_, hex"", mode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.beforeHook(terms1_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
 
         vm.prank(dm);
-        enforcer.beforeHook(terms2_, hex"", mode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.beforeHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
 
         // Increase balance by 100 only in recipient1
         vm.prank(delegator);
@@ -178,12 +175,12 @@ contract ERC1155BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // This one works well recipient1 increased
         vm.prank(dm);
-        enforcer.afterHook(terms1_, hex"", mode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.afterHook(terms1_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
 
         // This one fails recipient1 didn't increase
         vm.prank(dm);
         vm.expectRevert(bytes("ERC1155BalanceGteEnforcer:balance-not-gt"));
-        enforcer.afterHook(terms2_, hex"", mode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.afterHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
 
         // Increase balance by 100 only in recipient2 to fix it
         vm.prank(delegator);
@@ -191,7 +188,7 @@ contract ERC1155BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // Recipient2 works well
         vm.prank(dm);
-        enforcer.afterHook(terms2_, hex"", mode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.afterHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
     }
 
     // Reverts if the enforcer is locked
@@ -202,12 +199,12 @@ contract ERC1155BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // Lock the enforcer
         vm.startPrank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
         bytes32 hashKey_ =
             enforcer.getHashKey(address(delegationManager), address(token), address(delegator), tokenId, delegationHash_);
         assertTrue(enforcer.isLocked(hashKey_));
         vm.expectRevert(bytes("ERC1155BalanceGteEnforcer:enforcer-is-locked"));
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
         vm.stopPrank();
 
         vm.prank(delegator);
@@ -215,10 +212,10 @@ contract ERC1155BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.startPrank(dm);
         // Unlock the enforcer
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
         assertFalse(enforcer.isLocked(hashKey_));
         // Can be used again, and locks it again
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
         assertTrue(enforcer.isLocked(hashKey_));
         vm.stopPrank();
     }
@@ -245,7 +242,7 @@ contract ERC1155BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         // Invalid token address
         terms_ = abi.encodePacked(address(0), address(delegator), uint256(tokenId), uint256(100));
         vm.expectRevert();
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
 
     // Validates that an invalid amount causes a revert
@@ -254,9 +251,9 @@ contract ERC1155BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(address(token), address(delegator), uint256(tokenId), type(uint256).max);
 
         vm.prank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
         vm.expectRevert();
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
 
     //////////////////////  Integration  //////////////////////

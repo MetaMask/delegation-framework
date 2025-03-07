@@ -63,7 +63,7 @@ contract SpecificActionERC20TransferBatchEnforcer is CaveatEnforcer {
     )
         public
         override
-        onlyBatchExecutionMode(_mode)
+        onlyBatchCallTypeMode(_mode)
     {
         // Check delegation hasn't been used
         if (usedDelegations[msg.sender][_delegationHash]) {
