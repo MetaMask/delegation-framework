@@ -101,6 +101,9 @@ abstract contract DeleGatorTestSuite is BaseTest {
     event SentPrefund(address indexed sender, uint256 amount, bool success);
     event RedeemedDelegation(address indexed rootDelegator, address indexed redeemer, Delegation delegation);
 
+    /// Hook: Expect an invalid empty signature revert.
+    function encodeInvalidEmptySignatureRevertReason() internal virtual returns (bytes memory);
+
     /// Hook: Expect an invalid signature revert.
     function encodeInvalidSignatureRevertReason() internal virtual returns (bytes memory);
 
@@ -304,7 +307,8 @@ abstract contract DeleGatorTestSuite is BaseTest {
         bytes[] memory executionCallDatas_ = new bytes[](1);
         executionCallDatas_[0] = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
-        vm.expectRevert(abi.encodeWithSelector(IDelegationManager.InvalidERC1271Signature.selector));
+        bytes memory revertReason_ = encodeInvalidEmptySignatureRevertReason();
+        vm.expectRevert(revertReason_);
 
         vm.prank(address(users.bob.deleGator));
         users.bob.deleGator.redeemDelegations(permissionContexts_, oneSingularMode, executionCallDatas_);
@@ -2274,6 +2278,10 @@ abstract contract DeleGatorTestSuite is BaseTest {
 }
 
 abstract contract UUPSDeleGatorTest is DeleGatorTestSuite {
+    function encodeInvalidEmptySignatureRevertReason() internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(IDelegationManager.InvalidERC1271Signature.selector);
+    }
+
     function encodeInvalidSignatureRevertReason() internal pure override returns (bytes memory) {
         return abi.encodeWithSelector(IDelegationManager.InvalidEOASignature.selector);
     }
@@ -2284,6 +2292,10 @@ abstract contract UUPSDeleGatorTest is DeleGatorTestSuite {
 }
 
 abstract contract EIP7702DeleGatorTest is DeleGatorTestSuite {
+    function encodeInvalidEmptySignatureRevertReason() internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(ECDSA.ECDSAInvalidSignatureLength.selector, uint256(0));
+    }
+
     function encodeInvalidSignatureRevertReason() internal pure override returns (bytes memory) {
         return abi.encodeWithSelector(IDelegationManager.InvalidERC1271Signature.selector);
     }
