@@ -84,7 +84,7 @@ contract InviteTest is BaseTest {
         // Create and Sign UserOp with Bob's key
         PackedUserOperation memory userOp_ =
             createUserOp(predictedAddr_, abi.encodeWithSignature(EXECUTE_SINGULAR_SIGNATURE, execution_), initcode_);
-        userOp_.signature = signHash(users.bob, getPackedUserOperationTypedDataHash(predictedAddr_, userOp_));
+        userOp_.signature = signHash(users.bob, getPackedUserOperationTypedDataHash(predictedAddr_, userOp_, address(entryPoint)));
 
         // Validate the contract hasn't been deployed yet
         assertEq(predictedAddr_.code, hex"");
@@ -190,7 +190,7 @@ contract InviteTest is BaseTest {
 
         PackedUserOperation memory userOp_ = createUserOp(predictedAddr_, userOpCallData_, initcode_);
 
-        userOp_.signature = signHash(users.bob, getPackedUserOperationTypedDataHash(predictedAddr_, userOp_));
+        userOp_.signature = signHash(users.bob, getPackedUserOperationTypedDataHash(predictedAddr_, userOp_, address(entryPoint)));
 
         submitUserOp_Bundler(userOp_);
 
@@ -206,9 +206,17 @@ contract InviteTest is BaseTest {
 
     ////////////////////////////// Helper Methods //////////////////////////////
 
-    function getPackedUserOperationTypedDataHash(address _contract, PackedUserOperation memory userOp_) public returns (bytes32) {
+    function getPackedUserOperationTypedDataHash(
+        address _contract,
+        PackedUserOperation memory userOp_,
+        address _entryPoint
+    )
+        internal
+        view
+        returns (bytes32)
+    {
         return UserOperationLib.getPackedUserOperationTypedDataHash(
-            multiSigDeleGatorImpl.NAME(), multiSigDeleGatorImpl.DOMAIN_VERSION(), block.chainid, _contract, userOp_
+            multiSigDeleGatorImpl.NAME(), multiSigDeleGatorImpl.DOMAIN_VERSION(), block.chainid, _contract, userOp_, _entryPoint
         );
     }
 }
