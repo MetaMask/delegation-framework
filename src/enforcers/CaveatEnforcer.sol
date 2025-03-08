@@ -30,7 +30,9 @@ abstract contract CaveatEnforcer is ICaveatEnforcer {
      * @dev Require the function call to be in single call type
      */
     modifier onlySingleCallTypeMode(ModeCode _mode) {
-        require(ModeLib.getCallType(_mode) == CALLTYPE_SINGLE, "CaveatEnforcer:invalid-call-type");
+        {
+            require(ModeLib.getCallType(_mode) == CALLTYPE_SINGLE, "CaveatEnforcer:invalid-call-type");
+        }
         _;
     }
 
@@ -38,7 +40,9 @@ abstract contract CaveatEnforcer is ICaveatEnforcer {
      * @dev Require the function call to be in batch call type
      */
     modifier onlyBatchCallTypeMode(ModeCode _mode) {
-        require(ModeLib.getCallType(_mode) == CALLTYPE_BATCH, "CaveatEnforcer:invalid-call-type");
+        {
+            require(ModeLib.getCallType(_mode) == CALLTYPE_BATCH, "CaveatEnforcer:invalid-call-type");
+        }
         _;
     }
 
@@ -46,8 +50,10 @@ abstract contract CaveatEnforcer is ICaveatEnforcer {
      * @dev Require the function call to be in default execution mode
      */
     modifier onlyDefaultExecutionMode(ModeCode _mode) {
-        (, ExecType _execType,,) = _mode.decode();
-        require(_execType == EXECTYPE_DEFAULT, "CaveatEnforcer:invalid-execution-type");
+        {
+            (, ExecType _execType,,) = _mode.decode();
+            require(_execType == EXECTYPE_DEFAULT, "CaveatEnforcer:invalid-execution-type");
+        }
         _;
     }
 
@@ -55,8 +61,10 @@ abstract contract CaveatEnforcer is ICaveatEnforcer {
      * @dev Require the function call to be in try execution mode
      */
     modifier onlyTryExecutionMode(ModeCode _mode) {
-        (, ExecType _execType,,) = _mode.decode();
-        require(_execType == EXECTYPE_TRY, "CaveatEnforcer:invalid-execution-type");
+        {
+            (, ExecType _execType,,) = _mode.decode();
+            require(_execType == EXECTYPE_TRY, "CaveatEnforcer:invalid-execution-type");
+        }
         _;
     }
 }

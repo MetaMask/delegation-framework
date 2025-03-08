@@ -10,7 +10,7 @@ import { ModeCode, Execution } from "../utils/Types.sol";
 /**
  * @title ExactExecutionBatchEnforcer
  * @notice Ensures that each execution in the batch matches exactly with the expected execution (target, value, and calldata).
- * @dev This caveat enforcer operates only in batch execution mode.
+ * @dev This enforcer operates only in batch execution call type and with default execution mode.
  */
 contract ExactExecutionBatchEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
@@ -37,6 +37,7 @@ contract ExactExecutionBatchEnforcer is CaveatEnforcer {
         pure
         override
         onlyBatchCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
         Execution[] calldata executions_ = _executionCallData.decodeBatch();
         Execution[] memory termsExecutions_ = getTermsInfo(_terms);

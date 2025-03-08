@@ -149,15 +149,30 @@ contract ExactCalldataBatchEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     // should fail with invalid call type mode (single mode instead of batch)
-    function test_revertWithInvalidMode() public {
+    function test_revertWithInvalidCallTypeMode() public {
         Execution[] memory executions_ = new Execution[](2);
-        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
         bytes memory terms_ = _encodeTerms(executions_);
+
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
 
         vm.prank(address(delegationManager));
         vm.expectRevert("CaveatEnforcer:invalid-call-type");
         exactCalldataBatchEnforcer.beforeHook(
             terms_, hex"", singleDefaultMode, executionCallData_, keccak256("test"), address(0), address(0)
+        );
+    }
+
+    // should fail with invalid call type mode (try instead of default)
+    function test_revertWithInvalidExecutionMode() public {
+        Execution[] memory executions_ = new Execution[](2);
+        bytes memory terms_ = _encodeTerms(executions_);
+
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
+
+        vm.prank(address(delegationManager));
+        vm.expectRevert("CaveatEnforcer:invalid-execution-type");
+        exactCalldataBatchEnforcer.beforeHook(
+            terms_, hex"", batchTryMode, executionCallData_, keccak256("test"), address(0), address(0)
         );
     }
 
