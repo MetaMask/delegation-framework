@@ -3,7 +3,6 @@ pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
 import { BasicCF721 } from "../utils/BasicCF721.t.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 
 import "../../src/utils/Types.sol";
 import { Execution } from "../../src/utils/Types.sol";
@@ -20,7 +19,6 @@ contract ERC721BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
     address dm;
     Execution mintExecution;
     bytes mintExecutionCallData;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////// Set up //////////////////////
 
@@ -58,19 +56,19 @@ contract ERC721BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // Increase by 1
         vm.prank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
         vm.prank(delegator);
         token.mint(delegator);
         vm.prank(dm);
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
 
         // Increase by 2
         vm.prank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
         vm.prank(delegator);
         token.mint(delegator);
         vm.prank(dm);
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
 
     ////////////////////// Errors //////////////////////
@@ -82,11 +80,11 @@ contract ERC721BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // No increase
         vm.prank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
         // No minting occurs here
         vm.prank(dm);
         vm.expectRevert(bytes("ERC721BalanceGteEnforcer:balance-not-gt"));
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
 
     // Reverts if a balance decreased in between the hooks
@@ -99,7 +97,7 @@ contract ERC721BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(address(token), address(delegator), uint256(1));
 
         vm.prank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
 
         // Decrease balance by transferring token away
         uint256 tokenIdToTransfer_ = (token.tokenId()) - 1;
@@ -108,7 +106,7 @@ contract ERC721BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(dm);
         vm.expectRevert(bytes("ERC721BalanceGteEnforcer:balance-not-gt"));
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
 
     // Allows to check the balance of different recipients
@@ -123,11 +121,11 @@ contract ERC721BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
             // Increase by 1 for each recipient
             vm.prank(dm);
-            enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(i), address(0), delegate);
+            enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(i), address(0), delegate);
             vm.prank(delegator);
             token.mint(currentRecipient_);
             vm.prank(dm);
-            enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(i), address(0), delegate);
+            enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(i), address(0), delegate);
         }
     }
 
@@ -141,13 +139,13 @@ contract ERC721BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(address(token), address(delegator), uint256(1));
 
         vm.prank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
 
         // No increase occurs here
 
         vm.prank(dm);
         vm.expectRevert(bytes("ERC721BalanceGteEnforcer:balance-not-gt"));
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
 
     // Same delegation hash multiple recipients
@@ -159,10 +157,10 @@ contract ERC721BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms2_ = abi.encodePacked(address(token), recipient2_, uint256(1));
 
         vm.prank(dm);
-        enforcer.beforeHook(terms1_, hex"", mode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.beforeHook(terms1_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
 
         vm.prank(dm);
-        enforcer.beforeHook(terms2_, hex"", mode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.beforeHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
 
         // Increase balance by 1 only in recipient1
         vm.prank(delegator);
@@ -170,12 +168,12 @@ contract ERC721BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // This one works well recipient1 increased
         vm.prank(dm);
-        enforcer.afterHook(terms1_, hex"", mode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.afterHook(terms1_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
 
         // This one fails recipient2 didn't increase
         vm.prank(dm);
         vm.expectRevert(bytes("ERC721BalanceGteEnforcer:balance-not-gt"));
-        enforcer.afterHook(terms2_, hex"", mode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.afterHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
 
         // Increase balance by 1 in recipient2 to fix it
         vm.prank(delegator);
@@ -183,7 +181,7 @@ contract ERC721BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // Recipient2 works well
         vm.prank(dm);
-        enforcer.afterHook(terms2_, hex"", mode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.afterHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
     }
 
     // Reverts if the enforcer is locked
@@ -194,11 +192,11 @@ contract ERC721BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // Lock the enforcer
         vm.startPrank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
         bytes32 hashKey_ = enforcer.getHashKey(address(delegationManager), address(token), address(delegator), delegationHash_);
         assertTrue(enforcer.isLocked(hashKey_));
         vm.expectRevert(bytes("ERC721BalanceGteEnforcer:enforcer-is-locked"));
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
         vm.stopPrank();
 
         vm.prank(delegator);
@@ -206,10 +204,10 @@ contract ERC721BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.startPrank(dm);
         // Unlock the enforcer
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
         assertFalse(enforcer.isLocked(hashKey_));
         // Can be used again, and locks it again
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
         assertTrue(enforcer.isLocked(hashKey_));
         vm.stopPrank();
     }
@@ -236,7 +234,7 @@ contract ERC721BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         // Invalid token address
         terms_ = abi.encodePacked(address(0), address(delegator), uint256(1));
         vm.expectRevert();
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
 
     // Validates that an unrealistic amount causes a revert
@@ -245,9 +243,9 @@ contract ERC721BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(address(token), address(delegator), type(uint256).max);
 
         vm.prank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
         vm.expectRevert();
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
 
     //////////////////////  Integration  //////////////////////

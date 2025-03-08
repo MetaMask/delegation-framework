@@ -41,7 +41,7 @@ contract OwnershipTransferEnforcer is CaveatEnforcer {
     )
         public
         override
-        onlySingleExecutionMode(_mode)
+        onlySingleCallTypeMode(_mode)
     {
         address newOwner = _validateAndEnforce(_terms, _executionCallData);
         emit OwnershipTransferEnforced(msg.sender, _redeemer, _delegationHash, newOwner);

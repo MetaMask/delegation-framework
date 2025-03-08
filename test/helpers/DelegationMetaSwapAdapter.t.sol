@@ -11,7 +11,7 @@ import { BaseTest } from "../utils/BaseTest.t.sol";
 import { DelegationMetaSwapAdapter } from "../../src/helpers/DelegationMetaSwapAdapter.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { Implementation, SignatureType, TestUser } from "../utils/Types.t.sol";
-import { Delegation, Caveat, ModeCode } from "../../src/utils/Types.sol";
+import { Delegation, Caveat } from "../../src/utils/Types.sol";
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
 import { IMetaSwap } from "../../src/helpers/interfaces/IMetaSwap.sol";
 import { AllowedTargetsEnforcer } from "../../src/enforcers/AllowedTargetsEnforcer.sol";
@@ -524,8 +524,7 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         _setUpMockContracts();
         vm.startPrank(address(subVault.deleGator));
         vm.expectRevert(DelegationMetaSwapAdapter.NotDelegationManager.selector);
-        ModeCode modeCode_;
-        delegationMetaSwapAdapter.executeFromExecutor(modeCode_, hex"");
+        delegationMetaSwapAdapter.executeFromExecutor(singleDefaultMode, hex"");
         vm.stopPrank();
     }
 

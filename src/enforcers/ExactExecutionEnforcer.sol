@@ -36,7 +36,7 @@ contract ExactExecutionEnforcer is CaveatEnforcer {
         public
         pure
         override
-        onlySingleExecutionMode(_mode)
+        onlySingleCallTypeMode(_mode)
     {
         // Decode execution data
         (address execTarget_, uint256 execValue_, bytes calldata execCallData_) = _executionCallData.decodeSingle();

@@ -2,7 +2,6 @@
 pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import "../../src/utils/Types.sol";
@@ -17,11 +16,8 @@ import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/Mes
 import { SigningUtilsLib } from "../utils/SigningUtilsLib.t.sol";
 
 contract PasswordEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////////////// State //////////////////////////////
     PasswordEnforcer public passwordEnforcer;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////// Set up //////////////////////
 
@@ -41,7 +37,9 @@ contract PasswordEnforcerTest is CaveatEnforcerBaseTest {
         vm.startPrank(address(delegationManager));
 
         // First usage works well
-        passwordEnforcer.beforeHook(terms_, abi.encode(password_), mode, executionCallData_, bytes32(0), delegator_, address(0));
+        passwordEnforcer.beforeHook(
+            terms_, abi.encode(password_), singleDefaultMode, executionCallData_, bytes32(0), delegator_, address(0)
+        );
     }
 
     function test_userInputIncorrectArgs() public {
@@ -57,7 +55,7 @@ contract PasswordEnforcerTest is CaveatEnforcerBaseTest {
         vm.expectRevert("PasswordEnforcerError");
 
         passwordEnforcer.beforeHook(
-            terms_, abi.encode(incorrectPassword_), mode, executionCallData_, bytes32(0), delegator_, address(0)
+            terms_, abi.encode(incorrectPassword_), singleDefaultMode, executionCallData_, bytes32(0), delegator_, address(0)
         );
     }
 

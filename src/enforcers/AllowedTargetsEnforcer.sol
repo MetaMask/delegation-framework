@@ -35,7 +35,7 @@ contract AllowedTargetsEnforcer is CaveatEnforcer {
         public
         pure
         override
-        onlySingleExecutionMode(_mode)
+        onlySingleCallTypeMode(_mode)
     {
         (address target_,,) = _executionCallData.decodeSingle();
 

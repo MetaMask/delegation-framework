@@ -3,7 +3,6 @@ pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
 import { BasicERC20 } from "../utils/BasicERC20.t.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 
 import "../../src/utils/Types.sol";
 import { Execution } from "../../src/utils/Types.sol";
@@ -21,7 +20,6 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
     address dm;
     Execution mintExecution;
     bytes mintExecutionCallData;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////// Set up //////////////////////
 
@@ -61,19 +59,19 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // Increase by 100
         vm.prank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(delegator);
         token.mint(recipient, 100);
         vm.prank(dm);
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
         // Increase by 1000
         vm.prank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(delegator);
         token.mint(recipient, 1000);
         vm.prank(dm);
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Validates that the delegation can be reused with different recipients
@@ -84,19 +82,19 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // Increase by 100, check for recipient
         vm.prank(dm);
-        enforcer.beforeHook(terms1_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms1_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(delegator);
         token.mint(recipient, 100);
         vm.prank(dm);
-        enforcer.afterHook(terms1_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.afterHook(terms1_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
         // Increase by 100, check for delegator as recipient
         vm.prank(dm);
-        enforcer.beforeHook(terms2_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(delegator);
         token.mint(delegator, 100);
         vm.prank(dm);
-        enforcer.afterHook(terms2_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.afterHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // ////////////////////// Errors //////////////////////
@@ -108,12 +106,12 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // Increase by 10, expect revert
         vm.prank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(delegator);
         token.mint(recipient, 10);
         vm.prank(dm);
         vm.expectRevert(bytes("ERC20BalanceGteEnforcer:balance-not-gt"));
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Reverts if a enforcer is locked
@@ -125,20 +123,20 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         // Increase by 100
         vm.startPrank(dm);
         // Locks the enforcer
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, delegationHash_, delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, delegator, delegate);
         bytes32 hashKey_ = enforcer.getHashKey(address(delegationManager), address(token), delegationHash_);
         assertTrue(enforcer.isLocked(hashKey_));
         vm.expectRevert(bytes("ERC20BalanceGteEnforcer:enforcer-is-locked"));
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, delegationHash_, delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, delegator, delegate);
         vm.startPrank(delegator);
         token.mint(recipient, 1000);
         vm.startPrank(dm);
 
         // Unlocks the enforcer
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, delegationHash_, delegator, delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, delegator, delegate);
         assertFalse(enforcer.isLocked(hashKey_));
         // Can be used again, and locks it again
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, delegationHash_, delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, delegator, delegate);
         assertTrue(enforcer.isLocked(hashKey_));
     }
 
@@ -148,12 +146,12 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // BeforeHook should cache the recipient's balance
         vm.prank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
         // No tokens are minted to the recipient, so balance shouldn't increase
         vm.prank(dm);
         vm.expectRevert(bytes("ERC20BalanceGteEnforcer:balance-not-gt"));
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Validates the terms are well formed
@@ -178,7 +176,7 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
         // Invalid token
         terms_ = abi.encodePacked(address(recipient), address(0), uint256(100));
         vm.expectRevert();
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Validates that an invalid ID reverts
@@ -188,9 +186,9 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // Increase
         vm.prank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.expectRevert();
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     //////////////////////  Integration  //////////////////////

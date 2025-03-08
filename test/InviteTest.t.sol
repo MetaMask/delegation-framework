@@ -3,7 +3,6 @@ pragma solidity 0.8.23;
 
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { BaseTest } from "./utils/BaseTest.t.sol";
@@ -20,7 +19,6 @@ import { UserOperationLib } from "./utils/UserOperationLib.t.sol";
 
 contract InviteTest is BaseTest {
     using MessageHashUtils for bytes32;
-    using ModeLib for ModeCode;
 
     constructor() {
         IMPLEMENTATION = Implementation.Hybrid;
@@ -183,7 +181,7 @@ contract InviteTest is BaseTest {
         executionCallDatas_[0] = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         ModeCode[] memory modes_ = new ModeCode[](1);
-        modes_[0] = ModeLib.encodeSimpleSingle();
+        modes_[0] = singleDefaultMode;
 
         bytes memory userOpCallData_ =
             abi.encodeWithSelector(DeleGatorCore.redeemDelegations.selector, permissionContexts_, modes_, executionCallDatas_);

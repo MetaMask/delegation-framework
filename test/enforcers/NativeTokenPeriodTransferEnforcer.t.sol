@@ -2,21 +2,17 @@
 pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
-import { ModeCode, Caveat, Delegation, Execution } from "../../src/utils/Types.sol";
+import { Caveat, Delegation, Execution } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { NativeTokenPeriodTransferEnforcer } from "../../src/enforcers/NativeTokenPeriodTransferEnforcer.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 
 contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////////////// State //////////////////////////////
     NativeTokenPeriodTransferEnforcer public nativeEnforcer;
-    ModeCode public singleMode = ModeLib.encodeSimpleSingle();
     address public delegator;
     address public redeemer;
     address public beneficiary; // target of the ETH transfer
@@ -63,7 +59,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         // Build execution call data: encode native transfer with beneficiary as target and 0.5 ether value.
         bytes memory execData_ = _encodeNativeTransfer(beneficiary, 0.5 ether);
         vm.expectRevert("NativeTokenPeriodTransferEnforcer:invalid-zero-start-date");
-        nativeEnforcer.beforeHook(terms_, "", singleMode, execData_, dummyDelegationHash, address(0), redeemer);
+        nativeEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Reverts if the period duration is zero.
@@ -71,7 +67,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(periodAmount, uint256(0), startDate);
         bytes memory execData_ = _encodeNativeTransfer(beneficiary, 0.5 ether);
         vm.expectRevert("NativeTokenPeriodTransferEnforcer:invalid-zero-period-duration");
-        nativeEnforcer.beforeHook(terms_, "", singleMode, execData_, dummyDelegationHash, address(0), redeemer);
+        nativeEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Reverts if the period amount is zero.
@@ -79,7 +75,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(uint256(0), periodDuration, startDate);
         bytes memory execData_ = _encodeNativeTransfer(beneficiary, 0.5 ether);
         vm.expectRevert("NativeTokenPeriodTransferEnforcer:invalid-zero-period-amount");
-        nativeEnforcer.beforeHook(terms_, "", singleMode, execData_, dummyDelegationHash, address(0), redeemer);
+        nativeEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Reverts if the transfer period has not started yet.
@@ -88,7 +84,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, futureStart_);
         bytes memory execData_ = _encodeNativeTransfer(beneficiary, 0.5 ether);
         vm.expectRevert("NativeTokenPeriodTransferEnforcer:transfer-not-started");
-        nativeEnforcer.beforeHook(terms_, "", singleMode, execData_, dummyDelegationHash, address(0), redeemer);
+        nativeEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Reverts if a transfer exceeds the available ETH allowance.
@@ -96,12 +92,12 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
         // First transfer: 0.8 ether.
         bytes memory execData1_ = _encodeNativeTransfer(beneficiary, 0.8 ether);
-        nativeEnforcer.beforeHook(terms_, "", singleMode, execData1_, dummyDelegationHash, address(0), redeemer);
+        nativeEnforcer.beforeHook(terms_, "", singleDefaultMode, execData1_, dummyDelegationHash, address(0), redeemer);
 
         // Second transfer: attempt to transfer 0.3 ether, which exceeds remaining 0.2 ether.
         bytes memory execData2_ = _encodeNativeTransfer(beneficiary, 0.3 ether);
         vm.expectRevert("NativeTokenPeriodTransferEnforcer:transfer-amount-exceeded");
-        nativeEnforcer.beforeHook(terms_, "", singleMode, execData2_, dummyDelegationHash, address(0), redeemer);
+        nativeEnforcer.beforeHook(terms_, "", singleDefaultMode, execData2_, dummyDelegationHash, address(0), redeemer);
     }
 
     ////////////////////// Successful and Multiple Transfers //////////////////////
@@ -117,7 +113,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
             address(this), redeemer, dummyDelegationHash, periodAmount, periodDuration, startDate, transferAmount_, block.timestamp
         );
 
-        nativeEnforcer.beforeHook(terms_, "", singleMode, execData_, dummyDelegationHash, address(0), redeemer);
+        nativeEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
 
         (uint256 availableAfter_,,) = nativeEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_);
         assertEq(availableAfter_, periodAmount - transferAmount_, "Available reduced by transfer");
@@ -128,11 +124,11 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
         // First transfer: 0.4 ether.
         bytes memory execData1_ = _encodeNativeTransfer(beneficiary, 0.4 ether);
-        nativeEnforcer.beforeHook(terms_, "", singleMode, execData1_, dummyDelegationHash, address(0), redeemer);
+        nativeEnforcer.beforeHook(terms_, "", singleDefaultMode, execData1_, dummyDelegationHash, address(0), redeemer);
 
         // Second transfer: 0.3 ether.
         bytes memory execData2_ = _encodeNativeTransfer(beneficiary, 0.3 ether);
-        nativeEnforcer.beforeHook(terms_, "", singleMode, execData2_, dummyDelegationHash, address(0), redeemer);
+        nativeEnforcer.beforeHook(terms_, "", singleDefaultMode, execData2_, dummyDelegationHash, address(0), redeemer);
 
         (uint256 available_,,) = nativeEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_);
         // Expected remaining: 1 ether - 0.4 ether - 0.3 ether = 0.3 ether.
@@ -141,7 +137,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         // Third transfer: attempt to transfer 0.4 ether, which should revert.
         bytes memory execData3_ = _encodeNativeTransfer(beneficiary, 0.4 ether);
         vm.expectRevert("NativeTokenPeriodTransferEnforcer:transfer-amount-exceeded");
-        nativeEnforcer.beforeHook(terms_, "", singleMode, execData3_, dummyDelegationHash, address(0), redeemer);
+        nativeEnforcer.beforeHook(terms_, "", singleDefaultMode, execData3_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Tests that the allowance resets when a new period begins.
@@ -149,7 +145,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
         // First transfer: 0.8 ether.
         bytes memory execData1_ = _encodeNativeTransfer(beneficiary, 0.8 ether);
-        nativeEnforcer.beforeHook(terms_, "", singleMode, execData1_, dummyDelegationHash, address(0), redeemer);
+        nativeEnforcer.beforeHook(terms_, "", singleDefaultMode, execData1_, dummyDelegationHash, address(0), redeemer);
 
         (uint256 availableBefore_,, uint256 periodBefore_) =
             nativeEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_);
@@ -165,9 +161,18 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
 
         // Transfer in new period: 0.3 ether.
         bytes memory execData2_ = _encodeNativeTransfer(beneficiary, 0.3 ether);
-        nativeEnforcer.beforeHook(terms_, "", singleMode, execData2_, dummyDelegationHash, address(0), redeemer);
+        nativeEnforcer.beforeHook(terms_, "", singleDefaultMode, execData2_, dummyDelegationHash, address(0), redeemer);
         (uint256 availableAfterTransfer_,,) = nativeEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_);
         assertEq(availableAfterTransfer_, periodAmount - 0.3 ether, "New period allowance reduced by new transfer");
+    }
+
+    // should fail with invalid call type mode (batch instead of single mode)
+    function test_revertWithInvalidCallTypeMode() public {
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(new Execution[](2));
+
+        vm.expectRevert("CaveatEnforcer:invalid-call-type");
+
+        nativeEnforcer.beforeHook(hex"", hex"", batchDefaultMode, executionCallData_, bytes32(0), address(0), address(0));
     }
 
     ////////////////////// Integration Tests //////////////////////
@@ -229,7 +234,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory execData2_ = _encodeNativeTransfer(beneficiary, transferAmount_2);
         vm.prank(address(delegationManager));
         vm.expectRevert("NativeTokenPeriodTransferEnforcer:transfer-amount-exceeded");
-        nativeEnforcer.beforeHook(terms_, "", singleMode, execData2_, delHash, address(0), redeemer);
+        nativeEnforcer.beforeHook(terms_, "", singleDefaultMode, execData2_, delHash, address(0), redeemer);
     }
 
     /// @notice Integration: Verifies that the allowance resets in a new period for native transfers.

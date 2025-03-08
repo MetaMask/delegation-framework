@@ -2,10 +2,9 @@
 pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
-import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
+import { Execution, Caveat, Delegation } from "../../src/utils/Types.sol";
 import { Counter } from "../utils/Counter.t.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { TimestampEnforcer } from "../../src/enforcers/TimestampEnforcer.sol";
@@ -15,12 +14,9 @@ import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
 contract TimestampEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////// State //////////////////////
 
     TimestampEnforcer public timestampEnforcer;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////// Set up //////////////////////
 
@@ -47,7 +43,9 @@ contract TimestampEnforcerTest is CaveatEnforcerBaseTest {
         uint128 timestampBeforeThreshold_ = 0; // Not using before threshold
         bytes memory inputTerms_ = abi.encodePacked(timestampAfterThreshold_, timestampBeforeThreshold_);
         vm.prank(address(delegationManager));
-        timestampEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        timestampEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     // should SUCCEED to INVOKE method BEFORE timestamp reached
@@ -64,7 +62,9 @@ contract TimestampEnforcerTest is CaveatEnforcerBaseTest {
         uint128 timestampBeforeThreshold_ = uint128(block.timestamp + 1 hours);
         bytes memory inputTerms_ = abi.encodePacked(timestampAfterThreshold_, timestampBeforeThreshold_);
         vm.prank(address(delegationManager));
-        timestampEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        timestampEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     // should SUCCEED to INVOKE method inside of timestamp RANGE
@@ -82,7 +82,9 @@ contract TimestampEnforcerTest is CaveatEnforcerBaseTest {
         skip(1 minutes); // Increase time 1 minute
         bytes memory inputTerms_ = abi.encodePacked(timestampAfterThreshold_, timestampBeforeThreshold_);
         vm.prank(address(delegationManager));
-        timestampEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        timestampEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     ////////////////////// Invalid cases //////////////////////
@@ -103,7 +105,9 @@ contract TimestampEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectRevert("TimestampEnforcer:early-delegation");
 
-        timestampEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        timestampEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     // should FAIL to INVOKE method AFTER timestamp reached
@@ -122,7 +126,9 @@ contract TimestampEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory inputTerms_ = abi.encodePacked(timestampAfterThreshold_, timestampBeforeThreshold_);
         vm.prank(address(delegationManager));
         vm.expectRevert("TimestampEnforcer:expired-delegation");
-        timestampEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        timestampEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     // should FAIL to INVOKE method BEFORE timestamp RANGE
@@ -140,7 +146,9 @@ contract TimestampEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory inputTerms_ = abi.encodePacked(timestampAfterThreshold_, timestampBeforeThreshold_);
         vm.prank(address(delegationManager));
         vm.expectRevert("TimestampEnforcer:early-delegation");
-        timestampEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        timestampEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     // should FAIL to INVOKE method AFTER timestamp RANGE
@@ -159,7 +167,9 @@ contract TimestampEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory inputTerms_ = abi.encodePacked(timestampAfterThreshold_, timestampBeforeThreshold_);
         vm.prank(address(delegationManager));
         vm.expectRevert("TimestampEnforcer:expired-delegation");
-        timestampEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        timestampEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     // should FAIL to INVOKE with invalid input terms
@@ -169,11 +179,11 @@ contract TimestampEnforcerTest is CaveatEnforcerBaseTest {
 
         bytes memory terms_ = abi.encodePacked(uint32(1));
         vm.expectRevert("TimestampEnforcer:invalid-terms-length");
-        timestampEnforcer.beforeHook(terms_, hex"", mode, executionCallData_, bytes32(0), address(0), address(0));
+        timestampEnforcer.beforeHook(terms_, hex"", singleDefaultMode, executionCallData_, bytes32(0), address(0), address(0));
 
         terms_ = abi.encodePacked(uint256(1), uint256(1));
         vm.expectRevert("TimestampEnforcer:invalid-terms-length");
-        timestampEnforcer.beforeHook(terms_, hex"", mode, executionCallData_, bytes32(0), address(0), address(0));
+        timestampEnforcer.beforeHook(terms_, hex"", singleDefaultMode, executionCallData_, bytes32(0), address(0), address(0));
     }
     ////////////////////// Integration //////////////////////
 

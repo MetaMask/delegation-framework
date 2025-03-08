@@ -2,7 +2,6 @@
 pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
@@ -15,13 +14,10 @@ import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 import { BasicERC20, IERC20 } from "../utils/BasicERC20.t.sol";
 
 contract AllowedTargetsEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////////////// State //////////////////////////////
     AllowedTargetsEnforcer public allowedTargetsEnforcer;
     BasicERC20 public testFToken1;
     BasicERC20 public testFToken2;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////// Set up //////////////////////
 
@@ -48,7 +44,13 @@ contract AllowedTargetsEnforcerTest is CaveatEnforcerBaseTest {
         // beforeHook, mimicking the behavior of Alice's DeleGator
         vm.prank(address(delegationManager));
         allowedTargetsEnforcer.beforeHook(
-            abi.encodePacked(address(aliceDeleGatorCounter)), hex"", mode, executionCallData_, keccak256(""), address(0), address(0)
+            abi.encodePacked(address(aliceDeleGatorCounter)),
+            hex"",
+            singleDefaultMode,
+            executionCallData_,
+            keccak256(""),
+            address(0),
+            address(0)
         );
     }
 
@@ -67,7 +69,7 @@ contract AllowedTargetsEnforcerTest is CaveatEnforcerBaseTest {
         allowedTargetsEnforcer.beforeHook(
             abi.encodePacked(address(bobDeleGatorCounter), address(carolDeleGatorCounter), address(aliceDeleGatorCounter)),
             hex"",
-            mode,
+            singleDefaultMode,
             executionCallData_,
             keccak256(""),
             address(0),
@@ -104,12 +106,21 @@ contract AllowedTargetsEnforcerTest is CaveatEnforcerBaseTest {
         allowedTargetsEnforcer.beforeHook(
             abi.encodePacked(address(bobDeleGatorCounter), address(carolDeleGatorCounter), address(aliceDeleGatorCounter)),
             hex"",
-            mode,
+            singleDefaultMode,
             executionCallData_,
             keccak256(""),
             address(0),
             address(0)
         );
+    }
+
+    // should fail with invalid call type mode (batch instead of single mode)
+    function test_revertWithInvalidCallTypeMode() public {
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(new Execution[](2));
+
+        vm.expectRevert("CaveatEnforcer:invalid-call-type");
+
+        allowedTargetsEnforcer.beforeHook(hex"", hex"", batchDefaultMode, executionCallData_, bytes32(0), address(0), address(0));
     }
 
     ////////////////////// Integration //////////////////////

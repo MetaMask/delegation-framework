@@ -2,7 +2,6 @@
 pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import "../../src/utils/Types.sol";
@@ -19,7 +18,6 @@ contract OwnershipTransferEnforcerTest is CaveatEnforcerBaseTest {
     address dm;
     Execution transferOwnershipExecution;
     bytes transferOwnershipExecutionCallData;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////// Set up //////////////////////
 
@@ -60,7 +58,7 @@ contract OwnershipTransferEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.expectEmit(true, true, true, true, address(enforcer));
         emit OwnershipTransferEnforcer.OwnershipTransferEnforced(dm, delegate, bytes32(0), newOwner);
-        enforcer.beforeHook(terms_, hex"", mode, transferOwnershipExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, transferOwnershipExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     ////////////////////// Errors //////////////////////
@@ -87,7 +85,7 @@ contract OwnershipTransferEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(dm);
         vm.expectRevert("OwnershipTransferEnforcer:invalid-contract");
-        enforcer.beforeHook(terms_, hex"", mode, transferOwnershipExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, transferOwnershipExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Reverts if the method called is not transferOwnership
@@ -104,7 +102,7 @@ contract OwnershipTransferEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(dm);
         vm.expectRevert("OwnershipTransferEnforcer:invalid-method");
-        enforcer.beforeHook(terms_, hex"", mode, transferOwnershipExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, transferOwnershipExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Reverts if the execution call data length is invalid
@@ -121,10 +119,17 @@ contract OwnershipTransferEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(dm);
         vm.expectRevert("OwnershipTransferEnforcer:invalid-execution-length");
-        enforcer.beforeHook(terms_, hex"", mode, transferOwnershipExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, transferOwnershipExecutionCallData, bytes32(0), delegator, delegate);
     }
 
-    //////////////////////  Integration  //////////////////////
+    // should fail with invalid call type mode (batch instead of single mode)
+    function test_revertWithInvalidCallTypeMode() public {
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(new Execution[](2));
+
+        vm.expectRevert("CaveatEnforcer:invalid-call-type");
+
+        enforcer.beforeHook(hex"", hex"", batchDefaultMode, executionCallData_, bytes32(0), address(0), address(0));
+    }
 
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {
         return ICaveatEnforcer(address(enforcer));

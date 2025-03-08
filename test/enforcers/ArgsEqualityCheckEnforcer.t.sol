@@ -1,20 +1,15 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
-
 import "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { ArgsEqualityCheckEnforcer } from "../../src/enforcers/ArgsEqualityCheckEnforcer.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
 contract ArgsEqualityCheckEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////// State //////////////////////
 
     ArgsEqualityCheckEnforcer public argsEqualityCheckEnforcer;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////// Set up //////////////////////
 
@@ -31,7 +26,7 @@ contract ArgsEqualityCheckEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = bytes("This is an example");
         bytes memory args_ = bytes("This is an example");
         argsEqualityCheckEnforcer.beforeHook(
-            terms_, args_, mode, abi.encode(new Execution[](1)[0]), bytes32(0), address(0), address(0)
+            terms_, args_, singleDefaultMode, abi.encode(new Execution[](1)[0]), bytes32(0), address(0), address(0)
         );
     }
 
@@ -47,7 +42,7 @@ contract ArgsEqualityCheckEnforcerTest is CaveatEnforcerBaseTest {
         vm.expectEmit(true, true, true, true, address(argsEqualityCheckEnforcer));
         emit ArgsEqualityCheckEnforcer.DifferentArgsAndTerms(address(delegationManager), redeemer_, bytes32(0), terms_, args_);
         argsEqualityCheckEnforcer.beforeHook(
-            terms_, args_, mode, abi.encode(new Execution[](1)[0]), bytes32(0), address(0), redeemer_
+            terms_, args_, singleDefaultMode, abi.encode(new Execution[](1)[0]), bytes32(0), address(0), redeemer_
         );
     }
 

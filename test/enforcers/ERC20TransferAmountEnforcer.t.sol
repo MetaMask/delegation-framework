@@ -2,10 +2,9 @@
 pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
-import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
+import { Execution, Caveat, Delegation } from "../../src/utils/Types.sol";
 import { Counter } from "../utils/Counter.t.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { ERC20TransferAmountEnforcer } from "../../src/enforcers/ERC20TransferAmountEnforcer.sol";
@@ -15,13 +14,10 @@ import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol"
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
 contract ERC20TransferAmountEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////////////// State //////////////////////////////
     ERC20TransferAmountEnforcer public erc20TransferAmountEnforcer;
     BasicERC20 public basicERC20;
     BasicERC20 public invalidERC20;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////////////// Events //////////////////////////////
     event IncreasedSpentMap(
@@ -69,7 +65,7 @@ contract ERC20TransferAmountEnforcerTest is CaveatEnforcerBaseTest {
         vm.expectEmit(true, true, true, true, address(erc20TransferAmountEnforcer));
         emit IncreasedSpentMap(address(delegationManager), address(0), delegationHash_, spendingLimit_, 1 ether);
         erc20TransferAmountEnforcer.beforeHook(
-            inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0)
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
         );
 
         assertEq(erc20TransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), spendingLimit_);
@@ -107,7 +103,7 @@ contract ERC20TransferAmountEnforcerTest is CaveatEnforcerBaseTest {
         vm.expectRevert("ERC20TransferAmountEnforcer:allowance-exceeded");
 
         erc20TransferAmountEnforcer.beforeHook(
-            inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0)
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
         );
 
         assertEq(erc20TransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), 0);
@@ -145,7 +141,7 @@ contract ERC20TransferAmountEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectRevert("ERC20TransferAmountEnforcer:invalid-contract");
         erc20TransferAmountEnforcer.beforeHook(
-            inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0)
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
         );
 
         assertEq(erc20TransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), 0);
@@ -183,7 +179,7 @@ contract ERC20TransferAmountEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectRevert("ERC20TransferAmountEnforcer:invalid-execution-length");
         erc20TransferAmountEnforcer.beforeHook(
-            inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0)
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
         );
 
         assertEq(erc20TransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), 0);
@@ -219,7 +215,7 @@ contract ERC20TransferAmountEnforcerTest is CaveatEnforcerBaseTest {
         vm.expectRevert("ERC20TransferAmountEnforcer:invalid-method");
 
         erc20TransferAmountEnforcer.beforeHook(
-            inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0)
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
         );
 
         assertEq(erc20TransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), 0);
@@ -255,7 +251,7 @@ contract ERC20TransferAmountEnforcerTest is CaveatEnforcerBaseTest {
         vm.expectRevert("ERC20TransferAmountEnforcer:invalid-terms-length");
 
         erc20TransferAmountEnforcer.beforeHook(
-            inputTerms_, hex"", mode, executionCallData_, delegationHash_, address(0), address(0)
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
         );
 
         assertEq(erc20TransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), 0);
@@ -318,6 +314,24 @@ contract ERC20TransferAmountEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(_getFtBalanceOf(address(users.alice.deleGator)), 98 ether);
         assertEq(_getFtBalanceOf(address(users.bob.deleGator)), 2 ether);
         assertEq(erc20TransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), spendingLimit_);
+    }
+
+    // should fail with invalid call type mode (batch instead of single mode)
+    function test_revertWithInvalidCallTypeMode() public {
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(new Execution[](2));
+
+        vm.expectRevert("CaveatEnforcer:invalid-call-type");
+
+        erc20TransferAmountEnforcer.beforeHook(
+            hex"", hex"", batchDefaultMode, executionCallData_, bytes32(0), address(0), address(0)
+        );
+    }
+
+    // should fail with invalid execution type mode (try instead of default mode)
+    function test_revertWithInvalidExecutionTypeMode() public {
+        vm.expectRevert("CaveatEnforcer:invalid-execution-type");
+
+        erc20TransferAmountEnforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
     }
 
     function _getFtBalanceOf(address _user) internal view returns (uint256) {
