@@ -539,6 +539,28 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         delegationMetaSwapAdapter.swapByDelegation(apiData_, emptyDelegations_);
     }
 
+    // Test that swapByDelegation reverts when called from a non-leaf delegator
+    function test_revert_swapByDelegation_nonLeafDelegator() public {
+        _setUpMockContracts();
+        bytes memory apiData_ = _encodeApiData(aggregatorId, IERC20(tokenA), amountFrom, swapDataTokenAtoTokenB);
+        Delegation memory delegation_ = Delegation({
+            delegate: address(delegationMetaSwapAdapter),
+            delegator: address(vault.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: new Caveat[](0),
+            salt: 0,
+            signature: hex""
+        });
+        delegation_ = signDelegation(vault, delegation_);
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation_;
+
+        // Using invalid caller, must be the vault not subVault
+        vm.prank(address(subVault.deleGator));
+        vm.expectRevert(DelegationMetaSwapAdapter.NotLeafDelegator.selector);
+        delegationMetaSwapAdapter.swapByDelegation(apiData_, delegations_);
+    }
+
     // Test that swapByDelegation reverts if tokenFrom equals tokenTo.
     function test_revert_swapByDelegation_identicalTokens() public {
         _setUpMockContracts();
