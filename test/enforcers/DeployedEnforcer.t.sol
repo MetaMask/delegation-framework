@@ -260,7 +260,6 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
         // NOTE: Execution isn't very relevant for this test.
         Execution memory execution_ =
             Execution({ target: predictedAddr_, value: 0, callData: abi.encodeWithSelector(Counter.setCount.selector, 1) });
-        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // Check that the contract hasn't been deployed yet
         bytes memory initialCode_ = predictedAddr_.code;

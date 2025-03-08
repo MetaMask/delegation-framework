@@ -82,19 +82,19 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // Increase by 100, check for recipient
         vm.prank(dm);
-        enforcer.beforeHook(terms1_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms1_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(delegator);
         token.mint(recipient, 100);
         vm.prank(dm);
-        enforcer.afterHook(terms1_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.afterHook(terms1_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
         // Increase by 100, check for delegator as recipient
         vm.prank(dm);
-        enforcer.beforeHook(terms2_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(delegator);
         token.mint(delegator, 100);
         vm.prank(dm);
-        enforcer.afterHook(terms2_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.afterHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // ////////////////////// Errors //////////////////////
@@ -146,12 +146,12 @@ contract ERC20BalanceGteEnforcerTest is CaveatEnforcerBaseTest {
 
         // BeforeHook should cache the recipient's balance
         vm.prank(dm);
-        enforcer.beforeHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
         // No tokens are minted to the recipient, so balance shouldn't increase
         vm.prank(dm);
         vm.expectRevert(bytes("ERC20BalanceGteEnforcer:balance-not-gt"));
-        enforcer.afterHook(terms_, hex"", mode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.afterHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Validates the terms are well formed
