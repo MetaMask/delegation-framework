@@ -25,7 +25,7 @@ contract ERC20BalanceGteEnforcer is CaveatEnforcer {
     /**
      * @notice Generates the key that identifies the run. Produced by the hash of the values used.
      * @param _caller Address of the sender calling the enforcer.
-     * @param _token Token being compared in the beforeHook and beforeHook.
+     * @param _token Token being compared in the beforeHook and afterHook.
      * @param _delegationHash The hash of the delegation.
      * @return The hash to be used as key of the mapping.
      */
@@ -37,8 +37,8 @@ contract ERC20BalanceGteEnforcer is CaveatEnforcer {
 
     /**
      * @notice This function caches the delegators ERC20 balance before the delegation is executed.
-     * @param _terms 52 packed bytes where: the first 20 bytes are the address of the token, the next 32 bytes
-     * are the amount the balance should be greater than
+     * @param _terms 72 packed bytes where: the first 20 bytes is the address of the recipient, the next 20 bytes
+     * is the address of the token, the next 32 bytes is the amount of tokens the balance should be greater than or equal to
      */
     function beforeHook(
         bytes calldata _terms,
@@ -46,24 +46,24 @@ contract ERC20BalanceGteEnforcer is CaveatEnforcer {
         ModeCode,
         bytes calldata,
         bytes32 _delegationHash,
-        address _delegator,
+        address,
         address
     )
         public
         override
     {
-        (address token_,) = getTermsInfo(_terms);
+        (address recipient_, address token_,) = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, token_, _delegationHash);
         require(!isLocked[hashKey_], "ERC20BalanceGteEnforcer:enforcer-is-locked");
         isLocked[hashKey_] = true;
-        uint256 balance_ = IERC20(token_).balanceOf(_delegator);
+        uint256 balance_ = IERC20(token_).balanceOf(recipient_);
         balanceCache[hashKey_] = balance_;
     }
 
     /**
      * @notice This function enforces that the delegators ERC20 balance has increased by at least the amount provided.
-     * @param _terms 52 packed bytes where: the first 20 bytes are the address of the token, the next 32 bytes
-     * are the amount the balance should be greater than
+     * @param _terms 72 packed bytes where: the first 20 bytes is the address of the recipient, the next 20 bytes
+     * is the address of the token, the next 32 bytes is the amount the balance should be greater than
      */
     function afterHook(
         bytes calldata _terms,
@@ -71,29 +71,31 @@ contract ERC20BalanceGteEnforcer is CaveatEnforcer {
         ModeCode,
         bytes calldata,
         bytes32 _delegationHash,
-        address _delegator,
+        address,
         address
     )
         public
         override
     {
-        (address token_, uint256 amount_) = getTermsInfo(_terms);
+        (address recipient_, address token_, uint256 amount_) = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, token_, _delegationHash);
         delete isLocked[hashKey_];
-        uint256 balance_ = IERC20(token_).balanceOf(_delegator);
+        uint256 balance_ = IERC20(token_).balanceOf(recipient_);
         require(balance_ >= balanceCache[hashKey_] + amount_, "ERC20BalanceGteEnforcer:balance-not-gt");
     }
 
     /**
      * @notice Decodes the terms used in this CaveatEnforcer.
      * @param _terms encoded data that is used during the execution hooks.
+     * @return recipient_ The address of the recipient.
      * @return token_ The address of the token.
      * @return amount_ The amount the balance should be greater than.
      */
-    function getTermsInfo(bytes calldata _terms) public pure returns (address token_, uint256 amount_) {
-        require(_terms.length == 52, "ERC20BalanceGteEnforcer:invalid-terms-length");
-        token_ = address(bytes20(_terms[:20]));
-        amount_ = uint256(bytes32(_terms[20:]));
+    function getTermsInfo(bytes calldata _terms) public pure returns (address recipient_, address token_, uint256 amount_) {
+        require(_terms.length == 72, "ERC20BalanceGteEnforcer:invalid-terms-length");
+        recipient_ = address(bytes20(_terms[:20]));
+        token_ = address(bytes20(_terms[20:40]));
+        amount_ = uint256(bytes32(_terms[40:]));
     }
 
     ////////////////////////////// Internal Methods //////////////////////////////
