@@ -1,10 +1,30 @@
+# Delegation Framework
+
+> [!WARNING]
+> We use tags for audited versions of code releases and the `main` branch is the working development branch. All PRs should be based against `main` branch.
+
+### Getting Started
+
+1. **Fork the repository**:
+
+   - Click the "Fork" button at the top right of the repository page.
+
+2. **Clone your fork**:
+   ```shell
+   git clone https://github.com/<your-username>/delegation-framework.git
+   ```
+3. **Create Working Branch**:
+   ```shell
+   git checkout -b feat/example-branch
+   ```
+
 # DeleGator Smart Account
 
 A DeleGator Smart Account is a 4337-compatible Smart Account that implements delegation functionality. An end user will operate through a DeleGatorProxy which uses a chosen DeleGator implementation.
 
 ## Overview
 
-An end user controls a DeleGator Proxy that USES a DeleGator Implementation which IMPLEMENTS DeleGatorCore and interacts with a DelegationManager.
+An end user controls a DeleGator Proxy that USES a DeleGator Implementation, which IMPLEMENTS DeleGatorCore and interacts with a DelegationManager.
 
 ### Delegations
 
@@ -24,6 +44,12 @@ The DeleGator Core includes the Delegation execution and ERC-4337 functionality 
 
 [Read more on "DeleGator Core" ->](/documents/DeleGatorCore.md)
 
+### EIP7702 DeleGator Core
+
+The DeleGator 7702 Core includes the Delegation execution and ERC-4337 functionality to make the Smart Account work but without UUPS proxy functionalities.
+
+[Read more on "EIP7702 DeleGator Core" ->](/documents/EIP7702DeleGator.md)
+
 ### DeleGator Implementation
 
 A DeleGator Implementation contains the logic for a DeleGator Smart Account. Each DeleGator Implementation must include the required methods for a DeleGator Smart Account, namely the signature scheme to be used for verifying access to control the contract. A few examples are the MultiSigDeleGator and the HybridDeleGator.
@@ -31,6 +57,8 @@ A DeleGator Implementation contains the logic for a DeleGator Smart Account. Eac
 [Read more on "MultiSig DeleGator" ->](/documents/MultisigDeleGator.md)
 
 [Read more on "Hybrid DeleGator" ->](/documents/HybridDeleGator.md)
+
+[Read more on "EIP7702 Stateless DeleGator" ->](/documents/EIP7702DeleGator.md)
 
 ### Delegation Manager
 
@@ -52,7 +80,7 @@ Developers can build new Caveat Enforcers for their own use cases, and the possi
 
 There's several touchpoints where developers may be using or extending a DeleGator Smart Account.
 
-- Developers can build custom DeleGator Implementations that use the [DeleGator Core](/src/DeleGatorCore.sol) to create new ways for end users to control and manage their Smart Accounts.
+- Developers can build custom DeleGator Implementations that use the [DeleGator Core](/src/DeleGatorCore.sol) or [EIP7702 DeleGator Core](/src/EIP7702/EIP7702DeleGatorCore.sol) to create new ways for end users to control and manage their Smart Accounts.
 - Developers can write any contract that meets the [DeleGator Core Interface](/src/interfaces/IDeleGatorCore.sol) to create novel ways of delegating functionality.
 - Developers can create custom Caveat Enforcers to refine the capabilities of a delegation for any use case they imagine.
 - Developers can craft Delegations to then share onchain capabilities entirely offchain.
@@ -75,38 +103,53 @@ forge test
 
 #### Deploying
 
-0. Copy `.env.example` to `.env` and populate the variables you plan to use if you plan to deploy any contracts.
+1. Copy `.env.example` to `.env` and populate the variables depending on the deployment scripts that you will execute.
 
 ```shell
 source .env
 ```
 
-1. Use [Anvil](https://book.getfoundry.sh/reference/anvil/) to run a local fork of a blockchain to develop in an isolated environment.
+2. For local testing, use [Anvil](https://book.getfoundry.sh/reference/anvil/) to run a local fork of a blockchain to develop in an isolated environment. Or obtain the RPC url for the blockchain to deploy.
 
 ```shell
+# Example of a forked local environment using anvil
 anvil -f <your_rpc_url>
 ```
 
-2. Deploy the necessary environment contracts.
+3. Deploy the necessary contracts.
 
 > NOTE: As this system matures, this step will no longer be required for public chains where the DeleGator is in use.
 
 ```shell
-forge script script/DeployEnvironmentSetUp.s.sol --rpc-url <your_rpc_url> --private-key $PRIVATE_KEY --broadcast
+# Deploys the Delegation Manager, Multisig and Hybrid DeleGator implementations
+forge script script/DeployDelegationFramework.s.sol --rpc-url <your_rpc_url> --private-key $PRIVATE_KEY --broadcast
+
+# Deploys all the caveat enforcers
+forge script script/DeployCaveatEnforcers.s.sol --rpc-url <your_rpc_url> --private-key $PRIVATE_KEY --broadcast
+
+# Deploys the EIP7702 Staless DeleGator
+forge script script/DeployEIP7702StatelessDeleGator.s.sol --rpc-url <your_rpc_url> --private-key $PRIVATE_KEY --broadcast
+
+# Deploys a MultisigDeleGator on a UUPS proxy
+forge script script/DeployMultiSigDeleGator.s.sol --private-key $PRIVATE_KEY --broadcast
 ```
 
 ### Javascript
 
-Read more [here](https://www.notion.so/DeleGator-Developer-Guide-aaa11e5462e8422a85bc8ad70b8d14dc?pvs=4).
+Currently in Gated Alpha phase. Sign up to be an early partner [here](https://gator.metamask.io).
 
 ### Notes
 
-- We're building against solidity version [0.8.23](https://github.com/ethereum/solidity/releases/tag/v0.8.23) for the time being.
+- We're building against Solidity [v0.8.23](https://github.com/ethereum/solidity/releases/tag/v0.8.23) for the time being.
 - Format on save using the Forge formatter.
 
 ### Style Guide
 
 [Read more on "Style Guide" ->](/documents/StyleGuide.md)
+
+### Core Contributors
+
+[Dan Finlay](https://github.com/danfinlay), [Ryan McPeck](https://github.com/McOso), [Dylan DesRosier](https://github.com/dylandesrosier), [Aditya Sharma](https://github.com/destroyersrt), [Hanzel Anchia Mena](https://github.com/hanzel98), [Idris Bowman](https://github.com/V00D00-child), [Jeff Smale](https://github.com/jeffsmale90), [Kevin Bluer](https://github.com/kevinbluer)
 
 ## Relevant Documents
 
@@ -118,3 +161,7 @@ Read more [here](https://www.notion.so/DeleGator-Developer-Guide-aaa11e5462e8422
 - [EIP-4337](https://eips.ethereum.org/EIPS/eip-4337)
 - [EIP-7201](https://eips.ethereum.org/EIPS/eip-7201)
 - [EIP-7212](https://eips.ethereum.org/EIPS/eip-7212)
+- [EIP-7579](https://eips.ethereum.org/EIPS/eip-7579)
+- [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702)
+- [EIP-7710](https://eips.ethereum.org/EIPS/eip-7710)
+- [EIP-7821](https://eips.ethereum.org/EIPS/eip-7821)

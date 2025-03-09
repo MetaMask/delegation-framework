@@ -3,7 +3,7 @@ pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
 
-import { EIP712_DOMAIN_TYPEHASH, DELEGATION_TYPEHASH, CAVEAT_TYPEHASH } from "../../src/utils/Typehashes.sol";
+import { EIP712_DOMAIN_TYPEHASH, DELEGATION_TYPEHASH, CAVEAT_TYPEHASH } from "../../src/utils/Constants.sol";
 
 contract TypehashTest is Test {
     ////////////////////////////// State //////////////////////////////

@@ -2,7 +2,7 @@
 pragma solidity 0.8.23;
 
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
-import { Action } from "../utils/Types.sol";
+import { ModeCode } from "../utils/Types.sol";
 
 /**
  * @title Limited Calls Enforcer Contract
@@ -30,7 +30,8 @@ contract LimitedCallsEnforcer is CaveatEnforcer {
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
-        Action calldata,
+        ModeCode,
+        bytes calldata,
         bytes32 _delegationHash,
         address,
         address _redeemer

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { IDeleGatorCoreFull } from "../../src/interfaces/IDeleGatorCoreFull.sol";
+import { DeleGatorCore } from "../../src/DeleGatorCore.sol";
 
 struct TestUser {
     string name;
     address payable addr;
     uint256 privateKey;
-    IDeleGatorCoreFull deleGator;
+    DeleGatorCore deleGator;
     uint256 x;
     uint256 y;
 }
@@ -28,7 +28,8 @@ struct TestUsers {
  */
 enum Implementation {
     MultiSig, // MultiSigDeleGator is a DeleGator that is owned by a set of EOA addresses.
-    Hybrid // HybridDeleGator is a DeleGator that is owned by a set of P256 Keys and EOA
+    Hybrid, // HybridDeleGator is a DeleGator that is owned by a set of P256 Keys and EOA
+    EIP7702Stateless // EIP7702Stateless is a DeleGator that is owned by the EIP7702 EOA
 
 }
 

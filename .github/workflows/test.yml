@@ -26,13 +26,15 @@ jobs:
       - name: Install Foundry
         uses: MetaMask/foundry-toolchain@v1
         with:
-          version: nightly
+          version: stable
 
       - name: Run Forge Install
         run: forge install
 
       - name: Check contract sizes
-        run: forge build --sizes --skip test --skip script
+        run: forge build --sizes --skip test --skip script --optimize true
 
       - name: Run tests
         run: forge test -vvv
+        env:
+          LINEA_RPC_URL: ${{ secrets.LINEA_RPC_URL }}

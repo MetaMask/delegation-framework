@@ -2,15 +2,19 @@
 pragma solidity 0.8.23;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
-import { Action } from "../utils/Types.sol";
+import { ModeCode } from "../utils/Types.sol";
 
 /**
  * @title ERC20TransferAmountEnforcer
  * @dev This contract enforces the transfer limit for ERC20 tokens.
+ * @dev This caveat enforcer only works when the execution is in single mode.
  */
 contract ERC20TransferAmountEnforcer is CaveatEnforcer {
+    using ExecutionLib for bytes;
+
     ////////////////////////////// State //////////////////////////////
 
     mapping(address delegationManager => mapping(bytes32 delegationHash => uint256 amount)) public spentMap;
@@ -27,36 +31,25 @@ contract ERC20TransferAmountEnforcer is CaveatEnforcer {
      * @dev This function enforces the transfer limit before the transaction is performed.
      * @param _terms The ERC20 token address, and the numeric maximum amount that the recipient may transfer on the signer's
      * behalf.
-     * @param _action The transaction the delegate might try to perform.
+     * @param _mode The mode of the execution.
+     * @param _executionCallData The transaction the delegate might try to perform.
      * @param _delegationHash The hash of the delegation being operated on.
      */
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
-        Action calldata _action,
+        ModeCode _mode,
+        bytes calldata _executionCallData,
         bytes32 _delegationHash,
         address,
         address _redeemer
     )
         public
         override
+        onlySingleCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
-        require(_action.data.length == 68, "ERC20TransferAmountEnforcer:invalid-action-length");
-
-        (address allowedContract_, uint256 limit_) = getTermsInfo(_terms);
-        address targetContract_ = _action.to;
-        bytes4 allowedMethod_ = IERC20.transfer.selector;
-
-        require(allowedContract_ == targetContract_, "ERC20TransferAmountEnforcer:invalid-contract");
-
-        bytes4 targetSig_ = bytes4(_action.data[0:4]);
-        require(targetSig_ == allowedMethod_, "ERC20TransferAmountEnforcer:invalid-method");
-
-        uint256 sending_ = uint256(bytes32(_action.data[36:68]));
-
-        uint256 spent_ = spentMap[msg.sender][_delegationHash] += sending_;
-        require(spent_ <= limit_, "ERC20TransferAmountEnforcer:allowance-exceeded");
-
+        (uint256 limit_, uint256 spent_) = _validateAndIncrease(_terms, _executionCallData, _delegationHash);
         emit IncreasedSpentMap(msg.sender, _redeemer, _delegationHash, limit_, spent_);
     }
 
@@ -71,5 +64,36 @@ contract ERC20TransferAmountEnforcer is CaveatEnforcer {
 
         allowedContract_ = address((bytes20(_terms[:20])));
         maxTokens_ = uint256(bytes32(_terms[20:]));
+    }
+
+    /**
+     * @notice Returns the amount of tokens that the delegator has already spent.
+     * @param _terms The ERC20 token address, and the numeric maximum amount that the recipient may transfer
+     * @param _executionCallData The transaction the delegate might try to perform.
+     * @param _delegationHash The hash of the delegation being operated on.
+     * @return limit_ The maximum amount of tokens that the delegator is allowed to spend.
+     * @return spent_ The amount of tokens that the delegator has spent.
+     */
+    function _validateAndIncrease(
+        bytes calldata _terms,
+        bytes calldata _executionCallData,
+        bytes32 _delegationHash
+    )
+        internal
+        returns (uint256 limit_, uint256 spent_)
+    {
+        (address target_,, bytes calldata callData_) = _executionCallData.decodeSingle();
+
+        require(callData_.length == 68, "ERC20TransferAmountEnforcer:invalid-execution-length");
+
+        address allowedContract_;
+        (allowedContract_, limit_) = getTermsInfo(_terms);
+
+        require(allowedContract_ == target_, "ERC20TransferAmountEnforcer:invalid-contract");
+
+        require(bytes4(callData_[0:4]) == IERC20.transfer.selector, "ERC20TransferAmountEnforcer:invalid-method");
+
+        spent_ = spentMap[msg.sender][_delegationHash] += uint256(bytes32(callData_[36:68]));
+        require(spent_ <= limit_, "ERC20TransferAmountEnforcer:allowance-exceeded");
     }
 }

@@ -4,7 +4,7 @@ pragma solidity 0.8.23;
 import { BitMaps } from "@openzeppelin/contracts/utils/structs/BitMaps.sol";
 
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
-import { Action } from "../utils/Types.sol";
+import { ModeCode } from "../utils/Types.sol";
 
 /**
  * @title IdEnforcer Contract
@@ -31,7 +31,8 @@ contract IdEnforcer is CaveatEnforcer {
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
-        Action calldata,
+        ModeCode,
+        bytes calldata,
         bytes32,
         address _delegator,
         address _redeemer
@@ -42,7 +43,7 @@ contract IdEnforcer is CaveatEnforcer {
         uint256 id_ = getTermsInfo(_terms);
         require(!getIsUsed(msg.sender, _delegator, id_), "IdEnforcer:id-already-used");
         isUsedId[msg.sender][_delegator].set(id_);
-        emit UsedId(msg.sender, _redeemer, _delegator, id_);
+        emit UsedId(msg.sender, _delegator, _redeemer, id_);
     }
 
     /**

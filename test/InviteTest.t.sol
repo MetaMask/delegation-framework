@@ -3,16 +3,19 @@ pragma solidity 0.8.23;
 
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { BaseTest } from "./utils/BaseTest.t.sol";
-import { Delegation, Action, PackedUserOperation, Caveat } from "../src/utils/Types.sol";
+import { Delegation, Execution, PackedUserOperation, Caveat, ModeCode } from "../src/utils/Types.sol";
 import { Implementation, SignatureType } from "./utils/Types.t.sol";
 import { Counter } from "./utils/Counter.t.sol";
 import { MultiSigDeleGator } from "../src/MultiSigDeleGator.sol";
-import { IDeleGatorCoreFull } from "../src/interfaces/IDeleGatorCoreFull.sol";
-import { SimpleFactory } from "./utils/SimpleFactory.sol";
+import { DeleGatorCore } from "../src/DeleGatorCore.sol";
+import { SimpleFactory } from "../src/utils/SimpleFactory.sol";
 import { AllowedTargetsEnforcer } from "../src/enforcers/AllowedTargetsEnforcer.sol";
 import { AllowedMethodsEnforcer } from "../src/enforcers/AllowedMethodsEnforcer.sol";
+import { EXECUTE_SINGULAR_SIGNATURE } from "./utils/Constants.sol";
+import { UserOperationLib } from "./utils/UserOperationLib.t.sol";
 
 contract InviteTest is BaseTest {
     using MessageHashUtils for bytes32;
@@ -63,23 +66,23 @@ contract InviteTest is BaseTest {
             abi.encodeWithSelector(SimpleFactory.deploy.selector, abi.encodePacked(type(ERC1967Proxy).creationCode, args_), salt)
         );
 
-        // Create action to send ETH to Bob
-        Action memory action_ = Action({ to: address(users.bob.addr), value: 1, data: hex"" });
+        // Create execution to send ETH to Bob
+        Execution memory execution_ = Execution({ target: address(users.bob.addr), value: 1, callData: hex"" });
 
-        // Give the new MultiSigDeleGator some funds to pay for the action
+        // Give the new MultiSigDeleGator some funds to pay for the execution
         vm.deal(predictedAddr_, 100);
 
         // Preload the EntryPoint with funds for the new MultiSigDeleGator
         vm.prank(users.alice.addr);
         entryPoint.depositTo{ value: 5 ether }(predictedAddr_);
 
-        // Fetch balance before action executes
+        // Fetch balance before execution executes
         uint256 balanceBefore_ = users.bob.addr.balance;
 
         // Create and Sign UserOp with Bob's key
-        PackedUserOperation memory userOp_ = createAndSignUserOp(
-            users.bob, predictedAddr_, abi.encodeWithSelector(IDeleGatorCoreFull.execute.selector, action_), initcode_
-        );
+        PackedUserOperation memory userOp_ =
+            createUserOp(predictedAddr_, abi.encodeWithSignature(EXECUTE_SINGULAR_SIGNATURE, execution_), initcode_);
+        userOp_.signature = signHash(users.bob, getPackedUserOperationTypedDataHash(predictedAddr_, userOp_, address(entryPoint)));
 
         // Validate the contract hasn't been deployed yet
         assertEq(predictedAddr_.code, hex"");
@@ -87,7 +90,7 @@ contract InviteTest is BaseTest {
         // Submit the UserOp through the Bundler
         submitUserOp_Bundler(userOp_);
 
-        // Fetch balance after action executes
+        // Fetch balance after execution executes
         uint256 balanceAfter_ = users.bob.addr.balance;
         assertEq(balanceAfter_, balanceBefore_ + 1);
 
@@ -149,7 +152,7 @@ contract InviteTest is BaseTest {
             delegation_ = signDelegation(users.alice, delegation_);
         }
 
-        // Give the new MultiSigDeleGator some funds to pay for the action
+        // Give the new MultiSigDeleGator some funds to pay for the execution
         vm.deal(predictedAddr_, 100);
 
         // Preload the EntryPoint with funds for the new MultiSigDeleGator
@@ -160,25 +163,34 @@ contract InviteTest is BaseTest {
         uint256[] memory counts_ = new uint256[](2);
         counts_[0] = aliceDeleGatorCounter.count();
 
-        // Create action to deploy a new MultiSigDeleGator and execute Bob's UserOp
-        Action memory action_;
-        {
-            action_ =
-                Action({ to: address(aliceDeleGatorCounter), value: 0, data: abi.encodeWithSelector(Counter.increment.selector) });
-        }
+        // Create execution to deploy a new MultiSigDeleGator and execute Bob's UserOp
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGatorCounter),
+            value: 0,
+            callData: abi.encodeWithSelector(Counter.increment.selector)
+        });
 
         // Execute Bob's UserOp
-        {
-            Delegation[] memory delegations_ = new Delegation[](1);
-            delegations_[0] = delegation_;
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation_;
 
-            bytes memory userOpCallData_ =
-                abi.encodeWithSelector(IDeleGatorCoreFull.redeemDelegation.selector, abi.encode(delegations_), action_);
-            PackedUserOperation memory userOp_ = createUserOp(predictedAddr_, userOpCallData_, initcode_);
-            bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-            userOp_.signature = signHash(users.bob, userOpHash_.toEthSignedMessageHash());
-            submitUserOp_Bundler(userOp_);
-        }
+        bytes[] memory permissionContexts_ = new bytes[](1);
+        permissionContexts_[0] = abi.encode(delegations_);
+
+        bytes[] memory executionCallDatas_ = new bytes[](1);
+        executionCallDatas_[0] = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
+
+        ModeCode[] memory modes_ = new ModeCode[](1);
+        modes_[0] = singleDefaultMode;
+
+        bytes memory userOpCallData_ =
+            abi.encodeWithSelector(DeleGatorCore.redeemDelegations.selector, permissionContexts_, modes_, executionCallDatas_);
+
+        PackedUserOperation memory userOp_ = createUserOp(predictedAddr_, userOpCallData_, initcode_);
+
+        userOp_.signature = signHash(users.bob, getPackedUserOperationTypedDataHash(predictedAddr_, userOp_, address(entryPoint)));
+
+        submitUserOp_Bundler(userOp_);
 
         // Fetch final count
         counts_[1] = aliceDeleGatorCounter.count();
@@ -188,5 +200,21 @@ contract InviteTest is BaseTest {
         // NOTE: "runtimeCode" is not available for contracts containing immutable variables.
         // Need to generate that code. OR cheat and see if it matches Bob's existing MultiSigDeleGator.
         // assertEq(predictedAddr_.code, address(users.users.bob.deleGator).code);
+    }
+
+    ////////////////////////////// Helper Methods //////////////////////////////
+
+    function getPackedUserOperationTypedDataHash(
+        address _contract,
+        PackedUserOperation memory userOp_,
+        address _entryPoint
+    )
+        internal
+        view
+        returns (bytes32)
+    {
+        return UserOperationLib.getPackedUserOperationTypedDataHash(
+            multiSigDeleGatorImpl.NAME(), multiSigDeleGatorImpl.DOMAIN_VERSION(), block.chainid, _contract, userOp_, _entryPoint
+        );
     }
 }

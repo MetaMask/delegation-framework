@@ -3,21 +3,25 @@ pragma solidity 0.8.23;
 
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import { FCL_ecdsa_utils } from "@freshCryptoLib/FCL_ecdsa_utils.sol";
+import { FCL_ecdsa_utils } from "@FCL/FCL_ecdsa_utils.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { BytesLib } from "@bytes-utils/BytesLib.sol";
 
 import { SigningUtilsLib } from "./utils/SigningUtilsLib.t.sol";
 import { StorageUtilsLib } from "./utils/StorageUtilsLib.t.sol";
 import { Implementation, SignatureType } from "./utils/Types.t.sol";
-import { Action, PackedUserOperation, Caveat, Delegation, Delegation } from "../src/utils/Types.sol";
+import { Execution, PackedUserOperation, Caveat, Delegation } from "../src/utils/Types.sol";
 import { BaseTest } from "./utils/BaseTest.t.sol";
 import { HybridDeleGator } from "../src/HybridDeleGator.sol";
-import { IDeleGatorCoreFull } from "../src/interfaces/IDeleGatorCoreFull.sol";
 import { IDeleGatorCore } from "../src/interfaces/IDeleGatorCore.sol";
+import { DeleGatorCore } from "../src/DeleGatorCore.sol";
 import { IERC173 } from "../src/interfaces/IERC173.sol";
 import { IDelegationManager } from "../src/interfaces/IDelegationManager.sol";
 import { EncoderLib } from "../src/libraries/EncoderLib.sol";
+import { SCL_Wrapper } from "./utils/SCLWrapperLib.sol";
+import { P256SCLVerifierLib } from "../src/libraries/P256SCLVerifierLib.sol";
+import { ERC1271Lib } from "../src/libraries/ERC1271Lib.sol";
+import { EXECUTE_SINGULAR_SIGNATURE } from "./utils/Constants.sol";
 
 contract HybridDeleGator_Test is BaseTest {
     using MessageHashUtils for bytes32;
@@ -48,7 +52,6 @@ contract HybridDeleGator_Test is BaseTest {
 
     ////////////////////////////// Errors //////////////////////////////
 
-    error AlreadyExists(bytes32 keyIdHash, string keyId);
     error InvalidKey();
     error KeyDoesNotExist(bytes32 keyIdHash);
     error CannotRemoveLastKey();
@@ -96,12 +99,12 @@ contract HybridDeleGator_Test is BaseTest {
     // Should emit AddedP256Key in addKey
     function test_keyAdded_addKey() public {
         // Create and Sign UserOp
-        bytes memory userOpCallData_ = abi.encodeWithSelector(
-            IDeleGatorCoreFull.execute.selector,
-            Action({
-                to: address(aliceDeleGator),
+        bytes memory userOpCallData_ = abi.encodeWithSignature(
+            EXECUTE_SINGULAR_SIGNATURE,
+            Execution({
+                target: address(aliceDeleGator),
                 value: 0,
-                data: abi.encodeWithSelector(HybridDeleGator.addKey.selector, keyId, users.alice.x, users.alice.y)
+                callData: abi.encodeWithSelector(HybridDeleGator.addKey.selector, keyId, users.alice.x, users.alice.y)
             })
         );
         PackedUserOperation memory userOp_ = createAndSignUserOp(users.alice, address(aliceDeleGator), userOpCallData_);
@@ -118,9 +121,13 @@ contract HybridDeleGator_Test is BaseTest {
         execute_UserOp(users.alice, abi.encodeWithSelector(HybridDeleGator.addKey.selector, keyId, users.alice.x, users.alice.y));
 
         // Create and Sign UserOp
-        bytes memory userOpCallData_ = abi.encodeWithSelector(
-            IDeleGatorCoreFull.execute.selector,
-            Action({ to: address(aliceDeleGator), value: 0, data: abi.encodeWithSelector(HybridDeleGator.removeKey.selector, keyId) })
+        bytes memory userOpCallData_ = abi.encodeWithSignature(
+            EXECUTE_SINGULAR_SIGNATURE,
+            Execution({
+                target: address(aliceDeleGator),
+                value: 0,
+                callData: abi.encodeWithSelector(HybridDeleGator.removeKey.selector, keyId)
+            })
         );
         PackedUserOperation memory userOp_ = createAndSignUserOp(users.alice, address(aliceDeleGator), userOpCallData_);
 
@@ -251,7 +258,6 @@ contract HybridDeleGator_Test is BaseTest {
     // Should allow to initialize with 1+ p256 owners, 0 EOA owners
     function test_initialize_multipleP256ZeroEOA() public {
         (uint256 x_, uint256 y_) = FCL_ecdsa_utils.ecdsa_derivKpub(users.carol.privateKey);
-
         string[] memory keyIds_ = new string[](2);
         uint256[] memory xValues_ = new uint256[](2);
         uint256[] memory yValues_ = new uint256[](2);
@@ -329,7 +335,7 @@ contract HybridDeleGator_Test is BaseTest {
         // Replace the signers
         vm.startPrank(address(aliceDeleGator));
         aliceDeleGator.reinitialize(
-            uint8(IDeleGatorCoreFull(address(aliceDeleGator)).getInitializedVersion() + 1),
+            uint8(DeleGatorCore(payable(address(aliceDeleGator))).getInitializedVersion() + 1),
             users.bob.addr,
             keyIds_,
             xValues_,
@@ -364,7 +370,7 @@ contract HybridDeleGator_Test is BaseTest {
         // Replace the signers
         vm.startPrank(address(aliceDeleGator));
         aliceDeleGator.reinitialize(
-            uint8(IDeleGatorCoreFull(address(aliceDeleGator)).getInitializedVersion() + 1),
+            uint8(DeleGatorCore(payable(address(aliceDeleGator))).getInitializedVersion() + 1),
             users.bob.addr,
             keyIds_,
             xValues_,
@@ -403,11 +409,11 @@ contract HybridDeleGator_Test is BaseTest {
         execute_UserOp(
             users.alice,
             abi.encodeWithSelector(
-                IDeleGatorCoreFull.upgradeToAndCall.selector,
+                DeleGatorCore.upgradeToAndCall.selector,
                 address(hybridDeleGatorImpl),
                 abi.encodeWithSelector(
                     HybridDeleGator.reinitialize.selector,
-                    IDeleGatorCoreFull(deleGator_).getInitializedVersion() + 1,
+                    DeleGatorCore(deleGator_).getInitializedVersion() + 1,
                     users.bob.addr,
                     keyIds_,
                     xValues_,
@@ -419,7 +425,7 @@ contract HybridDeleGator_Test is BaseTest {
         );
 
         // Assert DeleGator is Hybrid
-        assertEq(address(IDeleGatorCoreFull(deleGator_).getImplementation()), address(hybridDeleGatorImpl));
+        assertEq(address(DeleGatorCore(deleGator_).getImplementation()), address(hybridDeleGatorImpl));
 
         // ERC4337 should be the same
         assertEq(delegatorCoreStoragePre_, vm.load(deleGator_, DELEGATOR_CORE_STORAGE_LOCATION));
@@ -492,7 +498,7 @@ contract HybridDeleGator_Test is BaseTest {
     function test_notAllow_transferOwnership_directOwner() public {
         // Submit Alice's tx
         vm.prank(users.alice.addr);
-        vm.expectRevert(abi.encodeWithSelector(IDeleGatorCoreFull.NotEntryPointOrSelf.selector));
+        vm.expectRevert(abi.encodeWithSelector(DeleGatorCore.NotEntryPointOrSelf.selector));
         aliceDeleGator.transferOwnership(users.bob.addr);
     }
 
@@ -500,7 +506,7 @@ contract HybridDeleGator_Test is BaseTest {
     function test_notAllow_transferOwnership_directNonOwner() public {
         // Submit Bob's tx
         vm.prank(users.bob.addr);
-        vm.expectRevert(abi.encodeWithSelector(IDeleGatorCoreFull.NotEntryPointOrSelf.selector));
+        vm.expectRevert(abi.encodeWithSelector(DeleGatorCore.NotEntryPointOrSelf.selector));
         aliceDeleGator.transferOwnership(users.bob.addr);
     }
 
@@ -526,19 +532,24 @@ contract HybridDeleGator_Test is BaseTest {
         assertEq(users.alice.addr, onlyEoaHybridDeleGator.owner());
 
         // Create and Sign UserOp
-        bytes memory userOpCallData_ = abi.encodeWithSelector(
-            IDeleGatorCoreFull.execute.selector,
-            Action({
-                to: address(onlyEoaHybridDeleGator),
+        bytes memory userOpCallData_ = abi.encodeWithSignature(
+            EXECUTE_SINGULAR_SIGNATURE,
+            Execution({
+                target: address(onlyEoaHybridDeleGator),
                 value: 0,
-                data: abi.encodeWithSelector(
+                callData: abi.encodeWithSelector(
                     HybridDeleGator.updateSigners.selector, users.bob.addr, new string[](0), new uint256[](0), new uint256[](0)
                 )
             })
         );
         PackedUserOperation memory userOp_ = createUserOp(address(onlyEoaHybridDeleGator), userOpCallData_);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = SigningUtilsLib.signHash_EOA(users.alice.privateKey, userOpHash_.toEthSignedMessageHash());
+
+        bytes32 userOpHash_ = onlyEoaHybridDeleGator.getPackedUserOperationHash(userOp_);
+
+        // Need to sign the hash from typed data.
+        bytes32 typedDataHash_ = MessageHashUtils.toTypedDataHash(onlyEoaHybridDeleGator.getDomainHash(), userOpHash_);
+
+        userOp_.signature = SigningUtilsLib.signHash_EOA(users.alice.privateKey, typedDataHash_);
 
         // Submit UserOp through Bundler
         submitUserOp_Bundler(userOp_);
@@ -561,17 +572,19 @@ contract HybridDeleGator_Test is BaseTest {
         yValues_[0] = users.bob.y;
 
         // Create and Sign UserOp
-        bytes memory userOpCallData_ = abi.encodeWithSelector(
-            IDeleGatorCoreFull.execute.selector,
-            Action({
-                to: address(onlyEoaHybridDeleGator),
+        bytes memory userOpCallData_ = abi.encodeWithSignature(
+            EXECUTE_SINGULAR_SIGNATURE,
+            Execution({
+                target: address(onlyEoaHybridDeleGator),
                 value: 0,
-                data: abi.encodeWithSelector(HybridDeleGator.updateSigners.selector, address(0), keyIds_, xValues_, yValues_)
+                callData: abi.encodeWithSelector(HybridDeleGator.updateSigners.selector, address(0), keyIds_, xValues_, yValues_)
             })
         );
         PackedUserOperation memory userOp_ = createUserOp(address(onlyEoaHybridDeleGator), userOpCallData_);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = SigningUtilsLib.signHash_EOA(users.alice.privateKey, userOpHash_.toEthSignedMessageHash());
+
+        bytes32 userOpHash_ = onlyEoaHybridDeleGator.getPackedUserOperationHash(userOp_);
+        bytes32 typedDataHash_ = MessageHashUtils.toTypedDataHash(onlyEoaHybridDeleGator.getDomainHash(), userOpHash_);
+        userOp_.signature = SigningUtilsLib.signHash_EOA(users.alice.privateKey, typedDataHash_);
 
         // Submit UserOp through Bundler
         submitUserOp_Bundler(userOp_);
@@ -596,17 +609,19 @@ contract HybridDeleGator_Test is BaseTest {
         yValues_[0] = users.bob.y;
 
         // Create and Sign UserOp
-        bytes memory userOpCallData_ = abi.encodeWithSelector(
-            IDeleGatorCoreFull.execute.selector,
-            Action({
-                to: address(onlyEoaHybridDeleGator),
+        bytes memory userOpCallData_ = abi.encodeWithSignature(
+            EXECUTE_SINGULAR_SIGNATURE,
+            Execution({
+                target: address(onlyEoaHybridDeleGator),
                 value: 0,
-                data: abi.encodeWithSelector(HybridDeleGator.updateSigners.selector, users.bob.addr, keyIds_, xValues_, yValues_)
+                callData: abi.encodeWithSelector(HybridDeleGator.updateSigners.selector, users.bob.addr, keyIds_, xValues_, yValues_)
             })
         );
         PackedUserOperation memory userOp_ = createUserOp(address(onlyEoaHybridDeleGator), userOpCallData_);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        userOp_.signature = SigningUtilsLib.signHash_EOA(users.alice.privateKey, userOpHash_.toEthSignedMessageHash());
+
+        bytes32 userOpHash_ = onlyEoaHybridDeleGator.getPackedUserOperationHash(userOp_);
+        bytes32 typedDataHash_ = MessageHashUtils.toTypedDataHash(onlyEoaHybridDeleGator.getDomainHash(), userOpHash_);
+        userOp_.signature = SigningUtilsLib.signHash_EOA(users.alice.privateKey, typedDataHash_);
 
         // Submit UserOp through Bundler
         submitUserOp_Bundler(userOp_);
@@ -618,54 +633,6 @@ contract HybridDeleGator_Test is BaseTest {
 
         // Bob is the EOA owner
         assertEq(users.bob.addr, onlyEoaHybridDeleGator.owner());
-    }
-
-    // A delegate replacing ALL of the existing keys (passkeys and EOA) in a single transaction onchain
-    function test_allow_replaceEOAWithEOAAndP256WithOnchainDelegation() public {
-        // Alice is the EOA owner
-        assertEq(users.alice.addr, aliceDeleGator.owner());
-
-        // Compute Bob's P256 keys
-        string[] memory keyIds_ = new string[](1);
-        uint256[] memory xValues_ = new uint256[](1);
-        uint256[] memory yValues_ = new uint256[](1);
-        keyIds_[0] = users.bob.name;
-        xValues_[0] = users.bob.x;
-        yValues_[0] = users.bob.y;
-
-        // Create the action that would be executed
-        Action memory action_ = Action({
-            to: address(aliceDeleGator),
-            value: 0,
-            data: abi.encodeWithSelector(HybridDeleGator.updateSigners.selector, users.bob.addr, keyIds_, xValues_, yValues_)
-        });
-
-        Caveat[] memory caveats_ = new Caveat[](0);
-        Delegation memory delegation_ = Delegation({
-            delegate: address(bobDeleGator),
-            delegator: address(aliceDeleGator),
-            authority: ROOT_AUTHORITY,
-            caveats: caveats_,
-            salt: 0,
-            signature: hex""
-        });
-
-        // Store delegation
-        execute_UserOp(users.alice, abi.encodeWithSelector(IDelegationManager.delegate.selector, delegation_));
-
-        // Execute Bob's UserOp
-        Delegation[] memory delegations_ = new Delegation[](1);
-        delegations_[0] = delegation_;
-
-        invokeDelegation_UserOp(users.bob, delegations_, action_);
-
-        // Bob is the EOA owner now
-        (uint256 x__, uint256 y__) = aliceDeleGator.getKey(users.bob.name);
-        assertEq(users.bob.x, x__);
-        assertEq(users.bob.y, y__);
-
-        // Bob is the EOA owner
-        assertEq(users.bob.addr, aliceDeleGator.owner());
     }
 
     // A delegate replacing ALL of the existing keys (passkeys and EOA) in a single transaction offchain
@@ -681,11 +648,11 @@ contract HybridDeleGator_Test is BaseTest {
         xValues_[0] = users.bob.x;
         yValues_[0] = users.bob.y;
 
-        // Create the action that would be executed
-        Action memory action_ = Action({
-            to: address(aliceDeleGator),
+        // Create the execution that would be executed
+        Execution memory execution_ = Execution({
+            target: address(aliceDeleGator),
             value: 0,
-            data: abi.encodeWithSelector(HybridDeleGator.updateSigners.selector, users.bob.addr, keyIds_, xValues_, yValues_)
+            callData: abi.encodeWithSelector(HybridDeleGator.updateSigners.selector, users.bob.addr, keyIds_, xValues_, yValues_)
         });
 
         Caveat[] memory caveats_ = new Caveat[](0);
@@ -705,7 +672,7 @@ contract HybridDeleGator_Test is BaseTest {
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation_;
 
-        invokeDelegation_UserOp(users.bob, delegations_, action_);
+        invokeDelegation_UserOp(users.bob, delegations_, execution_);
 
         // Bob is the EOA owner now
         (uint256 x__, uint256 y__) = aliceDeleGator.getKey(users.bob.name);
@@ -718,72 +685,12 @@ contract HybridDeleGator_Test is BaseTest {
 
     ////////////////////// Signature Validation //////////////////////
 
-    // Tests the flow using a signature created with WebAuthn
-    function test_allow_signingWithWebAuthn() public {
-        // Alice is the EOA owner
-        assertEq(users.alice.addr, aliceDeleGator.owner());
-
-        // Hardcoded values in these tests were generated with WebAuthn
-        // https://github.com/MetaMask/Passkeys-Demo-App
-        string memory webAuthnKeyId_ = "WebAuthnUser";
-        uint256 xWebAuthn_ = 0x5ab7b640f322014c397264bb85cbf404500feb04833ae699f41978495b655163;
-        uint256 yWebAuthn_ = 0x1ee739189ede53846bd7d38bfae016919bf7d88f7ccd60aad8277af4793d1fd7;
-        bytes32 keyIdHash_ = keccak256(abi.encodePacked(webAuthnKeyId_));
-
-        // Adding the key as signer
-        vm.prank(address(entryPoint));
-        aliceDeleGator.addKey(webAuthnKeyId_, xWebAuthn_, yWebAuthn_);
-
-        // Create the action that would be executed
-        bytes memory userOpCallData_ = abi.encodeWithSelector(
-            IDeleGatorCoreFull.execute.selector,
-            Action({
-                to: address(aliceDeleGator),
-                value: 0,
-                data: abi.encodeWithSelector(Ownable.transferOwnership.selector, address(1))
-            })
-        );
-        PackedUserOperation memory userOp_ = createUserOp(address(aliceDeleGator), userOpCallData_);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        bytes32 ethSignedMessageHash_ = userOpHash_.toEthSignedMessageHash();
-        (ethSignedMessageHash_); // This is what is signed with webAuthn
-
-        // WebAuthn Signature values
-        uint256 r_ = 0x83e76b9afa53953f7971d4cdc8e2859f8786ba70423de061d0e15367d41b44fa;
-        uint256 s_ = 0x7c25bacc7ef162d395533639cc164b02592585d0ab382efe3790393a07ee7f56;
-
-        bytes memory authenticatorData_ = hex"49960de5880e8c687434170f6476605b8fe4aeb9a28632c7995cf3ba831d97630500000000";
-        bool requireUserVerification_ = true;
-        string memory clientDataJSONPrefix_ = '{"type":"webauthn.get","challenge":"';
-        string memory clientDataJSONSuffix_ = '","origin":"http://localhost:3000","crossOrigin":false}';
-
-        // Index of the type in clientDataJSON string
-        uint256 responseTypeLocation_ = 1;
-
-        userOp_.signature = abi.encode(
-            keyIdHash_,
-            r_,
-            s_,
-            authenticatorData_,
-            requireUserVerification_,
-            clientDataJSONPrefix_,
-            clientDataJSONSuffix_,
-            responseTypeLocation_
-        );
-
-        // Submit UserOp through Bundler
-        submitUserOp_Bundler(userOp_);
-
-        // The owner was transferred
-        assertEq(aliceDeleGator.owner(), address(1));
-    }
-
-    // Tests the flow using a signature created with WebAuthn and an invalid type
+    // Test the flow using a signature created with WebAuthn and an invalid type
     function test_fails_signingWithWebAuthnWithInvalidType() public {
         // Alice is the EOA owner
         assertEq(users.alice.addr, aliceDeleGator.owner());
 
-        // Hardcoded values in these tests were generated with WebAuthn
+        // Hardcoded values in these test were generated with WebAuthn
         // https://github.com/MetaMask/Passkeys-Demo-App
         string memory webAuthnKeyId_ = "WebAuthnUser";
         uint256 xWebAuthn_ = 0x5ab7b640f322014c397264bb85cbf404500feb04833ae699f41978495b655163;
@@ -794,19 +701,16 @@ contract HybridDeleGator_Test is BaseTest {
         vm.prank(address(entryPoint));
         aliceDeleGator.addKey(webAuthnKeyId_, xWebAuthn_, yWebAuthn_);
 
-        // Create the action that would be executed
-        bytes memory userOpCallData_ = abi.encodeWithSelector(
-            IDeleGatorCoreFull.execute.selector,
-            Action({
-                to: address(aliceDeleGator),
+        // Create the execution that would be executed
+        bytes memory userOpCallData_ = abi.encodeWithSignature(
+            EXECUTE_SINGULAR_SIGNATURE,
+            Execution({
+                target: address(aliceDeleGator),
                 value: 0,
-                data: abi.encodeWithSelector(Ownable.transferOwnership.selector, address(1))
+                callData: abi.encodeWithSelector(Ownable.transferOwnership.selector, address(1))
             })
         );
         PackedUserOperation memory userOp_ = createUserOp(address(aliceDeleGator), userOpCallData_);
-        bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
-        bytes32 ethSignedMessageHash_ = userOpHash_.toEthSignedMessageHash();
-        (ethSignedMessageHash_); // This is what is signed with webAuthn
 
         // WebAuthn Signature values
         uint256 r_ = 0x83e76b9afa53953f7971d4cdc8e2859f8786ba70423de061d0e15367d41b44fa;

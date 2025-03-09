@@ -6,25 +6,46 @@ import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import { ShortStrings, ShortString } from "@openzeppelin/contracts/utils/ShortStrings.sol";
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
+import { Counter } from "./utils/Counter.t.sol";
 import { BaseTest } from "./utils/BaseTest.t.sol";
-import { Delegation, Delegation, Caveat, Action } from "../src/utils/Types.sol";
+import { Delegation, Caveat, Execution, ModeCode } from "../src/utils/Types.sol";
 import { Implementation, SignatureType } from "./utils/Types.t.sol";
 import { EncoderLib } from "../src/libraries/EncoderLib.sol";
 import { DelegationManager } from "../src/DelegationManager.sol";
 import { Invalid1271Returns, Invalid1271Reverts } from "./utils/Invalid1271.t.sol";
 import { IDelegationManager } from "../src/interfaces/IDelegationManager.sol";
-import { EIP712_DOMAIN_TYPEHASH } from "../src/utils/Typehashes.sol";
+import { EIP712_DOMAIN_TYPEHASH } from "../src/utils/Constants.sol";
+import { MockCaveatEnforcer } from "./utils/MockCaveatEnforcer.sol";
+import { MockFailureCaveatEnforcer } from "./utils/MockFailureCaveatEnforcer.sol";
 
 contract DelegationManagerTest is BaseTest {
     using ShortStrings for *;
 
+    ////////////////////////////// Setup //////////////////////////////
     string private _nameFallback;
     string private _versionFallback;
+    ModeCode[] _oneSingularMode;
+    ModeCode[] _twoSingularModes;
+    Counter counter;
 
     constructor() {
         IMPLEMENTATION = Implementation.Hybrid;
         SIGNATURE_TYPE = SignatureType.RawP256;
+    }
+
+    function setUp() public virtual override {
+        super.setUp();
+
+        _oneSingularMode = new ModeCode[](1);
+        _oneSingularMode[0] = singleDefaultMode;
+
+        _twoSingularModes = new ModeCode[](2);
+        _twoSingularModes[0] = singleDefaultMode;
+        _twoSingularModes[1] = singleDefaultMode;
+
+        counter = new Counter(users.alice.addr);
     }
 
     ////////////////////////////// Events //////////////////////////////
@@ -47,7 +68,7 @@ contract DelegationManagerTest is BaseTest {
     // Should allow reading contract version
     function test_allow_contractVersionReads() public {
         string memory contractVersion_ = delegationManager.VERSION();
-        assertEq("1.0.0", contractVersion_);
+        assertEq("1.3.0", contractVersion_);
     }
 
     // Should allow reading contract version
@@ -160,7 +181,14 @@ contract DelegationManagerTest is BaseTest {
         delegations_[0] = delegation_;
 
         vm.prank(address(users.bob.addr));
-        delegationManager.redeemDelegation(abi.encode(delegations_), Action({ to: address(0), data: new bytes(0), value: 0 }));
+
+        bytes[] memory permissionContexts_ = new bytes[](1);
+        permissionContexts_[0] = abi.encode(delegations_);
+
+        bytes[] memory executionCallDatas_ = new bytes[](1);
+        executionCallDatas_[0] = abi.encode(Execution({ target: address(0), callData: new bytes(0), value: 0 }));
+
+        delegationManager.redeemDelegations(permissionContexts_, _oneSingularMode, executionCallDatas_);
     }
 
     function test_notAllow_invalidSignatureReturns() public {
@@ -176,12 +204,258 @@ contract DelegationManagerTest is BaseTest {
         });
 
         // Validate the signature
-        vm.expectRevert(abi.encodeWithSelector(IDelegationManager.InvalidSignature.selector));
+        vm.expectRevert(abi.encodeWithSelector(IDelegationManager.InvalidERC1271Signature.selector));
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation_;
 
         vm.prank(address(users.bob.addr));
-        delegationManager.redeemDelegation(abi.encode(delegations_), Action({ to: address(0), data: new bytes(0), value: 0 }));
+
+        bytes[] memory permissionContexts_ = new bytes[](1);
+        permissionContexts_[0] = abi.encode(delegations_);
+
+        bytes[] memory executionCallDatas_ = new bytes[](1);
+        executionCallDatas_[0] = abi.encode(Execution({ target: address(0), callData: new bytes(0), value: 0 }));
+
+        delegationManager.redeemDelegations(permissionContexts_, _oneSingularMode, executionCallDatas_);
+    }
+
+    function test_allow_redeemBatchDelegation() public {
+        // Create a mock caveat enforcers contract
+        MockCaveatEnforcer mockEnforcer = new MockCaveatEnforcer();
+
+        // Create delegations with caveats
+        Delegation memory delegation1 = Delegation({
+            delegate: address(users.bob.addr),
+            delegator: address(users.alice.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: new Caveat[](1),
+            salt: 0,
+            signature: hex""
+        });
+        delegation1.caveats[0] = Caveat({ enforcer: address(mockEnforcer), terms: hex"", args: hex"" });
+
+        Delegation memory delegation2 = Delegation({
+            delegate: address(users.bob.addr),
+            delegator: address(users.alice.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: new Caveat[](1),
+            salt: 0,
+            signature: hex""
+        });
+        delegation2.caveats[0] = Caveat({ enforcer: address(mockEnforcer), terms: hex"", args: hex"" });
+
+        bytes[] memory permissionContexts_ = new bytes[](2);
+
+        // Sign delegations
+        delegation1 = signDelegation(users.alice, delegation1);
+        delegation2 = signDelegation(users.alice, delegation2);
+
+        Delegation[] memory delegations1 = new Delegation[](1);
+        delegations1[0] = delegation1;
+        permissionContexts_[0] = abi.encode(delegations1);
+
+        Delegation[] memory delegations2 = new Delegation[](1);
+        delegations2[0] = delegation2;
+        permissionContexts_[1] = abi.encode(delegations2);
+
+        bytes[] memory executionCallDatas_ = new bytes[](2);
+        executionCallDatas_[0] = ExecutionLib.encodeSingle(address(0), 0, hex"");
+        executionCallDatas_[1] = ExecutionLib.encodeSingle(address(0), 0, hex"");
+
+        vm.prank(address(users.bob.addr));
+        delegationManager.redeemDelegations(permissionContexts_, _twoSingularModes, executionCallDatas_);
+
+        // Assert that beforeHook was called for each execution
+        assertEq(mockEnforcer.beforeHookCallCount(), 2);
+
+        // Assert that afterHook was called after executing all executions
+        assertEq(mockEnforcer.afterHookCallCount(), 2);
+    }
+
+    function test_allow_redeemBatchDelegationWithPassthrough() public {
+        // Create a mock caveat enforcers contract
+        MockCaveatEnforcer mockEnforcer = new MockCaveatEnforcer();
+
+        // Create delegations with caveats
+        Delegation memory delegation1 = Delegation({
+            delegate: address(users.bob.deleGator),
+            delegator: address(users.alice.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: new Caveat[](1),
+            salt: 0,
+            signature: hex""
+        });
+        delegation1.caveats[0] = Caveat({ enforcer: address(mockEnforcer), terms: hex"", args: hex"" });
+
+        bytes[] memory permissionContexts_ = new bytes[](2);
+
+        // Sign delegations
+        delegation1 = signDelegation(users.alice, delegation1);
+
+        Delegation[] memory delegations1 = new Delegation[](1);
+        delegations1[0] = delegation1;
+        permissionContexts_[0] = abi.encode(delegations1);
+
+        Delegation[] memory delegations2 = new Delegation[](0);
+        permissionContexts_[1] = abi.encode(delegations2);
+
+        bytes[] memory executionCallDatas_ = new bytes[](2);
+        executionCallDatas_[0] =
+            ExecutionLib.encodeSingle(address(counter), 0, abi.encodeWithSelector(Counter.unsafeIncrement.selector));
+        executionCallDatas_[1] =
+            ExecutionLib.encodeSingle(address(counter), 0, abi.encodeWithSelector(Counter.unsafeIncrement.selector));
+
+        vm.prank(address(users.bob.deleGator));
+        delegationManager.redeemDelegations(permissionContexts_, _twoSingularModes, executionCallDatas_);
+
+        // Assert that beforeHook was called for each execution
+        assertEq(mockEnforcer.beforeHookCallCount(), 1);
+
+        // Assert that afterHook was called after executing all executions
+        assertEq(mockEnforcer.afterHookCallCount(), 1);
+
+        // Assert the count was increased twice
+        assertEq(counter.count(), 2);
+    }
+
+    function test_notAllow_redeemLengthMismatching() public {
+        bytes[] memory permissionContexts_ = new bytes[](1);
+        bytes[] memory permissionContexts2_ = new bytes[](2);
+        ModeCode[] memory modes_ = new ModeCode[](1);
+        ModeCode[] memory modes2_ = new ModeCode[](2);
+        bytes[] memory executionCallDatas_ = new bytes[](1);
+        bytes[] memory executionCallDatas2_ = new bytes[](2);
+
+        vm.expectRevert(abi.encodeWithSelector(IDelegationManager.BatchDataLengthMismatch.selector));
+        delegationManager.redeemDelegations(permissionContexts_, modes_, executionCallDatas2_);
+
+        vm.expectRevert(abi.encodeWithSelector(IDelegationManager.BatchDataLengthMismatch.selector));
+        delegationManager.redeemDelegations(permissionContexts_, modes2_, executionCallDatas_);
+
+        vm.expectRevert(abi.encodeWithSelector(IDelegationManager.BatchDataLengthMismatch.selector));
+        delegationManager.redeemDelegations(permissionContexts2_, modes_, executionCallDatas_);
+    }
+
+    function test_allow_redeemBatchWithEoaInSecondBatchDelegation() public {
+        // Create a mock caveat enforcers contract
+        MockCaveatEnforcer mockEnforcer = new MockCaveatEnforcer();
+
+        // Create delegations with caveats
+        Delegation memory delegation1 = Delegation({
+            delegate: address(users.carol.addr),
+            delegator: address(users.alice.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: new Caveat[](1),
+            salt: 0,
+            signature: hex""
+        });
+        delegation1.caveats[0] = Caveat({ enforcer: address(mockEnforcer), terms: hex"", args: hex"" });
+
+        Delegation memory delegation2 = Delegation({
+            delegate: address(users.bob.addr),
+            delegator: address(users.alice.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: new Caveat[](1),
+            salt: 0,
+            signature: hex""
+        });
+        delegation2.caveats[0] = Caveat({ enforcer: address(mockEnforcer), terms: hex"", args: hex"" });
+
+        bytes32 delegation2Hash = delegationManager.getDelegationHash(delegation2);
+
+        Delegation memory delegation3 = Delegation({
+            delegate: address(users.carol.addr),
+            delegator: address(users.bob.addr),
+            authority: delegation2Hash,
+            caveats: new Caveat[](1),
+            salt: 0,
+            signature: hex""
+        });
+        delegation3.caveats[0] = Caveat({ enforcer: address(mockEnforcer), terms: hex"", args: hex"" });
+
+        bytes[] memory permissionContexts_ = new bytes[](2);
+
+        // Sign delegations
+        delegation1 = signDelegation(users.alice, delegation1);
+        delegation2 = signDelegation(users.alice, delegation2);
+
+        // Sign a delegation with an EOA
+        bytes32 delegation3Hash = EncoderLib._getDelegationHash(delegation3);
+        bytes32 domainHash = delegationManager.getDomainHash();
+        bytes32 typedData3Hash = MessageHashUtils.toTypedDataHash(domainHash, delegation3Hash);
+        delegation3.signature = signHash(SignatureType.EOA, users.bob, typedData3Hash);
+
+        Delegation[] memory delegations1 = new Delegation[](1);
+        delegations1[0] = delegation1;
+        permissionContexts_[0] = abi.encode(delegations1);
+
+        Delegation[] memory delegations2 = new Delegation[](2);
+        delegations2[0] = delegation3;
+        delegations2[1] = delegation2;
+        permissionContexts_[1] = abi.encode(delegations2);
+
+        bytes[] memory executionCallDatas_ = new bytes[](2);
+        executionCallDatas_[0] = ExecutionLib.encodeSingle(address(0), 0, hex"");
+        executionCallDatas_[1] = ExecutionLib.encodeSingle(address(0), 0, hex"");
+
+        vm.prank(address(users.carol.addr));
+        delegationManager.redeemDelegations(permissionContexts_, _twoSingularModes, executionCallDatas_);
+
+        // Assert that beforeHook was called for each execution
+        assertEq(mockEnforcer.beforeHookCallCount(), 3);
+
+        // Assert that afterHook was called after executing all executions
+        assertEq(mockEnforcer.afterHookCallCount(), 3);
+    }
+
+    // Should revert when any of the hooks revert
+    function test_revert_whenAnyCaveatHookFails() public {
+        // Create a mock caveat enforcers contract
+        MockCaveatEnforcer mockEnforcer = new MockCaveatEnforcer();
+        MockFailureCaveatEnforcer mockFailureEnforcer = new MockFailureCaveatEnforcer();
+
+        // Create delegations with caveats
+        Delegation memory delegation1 = Delegation({
+            delegate: address(users.bob.addr),
+            delegator: address(users.alice.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: new Caveat[](1),
+            salt: 0,
+            signature: hex""
+        });
+        delegation1.caveats[0] = Caveat({ enforcer: address(mockEnforcer), terms: hex"", args: hex"" });
+
+        Delegation memory delegation2 = Delegation({
+            delegate: address(users.bob.addr),
+            delegator: address(users.alice.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: new Caveat[](1),
+            salt: 0,
+            signature: hex""
+        });
+        delegation2.caveats[0] = Caveat({ enforcer: address(mockFailureEnforcer), terms: hex"", args: hex"" });
+
+        bytes[] memory permissionContexts_ = new bytes[](2);
+
+        // Sign delegations
+        delegation1 = signDelegation(users.alice, delegation1);
+        delegation2 = signDelegation(users.alice, delegation2);
+
+        Delegation[] memory delegations1 = new Delegation[](1);
+        delegations1[0] = delegation1;
+        permissionContexts_[0] = abi.encode(delegations1);
+
+        Delegation[] memory delegations2 = new Delegation[](1);
+        delegations2[0] = delegation2;
+        permissionContexts_[1] = abi.encode(delegations2);
+
+        bytes[] memory executionCallDatas_ = new bytes[](2);
+        executionCallDatas_[0] = ExecutionLib.encodeSingle(address(0), 0, hex"");
+        executionCallDatas_[1] = ExecutionLib.encodeSingle(address(0), 0, hex"");
+
+        vm.prank(address(users.bob.addr));
+        vm.expectRevert();
+        delegationManager.redeemDelegations(permissionContexts_, _twoSingularModes, executionCallDatas_);
     }
 
     /////////////////////////////// Ownership //////////////////////////////
@@ -272,10 +546,11 @@ contract DelegationManagerTest is BaseTest {
         vm.startPrank(delegationManager.owner());
         delegationManager.pause();
 
-        Action memory action_;
+        bytes[] memory executionCallDatas_ = new bytes[](1);
+        bytes[] memory permissionContexts_ = new bytes[](1);
 
         vm.expectRevert(Pausable.EnforcedPause.selector);
-        delegationManager.redeemDelegation(hex"", action_);
+        delegationManager.redeemDelegations(permissionContexts_, _oneSingularMode, executionCallDatas_);
     }
 
     // Should fail to pause when the pause is active
