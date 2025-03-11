@@ -19,6 +19,7 @@ import { AllowedCalldataEnforcer } from "../../src/enforcers/AllowedCalldataEnfo
 import { AllowedMethodsEnforcer } from "../../src/enforcers/AllowedMethodsEnforcer.sol";
 import { ValueLteEnforcer } from "../../src/enforcers/ValueLteEnforcer.sol";
 import { RedeemerEnforcer } from "../../src/enforcers/RedeemerEnforcer.sol";
+import { ArgsEqualityCheckEnforcer } from "../../src/enforcers/ArgsEqualityCheckEnforcer.sol";
 import { BytesLib } from "@bytes-utils/BytesLib.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { DelegationManager } from "../../src/DelegationManager.sol";
@@ -50,6 +51,7 @@ abstract contract DelegationMetaSwapAdapterBaseTest is BaseTest {
     AllowedTargetsEnforcer public allowedTargetsEnforcer;
     AllowedMethodsEnforcer public allowedMethodsEnforcer;
     ValueLteEnforcer public valueLteEnforcer;
+    ArgsEqualityCheckEnforcer public argsEqualityCheckEnforcer;
 
     RedeemerEnforcer public redeemerEnforcer;
     bytes public swapDataTokenAtoTokenB;
@@ -69,6 +71,7 @@ abstract contract DelegationMetaSwapAdapterBaseTest is BaseTest {
         allowedMethodsEnforcer = new AllowedMethodsEnforcer();
         valueLteEnforcer = new ValueLteEnforcer();
         redeemerEnforcer = new RedeemerEnforcer();
+        argsEqualityCheckEnforcer = new ArgsEqualityCheckEnforcer();
     }
 
     //////////////////////// Internal / Private Helpers ////////////////////////
@@ -813,7 +816,9 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         vm.expectEmit(true, true, false, true);
         emit DelegationMetaSwapAdapter.SetMetaSwap(IMetaSwap(dummyMetaSwap_));
         // Deploy a new instance to capture the events.
-        new DelegationMetaSwapAdapter(owner, IDelegationManager(dummyDelegationManager_), IMetaSwap(dummyMetaSwap_));
+        new DelegationMetaSwapAdapter(
+            owner, IDelegationManager(dummyDelegationManager_), IMetaSwap(dummyMetaSwap_), address(argsEqualityCheckEnforcer)
+        );
     }
 
     /**
@@ -838,8 +843,9 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
 
         metaSwapMock = IMetaSwap(address(new MetaSwapMock(IERC20(tokenA), IERC20(tokenB))));
 
-        delegationMetaSwapAdapter =
-            new DelegationMetaSwapAdapter(owner, IDelegationManager(address(delegationManager)), metaSwapMock);
+        delegationMetaSwapAdapter = new DelegationMetaSwapAdapter(
+            owner, IDelegationManager(address(delegationManager)), metaSwapMock, address(argsEqualityCheckEnforcer)
+        );
 
         vm.startPrank(owner);
 
@@ -996,7 +1002,8 @@ contract DelegationMetaSwapAdapterForkTest is DelegationMetaSwapAdapterBaseTest 
     {
         // Overriding values
         entryPoint = ENTRY_POINT_FORK;
-        delegationMetaSwapAdapter = new DelegationMetaSwapAdapter(owner, DELEGATION_MANAGER_FORK, META_SWAP_FORK);
+        delegationMetaSwapAdapter =
+            new DelegationMetaSwapAdapter(owner, DELEGATION_MANAGER_FORK, META_SWAP_FORK, address(argsEqualityCheckEnforcer));
         delegationManager = DelegationManager(address(DELEGATION_MANAGER_FORK));
         hybridDeleGatorImpl = HYBRID_DELEGATOR_IMPL_FORK;
 
