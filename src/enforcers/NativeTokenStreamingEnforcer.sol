@@ -17,7 +17,7 @@ import { ModeCode } from "../utils/Types.sol";
  *  5. The contract tracks how many native tokens have been spent and will revert
  *     if an attempted transfer (i.e. the value sent) exceeds what remains unlocked.
  *
- * @dev This enforcer only works when the execution is in single mode (`ModeCode.Single`).
+ * @dev This enforcer operates only in single execution call type and with default execution mode.
  * @dev To enable an 'infinite' token stream, set `maxAmount` to type(uint256).max
  */
 contract NativeTokenStreamingEnforcer is CaveatEnforcer {
@@ -80,7 +80,7 @@ contract NativeTokenStreamingEnforcer is CaveatEnforcer {
      * - 32 bytes: max amount.
      * - 32 bytes: amount per second.
      * - 32 bytes: start time for the streaming allowance.
-     * @param _mode The execution mode (must be `ModeCode.Single`).
+     * @param _mode The execution mode. (Must be Single callType, Default execType)
      * @param _executionCallData The execution data which, when decoded via ExecutionLib.decodeSingle(),
      *        yields (target, value, callData). Here, the `value` is the native token amount.
      * @param _delegationHash The hash of the delegation being operated on.
@@ -98,6 +98,7 @@ contract NativeTokenStreamingEnforcer is CaveatEnforcer {
         public
         override
         onlySingleCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
         _validateAndConsumeAllowance(_terms, _executionCallData, _delegationHash, _redeemer);
     }

@@ -10,6 +10,7 @@ import { ModeCode } from "../utils/Types.sol";
  * @title ERC1155BalanceGteEnforcer
  * @dev This contract enforces that the ERC1155 token balance of a recipient for a specific token ID
  * has increased by at least the specified amount after the execution, measured between the `beforeHook` and `afterHook` calls.
+ * @dev This enforcer operates only in default execution mode.
  */
 contract ERC1155BalanceGteEnforcer is CaveatEnforcer {
     ////////////////////////////// State //////////////////////////////
@@ -51,12 +52,13 @@ contract ERC1155BalanceGteEnforcer is CaveatEnforcer {
      * - next 20 bytes: address of the recipient,
      * - next 32 bytes: token ID,
      * - next 32 bytes: amount the balance should increase by.
+     * @param _mode The execution mode. (Must be Default execType)
      * @param _delegationHash The hash of the delegation.
      */
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
-        ModeCode,
+        ModeCode _mode,
         bytes calldata,
         bytes32 _delegationHash,
         address,
@@ -64,6 +66,7 @@ contract ERC1155BalanceGteEnforcer is CaveatEnforcer {
     )
         public
         override
+        onlyDefaultExecutionMode(_mode)
     {
         (address token_, address recipient_, uint256 tokenId_,) = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, token_, recipient_, tokenId_, _delegationHash);

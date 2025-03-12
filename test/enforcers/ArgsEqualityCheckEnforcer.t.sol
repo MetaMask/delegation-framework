@@ -46,6 +46,13 @@ contract ArgsEqualityCheckEnforcerTest is CaveatEnforcerBaseTest {
         );
     }
 
+    // should fail with invalid call type mode (try instead of default)
+    function test_revertWithInvalidExecutionMode() public {
+        vm.prank(address(delegationManager));
+        vm.expectRevert("CaveatEnforcer:invalid-execution-type");
+        argsEqualityCheckEnforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
+    }
+
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {
         return ICaveatEnforcer(address(argsEqualityCheckEnforcer));
     }
