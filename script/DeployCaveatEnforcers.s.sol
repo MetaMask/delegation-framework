@@ -109,9 +109,6 @@ contract DeployCaveatEnforcers is Script {
         deployedAddress = address(new ExactCalldataEnforcer{ salt: salt }());
         console2.log("ExactCalldataEnforcer: %s", deployedAddress);
 
-        deployedAddress = address(new ExactCalldataBatchEnforcer{ salt: salt }());
-        console2.log("ExactCalldataBatchEnforcer: %s", deployedAddress);
-
         deployedAddress = address(new ExactExecutionBatchEnforcer{ salt: salt }());
         console2.log("ExactExecutionBatchEnforcer: %s", deployedAddress);
 
