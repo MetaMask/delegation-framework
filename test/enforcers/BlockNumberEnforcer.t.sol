@@ -181,6 +181,13 @@ contract BlockNumberEnforcerTest is CaveatEnforcerBaseTest {
         );
     }
 
+    // should fail with invalid call type mode (try instead of default)
+    function test_revertWithInvalidExecutionMode() public {
+        vm.prank(address(delegationManager));
+        vm.expectRevert("CaveatEnforcer:invalid-execution-type");
+        blockNumberEnforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
+    }
+
     ////////////////////// Integration //////////////////////
 
     // should SUCCEED to INVOKE until reaching blockNumber

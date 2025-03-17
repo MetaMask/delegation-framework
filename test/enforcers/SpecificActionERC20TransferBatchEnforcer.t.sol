@@ -82,12 +82,9 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
 
     // should fail with invalid call type mode (try instead of default)
     function test_revertWithInvalidExecutionMode() public {
-        (Execution[] memory executions_, bytes memory terms_) = _setupValidBatchAndTerms();
-        bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
-
         vm.prank(address(delegationManager));
         vm.expectRevert("CaveatEnforcer:invalid-execution-type");
-        batchEnforcer.beforeHook(terms_, hex"", batchTryMode, executionCallData_, keccak256("test"), address(0), address(0));
+        batchEnforcer.beforeHook(hex"", hex"", batchTryMode, hex"", bytes32(0), address(0), address(0));
     }
 
     // should fail when trying to reuse a delegation

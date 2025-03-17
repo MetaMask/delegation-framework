@@ -9,6 +9,7 @@ import { ModeCode } from "../utils/Types.sol";
 /**
  * @title NativeTokenTransferAmountEnforcer
  * @notice This contract enforces an allowance of native currency (e.g., ETH) for a specific delegation.
+ * @dev This enforcer operates only in single execution call type and with default execution mode.
  */
 contract NativeTokenTransferAmountEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
@@ -29,7 +30,7 @@ contract NativeTokenTransferAmountEnforcer is CaveatEnforcer {
     /**
      * @notice Enforces the conditions that should hold before a transaction is performed.
      * @param _terms The encoded amount of native token allowance.
-     * @param _mode The mode of the execution.
+     * @param _mode The execution mode. (Must be Single callType, Default execType)
      * @param _executionCallData The call data of the execution.
      * @param _delegationHash The hash of the delegation.
      */

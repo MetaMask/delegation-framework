@@ -249,6 +249,13 @@ contract DeployedEnforcerTest is CaveatEnforcerBaseTest {
         );
     }
 
+    // should fail with invalid call type mode (try instead of default)
+    function test_revertWithInvalidExecutionMode() public {
+        vm.prank(address(delegationManager));
+        vm.expectRevert("CaveatEnforcer:invalid-execution-type");
+        deployedEnforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
+    }
+
     ////////////////////// Integration //////////////////////
 
     // should deploy if the contract hasn't been deployed yet and terms are properly formatted, and allows to use it

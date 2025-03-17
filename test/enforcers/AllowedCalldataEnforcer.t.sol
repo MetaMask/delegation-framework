@@ -217,6 +217,13 @@ contract AllowedCalldataEnforcerTest is CaveatEnforcerBaseTest {
         allowedCalldataEnforcer.beforeHook(hex"", hex"", batchDefaultMode, executionCallData_, bytes32(0), address(0), address(0));
     }
 
+    // should fail with invalid call type mode (try instead of default)
+    function test_revertWithInvalidExecutionMode() public {
+        vm.prank(address(delegationManager));
+        vm.expectRevert("CaveatEnforcer:invalid-execution-type");
+        allowedCalldataEnforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
+    }
+
     ////////////////////// Integration //////////////////////
 
     // should allow a single method to be called when a single function parameter is equal Integration

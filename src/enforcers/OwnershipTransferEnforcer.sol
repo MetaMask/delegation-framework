@@ -10,7 +10,7 @@ import { IERC173 } from "../interfaces/IERC173.sol";
 /**
  * @title OwnershipTransferEnforcer
  * @dev This contract enforces the ownership transfer of ERC-173 compliant contracts.
- * @dev This caveat enforcer only works when the execution is in single mode.
+ * @dev This enforcer operates only in single execution call type and with default execution mode.
  */
 contract OwnershipTransferEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
@@ -26,7 +26,7 @@ contract OwnershipTransferEnforcer is CaveatEnforcer {
      * @notice Enforces the ownership transfer of an ERC-173 compliant contract.
      * @dev This function enforces the ownership transfer before the transaction is performed.
      * @param _terms The address of the contract whose ownership is being transferred.
-     * @param _mode The mode of the execution.
+     * @param _mode The execution mode. (Must be Single callType, Default execType)
      * @param _executionCallData The transaction the delegate might try to perform.
      * @param _delegationHash The hash of the delegation being operated on.
      */
@@ -42,6 +42,7 @@ contract OwnershipTransferEnforcer is CaveatEnforcer {
         public
         override
         onlySingleCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
         address newOwner = _validateAndEnforce(_terms, _executionCallData);
         emit OwnershipTransferEnforced(msg.sender, _redeemer, _delegationHash, newOwner);

@@ -13,7 +13,8 @@ import { ModeCode } from "../utils/Types.sol";
  * @dev This contract implements a mechanism by which a user may transfer up to a fixed amount of tokens (the period amount)
  *      during a given time period. The transferable amount resets at the beginning of each period, and any unused tokens
  *      are forfeited once the period ends. Partial transfers within a period are allowed, but the total transfer in any
- *      period cannot exceed the specified limit. This enforcer is designed to work only in single execution mode (ModeCode.Single).
+ *      period cannot exceed the specified limit.
+ * @dev This enforcer operates only in single execution call type and with default execution mode.
  */
 contract ERC20PeriodTransferEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
@@ -110,7 +111,7 @@ contract ERC20PeriodTransferEnforcer is CaveatEnforcer {
      *  - 32 bytes: periodAmount.
      *  - 32 bytes: periodDuration (in seconds).
      *  - 32 bytes: startDate for the first period.
-     * @param _mode The execution mode (must be ModeCode.Single).
+     * @param _mode The execution mode. (Must be Single callType, Default execType)
      * @param _executionCallData The transaction data (should be an `IERC20.transfer(address,uint256)` call).
      * @param _delegationHash The hash identifying the delegation.
      * @param _redeemer The address intended to receive the tokens.
@@ -127,6 +128,7 @@ contract ERC20PeriodTransferEnforcer is CaveatEnforcer {
         public
         override
         onlySingleCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
         _validateAndConsumeTransfer(_terms, _executionCallData, _delegationHash, _redeemer);
     }

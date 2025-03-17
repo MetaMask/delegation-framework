@@ -12,6 +12,7 @@ import { ModeCode } from "../utils/Types.sol";
  * redemption to a when the result of an onchain computation matches the pre-determined `terms` of a delegation. For example,
  * if the contract sets the args to the users balance of ETH, the delegation will only be valid when that delegation matches
  * the amount set in the `terms`.
+ * @dev This enforcer operates only in default execution mode.
  */
 contract ArgsEqualityCheckEnforcer is CaveatEnforcer {
     ////////////////////////////// Events //////////////////////////////
@@ -25,13 +26,14 @@ contract ArgsEqualityCheckEnforcer is CaveatEnforcer {
      * @notice Enforces that the terms and args are the same
      * @param _terms Any terms that need to be compared against the args
      * @param _args Any args that need to be compared against the terms
+     * @param _mode The execution mode. (Must be Default execType)
      * @param _delegationHash The hash of the delegation
      * @param _redeemer The address of the redeemer
      */
     function beforeHook(
         bytes calldata _terms,
         bytes calldata _args,
-        ModeCode,
+        ModeCode _mode,
         bytes calldata,
         bytes32 _delegationHash,
         address,
@@ -39,6 +41,7 @@ contract ArgsEqualityCheckEnforcer is CaveatEnforcer {
     )
         public
         override
+        onlyDefaultExecutionMode(_mode)
     {
         if (keccak256(_terms) != keccak256(_args)) {
             emit DifferentArgsAndTerms(msg.sender, _redeemer, _delegationHash, _terms, _args);

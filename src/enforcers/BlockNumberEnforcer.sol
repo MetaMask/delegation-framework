@@ -7,6 +7,7 @@ import { ModeCode } from "../utils/Types.sol";
 /**
  * @title BlockNumberEnforcer
  * @dev This contract enforces the block number range for a delegation.
+ * @dev This enforcer operates only in default execution mode.
  */
 contract BlockNumberEnforcer is CaveatEnforcer {
     ////////////////////////////// Public Methods //////////////////////////////
@@ -16,11 +17,12 @@ contract BlockNumberEnforcer is CaveatEnforcer {
      * @dev This function enforces the block number range before the transaction is performed.
      * @param _terms A bytes32 blocknumber range where the first half of the word is the earliest the delegation can be used and
      * the last half of the word is the latest the delegation can be used. The block number ranges are not inclusive.
+     * @param _mode The execution mode. (Must be Default execType)
      */
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
-        ModeCode,
+        ModeCode _mode,
         bytes calldata,
         bytes32,
         address,
@@ -29,6 +31,7 @@ contract BlockNumberEnforcer is CaveatEnforcer {
         public
         view
         override
+        onlyDefaultExecutionMode(_mode)
     {
         (uint128 blockAfterThreshold_, uint128 blockBeforeThreshold_) = getTermsInfo(_terms);
 

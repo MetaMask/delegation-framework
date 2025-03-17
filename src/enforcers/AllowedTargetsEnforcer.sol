@@ -9,7 +9,7 @@ import { ModeCode } from "../utils/Types.sol";
 /**
  * @title AllowedTargetsEnforcer
  * @dev This contract enforces the allowed target addresses for a delegate.
- * @dev This caveat enforcer only works when the execution is in single mode.
+ * @dev This enforcer operates only in single execution call type and with default execution mode.
  */
 contract AllowedTargetsEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
@@ -20,7 +20,7 @@ contract AllowedTargetsEnforcer is CaveatEnforcer {
      * @notice Allows the delegator to limit what addresses the delegate may call.
      * @dev This function enforces the allowed target addresses before the transaction is performed.
      * @param _terms A series of 20byte addresses, representing the addresses that the delegate is allowed to call.
-     * @param _mode The execution mode for the execution.
+     * @param _mode The execution mode. (Must be Single callType, Default execType)
      * @param _executionCallData The execution the delegate is trying try to execute.
      */
     function beforeHook(
@@ -36,6 +36,7 @@ contract AllowedTargetsEnforcer is CaveatEnforcer {
         pure
         override
         onlySingleCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
         (address target_,,) = _executionCallData.decodeSingle();
 

@@ -8,6 +8,7 @@ import { ModeCode } from "../utils/Types.sol";
  * @title Timestamp Enforcer Contract
  * @dev This contract extends the CaveatEnforcer contract. It provides functionality to enforce timestamp restrictions on
  * delegations.
+ * @dev This enforcer operates only in default execution mode.
  */
 contract TimestampEnforcer is CaveatEnforcer {
     ////////////////////////////// Public Methods //////////////////////////////
@@ -16,11 +17,12 @@ contract TimestampEnforcer is CaveatEnforcer {
      * @notice Allows the delegator to specify the timestamp range within which the delegation will be valid.
      * @param _terms - A bytes32 timestamp range where the first half of the word is the earliest the delegation can be used and the
      * last half of the word is the latest the delegation can be used. The timestamp ranges are not inclusive.
+     * @param _mode The execution mode. (Must be Default execType)
      */
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
-        ModeCode,
+        ModeCode _mode,
         bytes calldata,
         bytes32,
         address,
@@ -29,6 +31,7 @@ contract TimestampEnforcer is CaveatEnforcer {
         public
         view
         override
+        onlyDefaultExecutionMode(_mode)
     {
         (uint128 timestampAfterThreshold_, uint128 timestampBeforeThreshold_) = getTermsInfo(_terms);
 
