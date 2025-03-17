@@ -7,12 +7,12 @@ import { BasicERC20 } from "../utils/BasicERC20.t.sol";
 import "../../src/utils/Types.sol";
 import { Execution } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
-import { ERC20BalanceLteEnforcer } from "../../src/enforcers/ERC20BalanceLteEnforcer.sol";
+import { ERC20MaxLossEnforcer } from "../../src/enforcers/ERC20MaxLossEnforcer.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
-contract ERC20BalanceLteEnforcerTest is CaveatEnforcerBaseTest {
+contract ERC20MaxLossEnforcerTest is CaveatEnforcerBaseTest {
     ////////////////////////////// State //////////////////////////////
-    ERC20BalanceLteEnforcer public enforcer;
+    ERC20MaxLossEnforcer public enforcer;
     BasicERC20 public token;
     address delegator;
     address delegate;
@@ -29,7 +29,7 @@ contract ERC20BalanceLteEnforcerTest is CaveatEnforcerBaseTest {
         delegate = address(users.bob.deleGator);
         recipient = address(users.carol.deleGator);
         dm = address(delegationManager);
-        enforcer = new ERC20BalanceLteEnforcer();
+        enforcer = new ERC20MaxLossEnforcer();
         // log addresses to console output
         vm.label(address(enforcer), "ERC20 BalanceLte Enforcer");
         token = new BasicERC20(delegator, "TEST", "TEST", 1000);
@@ -113,7 +113,7 @@ contract ERC20BalanceLteEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(delegator);
         token.burn(recipient, 101);
         vm.prank(dm);
-        vm.expectRevert(bytes("ERC20BalanceLteEnforcer:balance-not-gt"));
+        vm.expectRevert(bytes("ERC20MaxLossEnforcer:balance-not-gt"));
         enforcer.afterHook(terms_, hex"", singleDefaultMode, burnExecutionCallData, bytes32(0), delegator, delegate);
     }
 
@@ -128,7 +128,7 @@ contract ERC20BalanceLteEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.beforeHook(terms_, hex"", singleDefaultMode, burnExecutionCallData, delegationHash_, delegator, delegate);
         bytes32 hashKey_ = enforcer.getHashKey(address(delegationManager), address(token), delegationHash_);
         assertTrue(enforcer.isLocked(hashKey_));
-        vm.expectRevert(bytes("ERC20BalanceLteEnforcer:enforcer-is-locked"));
+        vm.expectRevert(bytes("ERC20MaxLossEnforcer:enforcer-is-locked"));
         enforcer.beforeHook(terms_, hex"", singleDefaultMode, burnExecutionCallData, delegationHash_, delegator, delegate);
         vm.startPrank(delegator);
         token.burn(recipient, 10);
@@ -148,12 +148,12 @@ contract ERC20BalanceLteEnforcerTest is CaveatEnforcerBaseTest {
 
         // Too small
         terms_ = abi.encodePacked(address(recipient), address(token), uint8(100));
-        vm.expectRevert(bytes("ERC20BalanceLteEnforcer:invalid-terms-length"));
+        vm.expectRevert(bytes("ERC20MaxLossEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
 
         // Too large
         terms_ = abi.encodePacked(address(recipient), address(token), uint256(100), uint256(100));
-        vm.expectRevert(bytes("ERC20BalanceLteEnforcer:invalid-terms-length"));
+        vm.expectRevert(bytes("ERC20MaxLossEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
     }
 

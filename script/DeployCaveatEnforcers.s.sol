@@ -13,7 +13,7 @@ import { ArgsEqualityCheckEnforcer } from "../src/enforcers/ArgsEqualityCheckEnf
 import { BlockNumberEnforcer } from "../src/enforcers/BlockNumberEnforcer.sol";
 import { DeployedEnforcer } from "../src/enforcers/DeployedEnforcer.sol";
 import { ERC20BalanceGteEnforcer } from "../src/enforcers/ERC20BalanceGteEnforcer.sol";
-import { ERC20BalanceLteEnforcer } from "../src/enforcers/ERC20BalanceLteEnforcer.sol";
+import { ERC20MaxLossEnforcer } from "../src/enforcers/ERC20MaxLossEnforcer.sol";
 import { ERC20TransferAmountEnforcer } from "../src/enforcers/ERC20TransferAmountEnforcer.sol";
 import { ERC20StreamingEnforcer } from "../src/enforcers/ERC20StreamingEnforcer.sol";
 import { ERC20PeriodTransferEnforcer } from "../src/enforcers/ERC20PeriodTransferEnforcer.sol";
@@ -88,8 +88,8 @@ contract DeployCaveatEnforcers is Script {
         deployedAddress = address(new ERC20BalanceGteEnforcer{ salt: salt }());
         console2.log("ERC20BalanceGteEnforcer: %s", deployedAddress);
 
-        deployedAddress = address(new ERC20BalanceLteEnforcer{ salt: salt }());
-        console2.log("ERC20BalanceLteEnforcer: %s", deployedAddress);
+        deployedAddress = address(new ERC20MaxLossEnforcer{ salt: salt }());
+        console2.log("ERC20MaxLossEnforcer: %s", deployedAddress);
 
         deployedAddress = address(new ERC20TransferAmountEnforcer{ salt: salt }());
         console2.log("ERC20TransferAmountEnforcer: %s", deployedAddress);

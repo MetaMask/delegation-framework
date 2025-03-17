@@ -7,14 +7,14 @@ import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";
 
 /**
- * @title ERC20BalanceLteEnforcer
+ * @title ERC20MaxLossEnforcer
  * @dev This contract enforces that the delegator's ERC20 balance has decreased by at most the specified amount
  * after the execution has been executed, measured between the `beforeHook` and `afterHook` calls, regardless of what the execution
  * is.
  * @dev This contract has no enforcement of how the balance decreases. It's meant to be used alongside additional enforcers to
  * create granular permissions.
  */
-contract ERC20BalanceLteEnforcer is CaveatEnforcer {
+contract ERC20MaxLossEnforcer is CaveatEnforcer {
     ////////////////////////////// State //////////////////////////////
 
     mapping(bytes32 hashKey => uint256 balance) public balanceCache;
@@ -54,7 +54,7 @@ contract ERC20BalanceLteEnforcer is CaveatEnforcer {
     {
         (address recipient_, address token_,) = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, token_, _delegationHash);
-        require(!isLocked[hashKey_], "ERC20BalanceLteEnforcer:enforcer-is-locked");
+        require(!isLocked[hashKey_], "ERC20MaxLossEnforcer:enforcer-is-locked");
         isLocked[hashKey_] = true;
         uint256 balance_ = IERC20(token_).balanceOf(recipient_);
         balanceCache[hashKey_] = balance_;
@@ -81,7 +81,7 @@ contract ERC20BalanceLteEnforcer is CaveatEnforcer {
         bytes32 hashKey_ = _getHashKey(msg.sender, token_, _delegationHash);
         delete isLocked[hashKey_];
         uint256 balance_ = IERC20(token_).balanceOf(recipient_);
-        require(balance_ >= balanceCache[hashKey_] - amount_, "ERC20BalanceLteEnforcer:balance-not-gt");
+        require(balance_ >= balanceCache[hashKey_] - amount_, "ERC20MaxLossEnforcer:balance-not-gt");
     }
 
     /**
@@ -92,7 +92,7 @@ contract ERC20BalanceLteEnforcer is CaveatEnforcer {
      * @return amount_ The amount the balance can decrease by.
      */
     function getTermsInfo(bytes calldata _terms) public pure returns (address recipient_, address token_, uint256 amount_) {
-        require(_terms.length == 72, "ERC20BalanceLteEnforcer:invalid-terms-length");
+        require(_terms.length == 72, "ERC20MaxLossEnforcer:invalid-terms-length");
         recipient_ = address(bytes20(_terms[:20]));
         token_ = address(bytes20(_terms[20:40]));
         amount_ = uint256(bytes32(_terms[40:]));
