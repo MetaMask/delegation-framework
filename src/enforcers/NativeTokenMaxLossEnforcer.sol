@@ -5,14 +5,14 @@ import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";
 
 /**
- * @title NativeBalanceLteEnforcer
+ * @title NativeTokenMaxLossEnforcer
  * @dev This contract enforces that a recipient's native token balance has decreased by at most the specified amount
  * after the execution has been executed, measured between the `beforeHook` and `afterHook` calls, regardless of what the execution
  * is.
  * @dev This contract does not enforce how the balance decreases. It is meant to be used with additional enforcers to create
  * granular permissions.
  */
-contract NativeBalanceLteEnforcer is CaveatEnforcer {
+contract NativeTokenMaxLossEnforcer is CaveatEnforcer {
     ////////////////////////////// State //////////////////////////////
 
     mapping(bytes32 hashKey => uint256 balance) public balanceCache;
@@ -53,7 +53,7 @@ contract NativeBalanceLteEnforcer is CaveatEnforcer {
         bytes32 hashKey_ = _getHashKey(msg.sender, _delegationHash);
         (address recipient_,) = getTermsInfo(_terms);
 
-        require(!isLocked[hashKey_], "NativeBalanceLteEnforcer:enforcer-is-locked");
+        require(!isLocked[hashKey_], "NativeTokenMaxLossEnforcer:enforcer-is-locked");
         isLocked[hashKey_] = true;
         balanceCache[hashKey_] = recipient_.balance;
     }
@@ -79,7 +79,7 @@ contract NativeBalanceLteEnforcer is CaveatEnforcer {
         (address recipient_, uint256 amount_) = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, _delegationHash);
         delete isLocked[hashKey_];
-        require(recipient_.balance >= balanceCache[hashKey_] - amount_, "NativeBalanceLteEnforcer:balance-not-gt");
+        require(recipient_.balance >= balanceCache[hashKey_] - amount_, "NativeTokenMaxLossEnforcer:balance-not-gt");
     }
 
     /**
@@ -90,7 +90,7 @@ contract NativeBalanceLteEnforcer is CaveatEnforcer {
      * @return amount_ maxDecrease_ The maximum balance decrease.
      */
     function getTermsInfo(bytes calldata _terms) public pure returns (address recipient_, uint256 amount_) {
-        require(_terms.length == 52, "NativeBalanceLteEnforcer:invalid-terms-length");
+        require(_terms.length == 52, "NativeTokenMaxLossEnforcer:invalid-terms-length");
         recipient_ = address(bytes20(_terms[:20]));
         amount_ = uint256(bytes32(_terms[20:]));
     }

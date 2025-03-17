@@ -4,13 +4,13 @@ pragma solidity 0.8.23;
 import "../../src/utils/Types.sol";
 import { Execution } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
-import { NativeBalanceLteEnforcer } from "../../src/enforcers/NativeBalanceLteEnforcer.sol";
+import { NativeTokenMaxLossEnforcer } from "../../src/enforcers/NativeTokenMaxLossEnforcer.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 import { Counter } from "../utils/Counter.t.sol";
 
-contract NativeBalanceLteEnforcerTest is CaveatEnforcerBaseTest {
+contract NativeTokenMaxLossEnforcerTest is CaveatEnforcerBaseTest {
     ////////////////////////////// State //////////////////////////////
-    NativeBalanceLteEnforcer public enforcer;
+    NativeTokenMaxLossEnforcer public enforcer;
     address delegator;
     address delegate;
     address dm;
@@ -24,7 +24,7 @@ contract NativeBalanceLteEnforcerTest is CaveatEnforcerBaseTest {
         delegator = address(users.alice.deleGator);
         delegate = address(users.bob.deleGator);
         dm = address(delegationManager);
-        enforcer = new NativeBalanceLteEnforcer();
+        enforcer = new NativeTokenMaxLossEnforcer();
         vm.label(address(enforcer), "NativeBalanceLte Enforcer");
         noExecution = Execution(address(0), 0, hex"");
     }
@@ -71,7 +71,7 @@ contract NativeBalanceLteEnforcerTest is CaveatEnforcerBaseTest {
         vm.startPrank(dm);
         enforcer.beforeHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
         _decreaseBalance(delegator, 101);
-        vm.expectRevert(bytes("NativeBalanceLteEnforcer:balance-not-gt"));
+        vm.expectRevert(bytes("NativeTokenMaxLossEnforcer:balance-not-gt"));
         enforcer.afterHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
     }
 
@@ -87,7 +87,7 @@ contract NativeBalanceLteEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.beforeHook(terms_, hex"", singleDefaultMode, executionCallData, delegationHash_, delegator, delegate);
         bytes32 hashKey_ = enforcer.getHashKey(address(delegationManager), delegationHash_);
         assertTrue(enforcer.isLocked(hashKey_));
-        vm.expectRevert(bytes("NativeBalanceLteEnforcer:enforcer-is-locked"));
+        vm.expectRevert(bytes("NativeTokenMaxLossEnforcer:enforcer-is-locked"));
         enforcer.beforeHook(terms_, hex"", singleDefaultMode, executionCallData, delegationHash_, delegator, delegate);
         _decreaseBalance(delegator, 10);
         vm.startPrank(dm);
@@ -107,12 +107,12 @@ contract NativeBalanceLteEnforcerTest is CaveatEnforcerBaseTest {
 
         // Too small
         terms_ = abi.encodePacked(recipient_, uint8(100));
-        vm.expectRevert(bytes("NativeBalanceLteEnforcer:invalid-terms-length"));
+        vm.expectRevert(bytes("NativeTokenMaxLossEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
 
         // Too large
         terms_ = abi.encodePacked(uint256(100), uint256(100));
-        vm.expectRevert(bytes("NativeBalanceLteEnforcer:invalid-terms-length"));
+        vm.expectRevert(bytes("NativeTokenMaxLossEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
     }
 
