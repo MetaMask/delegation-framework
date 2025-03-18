@@ -194,7 +194,7 @@ contract SwapOfferEnforcer is CaveatEnforcer {
         bytes4 selector = bytes4(callData_[0:4]);
         require(selector == IERC20.transfer.selector || selector == IERC20.transferFrom.selector, "SwapOfferEnforcer:invalid-method");
 
-        uint256 amount = uint256(bytes32(callData_[36:68]));
+        uint256 amount = uint256(bytes32(callData_[68:100]));
 
         require(offer.amountOutFilled + amount <= offer.amountOut, "SwapOfferEnforcer:exceeds-output-amount");
         
