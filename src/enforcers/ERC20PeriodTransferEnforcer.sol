@@ -39,7 +39,7 @@ contract ERC20PeriodTransferEnforcer is CaveatEnforcer {
     /**
      * @notice Emitted when a transfer is made, updating the transferred amount in the active period.
      * @param sender The address initiating the transfer.
-     * @param recipient The address that receives the tokens.
+     * @param redeemer The address that receives the tokens.
      * @param delegationHash The hash identifying the delegation.
      * @param token The ERC20 token contract address.
      * @param periodAmount The maximum tokens transferable per period.
@@ -50,7 +50,7 @@ contract ERC20PeriodTransferEnforcer is CaveatEnforcer {
      */
     event TransferredInPeriod(
         address indexed sender,
-        address indexed recipient,
+        address indexed redeemer,
         bytes32 indexed delegationHash,
         address token,
         uint256 periodAmount,
