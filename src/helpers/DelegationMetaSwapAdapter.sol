@@ -95,6 +95,15 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /// @dev Error when the contract did not receive enough tokens to perform the swap.
     error InsufficientTokens();
 
+    /// @dev Error when the api data comes with an invalid swap function selector.
+    error InvalidSwapFunctionSelector();
+
+    /// @dev Error when the tokenFrom in the api data and swap data do not match.
+    error TokenFromMismath();
+
+    /// @dev Error when the amountFrom in the api data and swap data do not match.
+    error AmountFromMismath();
+
     ////////////////////////////// Modifiers //////////////////////////////
 
     /**
@@ -367,15 +376,33 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         pure
         returns (string memory aggregatorId_, IERC20 tokenFrom_, IERC20 tokenTo_, uint256 amountFrom_, bytes memory swapData_)
     {
+        bytes4 functionSelector_ = bytes4(_apiData[:4]);
+        if (functionSelector_ != IMetaSwap.swap.selector) revert InvalidSwapFunctionSelector();
+
         // Excluding the function selector
-        bytes memory parameterTerms_ = _apiData[4:];
-        (aggregatorId_, tokenFrom_, amountFrom_, swapData_) = abi.decode(parameterTerms_, (string, IERC20, uint256, bytes));
+        bytes memory paramTerms_ = _apiData[4:];
+        (aggregatorId_, tokenFrom_, amountFrom_, swapData_) = abi.decode(paramTerms_, (string, IERC20, uint256, bytes));
 
         // Note: Prepend address(0) to format the data correctly because of the Swaps API. See internal docs.
-        (,, tokenTo_,,,,,,) = abi.decode(
+        (
+            , // address(0)
+            IERC20 swapTokenFrom_,
+            IERC20 swapTokenTo_,
+            uint256 swapAmountFrom_,
+            , // AmountTo
+            , // Metadata
+            uint256 feeAmount_,
+            , // FeeWallet
+            bool feeTo_
+        ) = abi.decode(
             abi.encodePacked(abi.encode(address(0)), swapData_),
             (address, IERC20, IERC20, uint256, uint256, bytes, uint256, address, bool)
         );
+
+        if (swapTokenFrom_ != tokenFrom_) revert TokenFromMismath();
+        if (!feeTo_ && (feeAmount_ + swapAmountFrom_ != amountFrom_)) revert AmountFromMismath();
+
+        tokenTo_ = swapTokenTo_;
     }
 
     /**
