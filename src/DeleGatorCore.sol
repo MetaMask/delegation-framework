@@ -95,8 +95,12 @@ abstract contract DeleGatorCore is
      * @dev Check that the caller is the entry point
      */
     modifier onlyEntryPoint() {
-        if (msg.sender != address(entryPoint)) revert NotEntryPoint();
+        _onlyEntryPoint();
         _;
+    }
+
+    function _onlyEntryPoint() private view {
+        if (msg.sender != address(entryPoint)) revert NotEntryPoint();
     }
 
     /**
@@ -104,8 +108,12 @@ abstract contract DeleGatorCore is
      * @dev Check that the caller is either the delegator contract itself or the entry point
      */
     modifier onlyEntryPointOrSelf() {
-        if (msg.sender != address(entryPoint) && msg.sender != address(this)) revert NotEntryPointOrSelf();
+        _onlyEntryPointOrSelf();
         _;
+    }
+
+    function _onlyEntryPointOrSelf() private view {
+        if (msg.sender != address(entryPoint) && msg.sender != address(this)) revert NotEntryPointOrSelf();
     }
 
     /**
@@ -113,8 +121,12 @@ abstract contract DeleGatorCore is
      * @dev Check that the caller is the stored delegation manager.
      */
     modifier onlyDelegationManager() {
-        if (msg.sender != address(delegationManager)) revert NotDelegationManager();
+        _onlyDelegationManager();
         _;
+    }
+
+    function _onlyDelegationManager() private view {
+        if (msg.sender != address(delegationManager)) revert NotDelegationManager();
     }
 
     ////////////////////////////// Constructor //////////////////////////////
