@@ -12,7 +12,8 @@ import { ModeCode } from "../utils/Types.sol";
  * @dev This contract implements a mechanism by which a user may transfer up to a fixed amount of ETH (the period amount)
  *      during a given time period. The transferable amount resets at the beginning of each period and any unused ETH is
  *      forfeited once the period ends. Partial transfers within a period are allowed, but the total transfer in any period
- *      cannot exceed the specified limit. This enforcer is designed to work only in single execution mode (ModeCode.Single).
+ *      cannot exceed the specified limit.
+ * @dev This enforcer operates only in single execution call type and with default execution mode.
  */
 contract NativeTokenPeriodTransferEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
@@ -102,7 +103,7 @@ contract NativeTokenPeriodTransferEnforcer is CaveatEnforcer {
      *  - 32 bytes: periodAmount.
      *  - 32 bytes: periodDuration (in seconds).
      *  - 32 bytes: startDate for the first period.
-     * @param _mode The execution mode (must be ModeCode.Single).
+     * @param _mode The execution mode. (Must be Single callType, Default execType)
      * @param _executionCallData The execution data encoded via ExecutionLib.encodeSingle.
      *        For native ETH transfers, decodeSingle returns (target, value, callData) and callData is expected to be empty.
      * @param _delegationHash The hash identifying the delegation.
@@ -119,6 +120,7 @@ contract NativeTokenPeriodTransferEnforcer is CaveatEnforcer {
         public
         override
         onlySingleCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
         _validateAndConsumeTransfer(_terms, _executionCallData, _delegationHash, _redeemer);
     }
@@ -168,23 +170,21 @@ contract NativeTokenPeriodTransferEnforcer is CaveatEnforcer {
 
         (uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) = getTermsInfo(_terms);
 
-        // Validate terms.
-        require(startDate_ > 0, "NativeTokenPeriodTransferEnforcer:invalid-zero-start-date");
-        require(periodDuration_ > 0, "NativeTokenPeriodTransferEnforcer:invalid-zero-period-duration");
-        require(periodAmount_ > 0, "NativeTokenPeriodTransferEnforcer:invalid-zero-period-amount");
-
-        // Ensure the transfer period has started.
-        require(block.timestamp >= startDate_, "NativeTokenPeriodTransferEnforcer:transfer-not-started");
-
         PeriodicAllowance storage allowance_ = periodicAllowances[msg.sender][_delegationHash];
 
         // Initialize the allowance on first use.
         if (allowance_.startDate == 0) {
+            // Validate terms.
+            require(startDate_ > 0, "NativeTokenPeriodTransferEnforcer:invalid-zero-start-date");
+            require(periodAmount_ > 0, "NativeTokenPeriodTransferEnforcer:invalid-zero-period-amount");
+            require(periodDuration_ > 0, "NativeTokenPeriodTransferEnforcer:invalid-zero-period-duration");
+
+            // Ensure the transfer period has started.
+            require(block.timestamp >= startDate_, "NativeTokenPeriodTransferEnforcer:transfer-not-started");
+
             allowance_.periodAmount = periodAmount_;
             allowance_.periodDuration = periodDuration_;
             allowance_.startDate = startDate_;
-            allowance_.lastTransferPeriod = 0;
-            allowance_.transferredInCurrentPeriod = 0;
         }
 
         // Calculate available ETH using the current allowance state.

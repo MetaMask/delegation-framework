@@ -19,7 +19,7 @@ import { IDelegationManager } from "../interfaces/IDelegationManager.sol";
  * protecting the delegation.
  * @dev It is recommended to combine the allowance delegation with the `NativeTokenTransferAmountEnforcer` to ensure the correct
  * token transfer amount.
- * @dev Requires the redeemer to be a DeleGator that supports the single execution mode.
+ * @dev This enforcer operates only in default execution mode.
  */
 contract NativeTokenPaymentEnforcer is CaveatEnforcer {
     using ModeLib for ModeCode;
@@ -57,6 +57,7 @@ contract NativeTokenPaymentEnforcer is CaveatEnforcer {
      * @param _terms Encoded 52 packed bytes where: the first 20 bytes are the address of the recipient,
      * the next 32 bytes are the amount to charge for the delegation.
      * @param _args Encoded arguments containing the allowance delegation chain for the payment.
+     * @param _mode The execution mode. (Must be Default execType)
      * @param _delegationHash The hash of the delegation.
      * @param _delegator The address of the delegator.
      * @param _redeemer The address that is redeeming the delegation.
@@ -64,7 +65,7 @@ contract NativeTokenPaymentEnforcer is CaveatEnforcer {
     function afterAllHook(
         bytes calldata _terms,
         bytes calldata _args,
-        ModeCode,
+        ModeCode _mode,
         bytes calldata,
         bytes32 _delegationHash,
         address _delegator,
@@ -72,6 +73,7 @@ contract NativeTokenPaymentEnforcer is CaveatEnforcer {
     )
         public
         override
+        onlyDefaultExecutionMode(_mode)
     {
         require(msg.sender == address(delegationManager), "NativeTokenPaymentEnforcer:only-delegation-manager");
 

@@ -11,6 +11,7 @@ import { ModeCode } from "../utils/Types.sol";
  * is.
  * @dev This contract does not enforce how the balance increases. It is meant to be used with additional enforcers to create
  * granular permissions.
+ * @dev This enforcer operates only in default execution mode.
  */
 contract NativeBalanceGteEnforcer is CaveatEnforcer {
     ////////////////////////////// State //////////////////////////////
@@ -37,11 +38,12 @@ contract NativeBalanceGteEnforcer is CaveatEnforcer {
      * @param _terms 52 packed bytes where the first 20 bytes are the recipient's address, and the next 32 bytes
      * are the minimum balance increase required.
      * @param _delegationHash The hash of the delegation being operated on.
+     * @param _mode The execution mode. (Must be Default execType)
      */
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
-        ModeCode,
+        ModeCode _mode,
         bytes calldata,
         bytes32 _delegationHash,
         address,
@@ -49,6 +51,7 @@ contract NativeBalanceGteEnforcer is CaveatEnforcer {
     )
         public
         override
+        onlyDefaultExecutionMode(_mode)
     {
         bytes32 hashKey_ = _getHashKey(msg.sender, _delegationHash);
         (address recipient_,) = getTermsInfo(_terms);

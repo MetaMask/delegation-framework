@@ -8,6 +8,7 @@ import { ModeCode } from "../utils/Types.sol";
  * @title Nonce Enforcer Contract
  * @dev This contract extends the CaveatEnforcer contract. It provides functionality to add an nonce to a delegation and enable
  * multi delegation revocation based on that nonce by incrementing the current nonce.
+ * @dev This enforcer operates only in default execution mode.
  */
 contract NonceEnforcer is CaveatEnforcer {
     ////////////////////// State //////////////////////
@@ -23,11 +24,12 @@ contract NonceEnforcer is CaveatEnforcer {
     /**
      * @notice
      * @param _terms A uint256 representing the nonce used in the delegation.
+     * @param _mode The execution mode. (Must be Default execType)
      */
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
-        ModeCode,
+        ModeCode _mode,
         bytes calldata,
         bytes32,
         address _delegator,
@@ -36,6 +38,7 @@ contract NonceEnforcer is CaveatEnforcer {
         public
         view
         override
+        onlyDefaultExecutionMode(_mode)
     {
         uint256 nonce_ = getTermsInfo(_terms);
         require(currentNonce[msg.sender][_delegator] == nonce_, "NonceEnforcer:invalid-nonce");

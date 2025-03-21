@@ -10,6 +10,7 @@ import { ModeCode } from "../utils/Types.sol";
 /**
  * @title DeployedEnforcer
  * @dev This contract enforces the deployment of a contract if it hasn't been deployed yet.
+ * @dev This enforcer operates only in default execution mode.
  */
 contract DeployedEnforcer is CaveatEnforcer {
     ////////////////////////////// Errors //////////////////////////////
@@ -48,11 +49,12 @@ contract DeployedEnforcer is CaveatEnforcer {
      *    the first 20 bytes are the expected address of the deployed contract
      *    the next 32 bytes are the salt to use for create2
      *    the remaining bytes are the bytecode of the contract to deploy
+     * @param _mode The execution mode. (Must be Default execType)
      */
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
-        ModeCode,
+        ModeCode _mode,
         bytes calldata,
         bytes32,
         address,
@@ -60,6 +62,7 @@ contract DeployedEnforcer is CaveatEnforcer {
     )
         public
         override
+        onlyDefaultExecutionMode(_mode)
     {
         (address expectedAddress_, bytes32 salt_, bytes memory bytecode_) = getTermsInfo(_terms);
 

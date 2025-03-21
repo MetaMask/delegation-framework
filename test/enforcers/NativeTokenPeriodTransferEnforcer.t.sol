@@ -175,6 +175,13 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         nativeEnforcer.beforeHook(hex"", hex"", batchDefaultMode, executionCallData_, bytes32(0), address(0), address(0));
     }
 
+    // should fail with invalid call type mode (try instead of default)
+    function test_revertWithInvalidExecutionMode() public {
+        vm.prank(address(delegationManager));
+        vm.expectRevert("CaveatEnforcer:invalid-execution-type");
+        nativeEnforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
+    }
+
     ////////////////////// Integration Tests //////////////////////
 
     /// @notice Integration: Simulates a full native ETH transfer via delegation and verifies allowance update.
