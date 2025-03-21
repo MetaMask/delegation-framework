@@ -11,6 +11,7 @@ import { ModeCode } from "../utils/Types.sol";
  * @dev This contract extends the CaveatEnforcer contract. It provides functionality to enforce id
  * restrictions on delegations. A delegator can assign the same id to multiple delegations, once one of them
  * is redeemed the other delegations with the same id will revert.
+ * @dev This enforcer operates only in default execution mode.
  */
 contract IdEnforcer is CaveatEnforcer {
     using BitMaps for BitMaps.BitMap;
@@ -27,11 +28,12 @@ contract IdEnforcer is CaveatEnforcer {
     /**
      * @notice Allows the delegator to specify a id for the delegation, that id can be redeemed only once.
      * @param _terms A uint256 representing the id used in the delegation.
+     * @param _mode The execution mode. (Must be Default execType)
      */
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
-        ModeCode,
+        ModeCode _mode,
         bytes calldata,
         bytes32,
         address _delegator,
@@ -39,6 +41,7 @@ contract IdEnforcer is CaveatEnforcer {
     )
         public
         override
+        onlyDefaultExecutionMode(_mode)
     {
         uint256 id_ = getTermsInfo(_terms);
         require(!getIsUsed(msg.sender, _delegator, id_), "IdEnforcer:id-already-used");

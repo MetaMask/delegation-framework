@@ -9,6 +9,7 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 /**
  * @title ERC721TransferEnforcer
  * @notice This enforcer restricts the action of a UserOp to the transfer of a specific ERC721 token.
+ * @dev This enforcer operates only in single execution call type and with default execution mode.
  */
 contract ERC721TransferEnforcer is CaveatEnforcer {
     bytes4 private constant SAFE_TRANSFER_FROM_SELECTOR_1 = bytes4(keccak256("safeTransferFrom(address,address,uint256)"));
@@ -17,7 +18,7 @@ contract ERC721TransferEnforcer is CaveatEnforcer {
     /**
      * @notice Enforces that the contract and tokenId are permitted for transfer
      * @param _terms abi encoded address of the contract and uint256 of the tokenId
-     * @param _mode the execution mode of the transaction
+     * @param _mode The execution mode. (Must be Single callType, Default execType)
      * @param _executionCallData the call data of the transferFrom call
      */
     function beforeHook(
@@ -33,6 +34,7 @@ contract ERC721TransferEnforcer is CaveatEnforcer {
         virtual
         override
         onlySingleCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
         (address permittedContract_, uint256 permittedTokenId_) = getTermsInfo(_terms);
         (address target_,, bytes calldata callData_) = ExecutionLib.decodeSingle(_executionCallData);

@@ -8,6 +8,7 @@ import { ModeCode } from "../utils/Types.sol";
  * @title Limited Calls Enforcer Contract
  * @dev This contract extends the CaveatEnforcer contract. It provides functionality to enforce a limit on the number of times a
  * delegate may perform transactions on behalf of the delegator.
+ * @dev This enforcer operates only in default execution mode.
  */
 contract LimitedCallsEnforcer is CaveatEnforcer {
     ////////////////////////////// State //////////////////////////////
@@ -26,11 +27,12 @@ contract LimitedCallsEnforcer is CaveatEnforcer {
      * @notice Allows the delegator to specify a maximum number of times the recipient may perform transactions on their behalf.
      * @param _terms - The maximum number of times the delegate may perform transactions on their behalf.
      * @param _delegationHash - The hash of the delegation being operated on.
+     * @param _mode The execution mode. (Must be Default execType)
      */
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
-        ModeCode,
+        ModeCode _mode,
         bytes calldata,
         bytes32 _delegationHash,
         address,
@@ -38,6 +40,7 @@ contract LimitedCallsEnforcer is CaveatEnforcer {
     )
         public
         override
+        onlyDefaultExecutionMode(_mode)
     {
         uint256 limit_ = getTermsInfo(_terms);
         uint256 callCounts_ = ++callCounts[msg.sender][_delegationHash];

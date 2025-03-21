@@ -289,7 +289,7 @@ abstract contract BaseTest is Test {
     // NOTE: This is a big assumption about how signatures for DeleGators are made. The hash to sign could come in many forms
     // depending on the implementation.
     function getPackedUserOperationTypedDataHash(PackedUserOperation memory _userOp) public view returns (bytes32) {
-        return HybridDeleGator(payable(_userOp.sender)).getPackedUserOperationTypedDataHash(_userOp);
+        return DeleGatorCore(payable(_userOp.sender)).getPackedUserOperationTypedDataHash(_userOp);
     }
 
     // NOTE: This method assumes the signature is an EIP712 signature of the UserOperation with a domain provided by the Signer. It

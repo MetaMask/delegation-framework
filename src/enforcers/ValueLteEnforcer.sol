@@ -10,7 +10,7 @@ import { ModeCode } from "../utils/Types.sol";
  * @title ValueLteEnforcer
  * @dev This contract extends the CaveatEnforcer contract. It provides functionality to enforce a specific value for the Execution
  * being executed.
- * @dev This caveat enforcer only works when the execution is in single mode.
+ * @dev This enforcer operates only in single execution call type and with default execution mode.
  */
 contract ValueLteEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
@@ -20,6 +20,7 @@ contract ValueLteEnforcer is CaveatEnforcer {
     /**
      * @notice Allows the delegator to specify a maximum value of native tokens that the delegate can spend.
      * @param _terms - A uint256 value that the Execution's value must be less than or equal to.
+     * @param _mode The execution mode. (Must be Single callType, Default execType)
      */
     function beforeHook(
         bytes calldata _terms,
@@ -34,6 +35,7 @@ contract ValueLteEnforcer is CaveatEnforcer {
         pure
         override
         onlySingleCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
         (, uint256 value_,) = _executionCallData.decodeSingle();
         uint256 termsValue_ = getTermsInfo(_terms);

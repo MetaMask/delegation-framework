@@ -10,7 +10,7 @@ import { ModeCode, Execution } from "../utils/Types.sol";
 /**
  * @title ExactExecutionEnforcer
  * @notice Ensures that the provided execution matches exactly with the expected execution (target, value, and calldata).
- * @dev This caveat enforcer operates only in single execution mode.
+ * @dev This enforcer operates only in single execution call type and with default execution mode.
  */
 contract ExactExecutionEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
@@ -21,7 +21,7 @@ contract ExactExecutionEnforcer is CaveatEnforcer {
     /**
      * @notice Validates that the execution matches exactly with the expected execution.
      * @param _terms The encoded expected Execution.
-     * @param _mode The execution mode, which must be single.
+     * @param _mode The execution mode. (Must be Single callType, Default execType)
      * @param _executionCallData The execution calldata.
      */
     function beforeHook(
@@ -37,15 +37,9 @@ contract ExactExecutionEnforcer is CaveatEnforcer {
         pure
         override
         onlySingleCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
-        // Decode execution data
-        (address execTarget_, uint256 execValue_, bytes calldata execCallData_) = _executionCallData.decodeSingle();
-
-        require(
-            address(bytes20(_terms[0:20])) == execTarget_ && uint256(bytes32(_terms[20:52])) == execValue_
-                && keccak256(_terms[52:]) == keccak256(execCallData_),
-            "ExactExecutionEnforcer:invalid-execution"
-        );
+        _validateExecution(_terms, _executionCallData);
     }
 
     /**
@@ -55,5 +49,23 @@ contract ExactExecutionEnforcer is CaveatEnforcer {
      */
     function getTermsInfo(bytes calldata _terms) public pure returns (Execution memory execution_) {
         (execution_.target, execution_.value, execution_.callData) = _terms.decodeSingle();
+    }
+
+    /**
+     * @notice Validates that the provided execution matches exactly with the expected execution.
+     * @dev Compares the target address, value, and calldata of the execution against the expected execution terms.
+     * @param _terms Encoded data representing the expected execution (target, value, and calldata).
+     * @param _executionCallData The actual execution calldata to be validated.
+     * @dev Reverts if any part of the execution (target, value, or calldata) does not match the expected terms.
+     */
+    function _validateExecution(bytes calldata _terms, bytes calldata _executionCallData) private pure {
+        // Decode execution data
+        (address execTarget_, uint256 execValue_, bytes calldata execCallData_) = _executionCallData.decodeSingle();
+
+        require(
+            address(bytes20(_terms[0:20])) == execTarget_ && uint256(bytes32(_terms[20:52])) == execValue_
+                && keccak256(_terms[52:]) == keccak256(execCallData_),
+            "ExactExecutionEnforcer:invalid-execution"
+        );
     }
 }

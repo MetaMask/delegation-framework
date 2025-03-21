@@ -9,7 +9,7 @@ import { ModeCode } from "../utils/Types.sol";
 /**
  * @title ExactCalldataEnforcer
  * @notice Ensures that the provided execution calldata matches exactly the expected calldata.
- * @dev This caveat enforcer operates only in single execution mode.
+ * @dev This enforcer operates only in single execution call type and with default execution mode.
  */
 contract ExactCalldataEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
@@ -19,7 +19,7 @@ contract ExactCalldataEnforcer is CaveatEnforcer {
     /**
      * @notice Validates that the execution calldata matches the expected calldata.
      * @param _terms The encoded expected calldata.
-     * @param _mode The execution mode, which must be single.
+     * @param _mode The execution mode. (Must be Single callType, Default execType)
      * @param _executionCallData The calldata provided for execution.
      */
     function beforeHook(
@@ -35,6 +35,7 @@ contract ExactCalldataEnforcer is CaveatEnforcer {
         pure
         override
         onlySingleCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
         (,, bytes calldata callData_) = _executionCallData.decodeSingle();
 

@@ -13,6 +13,7 @@ import { ModeCode } from "../utils/Types.sol";
  * is.
  * @dev This contract has no enforcement of how the balance increases. It's meant to be used alongside additional enforcers to
  * create granular permissions.
+ * @dev This enforcer operates only in default execution mode.
  */
 contract ERC20BalanceGteEnforcer is CaveatEnforcer {
     ////////////////////////////// State //////////////////////////////
@@ -39,11 +40,12 @@ contract ERC20BalanceGteEnforcer is CaveatEnforcer {
      * @notice This function caches the delegators ERC20 balance before the delegation is executed.
      * @param _terms 72 packed bytes where: the first 20 bytes is the address of the recipient, the next 20 bytes
      * is the address of the token, the next 32 bytes is the amount of tokens the balance should be greater than or equal to
+     * @param _mode The execution mode. (Must be Default execType)
      */
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
-        ModeCode,
+        ModeCode _mode,
         bytes calldata,
         bytes32 _delegationHash,
         address,
@@ -51,6 +53,7 @@ contract ERC20BalanceGteEnforcer is CaveatEnforcer {
     )
         public
         override
+        onlyDefaultExecutionMode(_mode)
     {
         (address recipient_, address token_,) = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, token_, _delegationHash);

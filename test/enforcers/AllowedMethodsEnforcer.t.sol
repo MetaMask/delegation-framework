@@ -141,6 +141,13 @@ contract AllowedMethodsEnforcerTest is CaveatEnforcerBaseTest {
         allowedMethodsEnforcer.beforeHook(hex"", hex"", batchDefaultMode, executionCallData_, bytes32(0), address(0), address(0));
     }
 
+    // should fail with invalid call type mode (try instead of default)
+    function test_revertWithInvalidExecutionMode() public {
+        vm.prank(address(delegationManager));
+        vm.expectRevert("CaveatEnforcer:invalid-execution-type");
+        allowedMethodsEnforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
+    }
+
     ////////////////////// Integration //////////////////////
 
     // should allow a method to be called when a single method is allowed Integration

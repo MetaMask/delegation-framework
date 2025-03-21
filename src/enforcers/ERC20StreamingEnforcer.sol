@@ -19,7 +19,7 @@ import { ModeCode } from "../utils/Types.sol";
  *  5. The enforcer tracks how many tokens have already been spent, and will revert
  *     if an attempted transfer exceeds what remains unlocked.
  *
- * @dev This caveat enforcer only works when the execution is in single mode (`ModeCode.Single`).
+ * @dev This enforcer operates only in single execution call type and with default execution mode.
  * @dev To enable an 'infinite' token stream, set `maxAmount` to type(uint256).max
  */
 contract ERC20StreamingEnforcer is CaveatEnforcer {
@@ -85,7 +85,7 @@ contract ERC20StreamingEnforcer is CaveatEnforcer {
      * - 32 bytes: max amount.
      * - 32 bytes: amount per second.
      * - 32 bytes: start time for the streaming allowance.
-     * @param _mode The mode of the execution (must be `ModeCode.Single` for this enforcer).
+     * @param _mode The execution mode. (Must be Single callType, Default execType)
      * @param _executionCallData The transaction the delegate might try to perform.
      * @param _delegationHash The hash of the delegation being operated on.
      * @param _redeemer The address of the redeemer.
@@ -102,6 +102,7 @@ contract ERC20StreamingEnforcer is CaveatEnforcer {
         public
         override
         onlySingleCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
         _validateAndConsumeAllowance(_terms, _executionCallData, _delegationHash, _redeemer);
     }

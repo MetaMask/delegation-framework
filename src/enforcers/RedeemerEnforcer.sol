@@ -8,7 +8,8 @@ import { ModeCode } from "../utils/Types.sol";
  * @title RedeemerEnforcer
  * @dev This contract restricts the addresses that can redeem delegations.
  * Specifically designed for smart contracts or EOAs lacking delegation support.
- * Note: DeleGator accounts with delegation functionalities may bypass these restrictions by delegating to other addresses.
+ * @dev DeleGator accounts with delegation functionalities may bypass these restrictions by delegating to other addresses.
+ * @dev This enforcer operates only in default execution mode.
  */
 contract RedeemerEnforcer is CaveatEnforcer {
     ////////////////////////////// Public Methods //////////////////////////////
@@ -16,12 +17,13 @@ contract RedeemerEnforcer is CaveatEnforcer {
     /**
      * @notice Allows the delegator to limit which addresses can redeem the delegation.
      * @param _terms Encoded 20-byte addresses of the allowed redeemers.
+     * @param _mode The execution mode. (Must be Default execType)
      * @param _redeemer The address attempting to redeem the delegation.
      */
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
-        ModeCode,
+        ModeCode _mode,
         bytes calldata,
         bytes32,
         address,
@@ -30,6 +32,7 @@ contract RedeemerEnforcer is CaveatEnforcer {
         public
         pure
         override
+        onlyDefaultExecutionMode(_mode)
     {
         address[] memory allowedRedeemers_ = getTermsInfo(_terms);
         uint256 allowedRedeemersLength_ = allowedRedeemers_.length;

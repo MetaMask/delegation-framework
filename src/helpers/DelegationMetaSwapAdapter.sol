@@ -10,8 +10,8 @@ import { ExecutionHelper } from "@erc7579/core/ExecutionHelper.sol";
 
 import { IMetaSwap } from "./interfaces/IMetaSwap.sol";
 import { IDelegationManager } from "../interfaces/IDelegationManager.sol";
-import { CallType, ExecType, Execution, Delegation, ModeCode } from "../utils/Types.sol";
-import { CALLTYPE_SINGLE, CALLTYPE_BATCH, EXECTYPE_DEFAULT, EXECTYPE_TRY } from "../utils/Constants.sol";
+import { CallType, ExecType, Delegation, ModeCode } from "../utils/Types.sol";
+import { CALLTYPE_SINGLE, EXECTYPE_DEFAULT } from "../utils/Constants.sol";
 
 /**
  * @title DelegationMetaSwapAdapter
@@ -237,13 +237,13 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     }
 
     /**
-     * @notice Executes one or multiple calls on behalf of this contract,
+     * @notice Executes one calls on behalf of this contract,
      *         authorized by the DelegationManager.
-     * @dev Only callable by the DelegationManager. Supports both single-call and
-     *      batch-call execution, and handles the revert-or-try logic via ExecType.
+     * @dev Only callable by the DelegationManager. Supports single-call execution,
+     *         and handles the revert logic via ExecType.
      * @dev Related: @erc7579/MSAAdvanced.sol
      * @param _mode The encoded execution mode of the transaction (CallType, ExecType, etc.).
-     * @param _executionCalldata The encoded call data (single or batch) to be executed.
+     * @param _executionCalldata The encoded call data (single) to be executed.
      * @return returnData_ An array of returned data from each executed call.
      */
     function executeFromExecutor(
@@ -257,31 +257,14 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     {
         (CallType callType_, ExecType execType_,,) = _mode.decode();
 
-        // Check if calltype is batch or single
-        if (callType_ == CALLTYPE_BATCH) {
-            // Destructure executionCallData according to batched exec
-            Execution[] calldata executions_ = _executionCalldata.decodeBatch();
-            // check if execType is revert or try
-            if (execType_ == EXECTYPE_DEFAULT) returnData_ = _execute(executions_);
-            else if (execType_ == EXECTYPE_TRY) returnData_ = _tryExecute(executions_);
-            else revert UnsupportedExecType(execType_);
-        } else if (callType_ == CALLTYPE_SINGLE) {
-            // Destructure executionCallData according to single exec
-            (address target_, uint256 value_, bytes calldata callData_) = _executionCalldata.decodeSingle();
-            returnData_ = new bytes[](1);
-            bool success_;
-            // check if execType is revert or try
-            if (execType_ == EXECTYPE_DEFAULT) {
-                returnData_[0] = _execute(target_, value_, callData_);
-            } else if (execType_ == EXECTYPE_TRY) {
-                (success_, returnData_[0]) = _tryExecute(target_, value_, callData_);
-                if (!success_) emit TryExecuteUnsuccessful(0, returnData_[0]);
-            } else {
-                revert UnsupportedExecType(execType_);
-            }
-        } else {
-            revert UnsupportedCallType(callType_);
-        }
+        // Only support single call type with default execution
+        if (CallType.unwrap(CALLTYPE_SINGLE) != CallType.unwrap(callType_)) revert UnsupportedCallType(callType_);
+        if (ExecType.unwrap(EXECTYPE_DEFAULT) != ExecType.unwrap(execType_)) revert UnsupportedExecType(execType_);
+        // Process single execution directly without additional checks
+        (address target_, uint256 value_, bytes calldata callData_) = _executionCalldata.decodeSingle();
+        returnData_ = new bytes[](1);
+        returnData_[0] = _execute(target_, value_, callData_);
+        return returnData_;
     }
 
     /**

@@ -49,7 +49,7 @@ contract SpecificActionERC20TransferBatchEnforcer is CaveatEnforcer {
      *   - Transfer amount (32 bytes)
      *   - First transaction target address (20 bytes)
      *   - First transaction calldata (remaining bytes)
-     * @param _mode The execution mode
+     * @param _mode The execution mode. (Must be Batch callType, Default execType)
      * @param _executionCallData The batch execution calldata
      * @param _delegationHash The delegation hash
      */
