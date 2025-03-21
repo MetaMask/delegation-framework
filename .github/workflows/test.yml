@@ -16,6 +16,19 @@ jobs:
         with:
           concurrent_skipping: same_content_newer
 
+  check-ffi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+
+      - name: Search for 'ffi' in foundry.toml
+        run: |
+          if grep -q "ffi" "foundry.toml"; then
+            echo "Remove ffi configuration from the foundry.toml"
+            exit 1
+          fi
+
   tests:
     needs: pre_job
     if: needs.pre_job.outputs.should_skip != 'true'
