@@ -16,6 +16,8 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
     ////////////////////////////// State //////////////////////////////
     MultiTokenPeriodEnforcer public multiTokenEnforcer;
     BasicERC20 public basicERC20; // Used for ERC20 tests
+    BasicERC20 public basicERC20B;
+
     address public alice;
     address public bob;
 
@@ -42,6 +44,7 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
         alice = address(users.alice.deleGator);
         bob = address(users.bob.deleGator);
         basicERC20 = new BasicERC20(alice, "TestToken", "TT", 100 ether);
+        basicERC20B = new BasicERC20(alice, "TestTokenB", "TTB", 50 ether);
 
         erc20StartDate = block.timestamp;
         nativeStartDate = block.timestamp;
@@ -671,6 +674,100 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(periodAmounts_[2], secondERC20Amount_, "Config2: period amount mismatch");
         assertEq(periodDurations_[2], secondERC20Duration_, "Config2: period duration mismatch");
         assertEq(startDates_[2], secondERC20Start_, "Config2: start date mismatch");
+    }
+
+    /// @notice Tests multiple tokens (three configurations) with different settings.
+    ///         It deploys a second ERC20 token (Token B) and sets up:
+    ///         - Token A: an ERC20 token (basicERC20) with its configuration.
+    ///         - Token B: an ERC20 token (basicERC20B) with a different configuration.
+    ///         - Token C: a native token (address(0)) with its configuration.
+    ///         All start dates are set in the past so that the beforeHook calls succeed.
+    ///         Then, it verifies that getAvailableAmount returns the expected available amounts.
+    function test_MultipleTokensBeforeHook() public {
+        vm.warp(10000);
+
+        // Define configuration for Token A (ERC20 - basicERC20)
+        uint256 periodAmountA_ = 1000;
+        uint256 periodDurationA_ = 100; // 100 seconds
+
+        // Deploy a second ERC20 token for Token B.
+        uint256 periodAmountB_ = 500;
+        uint256 periodDurationB_ = 50; // 50 seconds
+
+        // Define configuration for Token C (Native: address(0))
+        uint256 periodAmountC_ = 1 ether;
+        uint256 periodDurationC_ = 100; // 100 seconds
+
+        // Build the _terms blob: concatenation of configurations for Token A, Token B, and Token C.
+        bytes memory terms_ = abi.encodePacked(
+            address(basicERC20),
+            periodAmountA_,
+            periodDurationA_,
+            block.timestamp - 100, // Token A start date,
+            address(basicERC20B),
+            periodAmountB_,
+            periodDurationB_,
+            block.timestamp - 50, // Token B start date
+            address(0),
+            periodAmountC_,
+            periodDurationC_,
+            block.timestamp - 10 // Token C (native) start date
+        );
+
+        {
+            // Call beforeHook for Token A (ERC20).
+            bytes memory callDataA_ = _encodeERC20Transfer(bob, 300);
+            bytes memory execDataA_ = _encodeSingleExecution(address(basicERC20), 0, callDataA_);
+            multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execDataA_, dummyDelegationHash, address(0), redeemer);
+        }
+
+        {
+            // Call beforeHook for Token B (ERC20).
+            bytes memory callDataB_ = _encodeERC20Transfer(bob, 200);
+            bytes memory execDataB_ = _encodeSingleExecution(address(basicERC20B), 0, callDataB_);
+            multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execDataB_, dummyDelegationHash, address(0), redeemer);
+        }
+        {
+            // Call beforeHook for Token C (Native).
+            bytes memory execDataC_ = _encodeNativeTransfer(bob, 0.2 ether);
+            multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execDataC_, dummyDelegationHash, address(0), redeemer);
+        }
+        {
+            // Verify available amounts for each token.
+            (uint256 availableA_,,) =
+                multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(basicERC20));
+            (uint256 availableB_,,) =
+                multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(basicERC20B));
+            (uint256 availableC_,,) = multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(0));
+
+            assertEq(availableA_, periodAmountA_ - 300, "Token A available amount incorrect");
+            assertEq(availableB_, periodAmountB_ - 200, "Token B available amount incorrect");
+            assertEq(availableC_, periodAmountC_ - 0.2 ether, "Token C available amount incorrect");
+        }
+    }
+
+    /// @notice Tests getAvailableAmount for an ERC20 token when no beforeHook has been called,
+    ///         so that the allowance is simulated from _terms.
+    function test_GetAvailableAmountWithoutBeforeHookErc20() public {
+        // Build an ERC20 configuration _terms blob.
+        bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
+
+        // Call getAvailableAmount without any prior beforeHook call.
+        (uint256 available_, bool isNewPeriod_, uint256 currentPeriod_) =
+            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(basicERC20));
+
+        // Since no transfer has occurred, available amount should equal the periodAmount.
+        assertEq(available_, erc20PeriodAmount, "Available amount should equal periodAmount when uninitialized");
+        // If the block.timestamp is >= erc20StartDate, isNewPeriod_ should be true and currentPeriod_ computed properly.
+        if (block.timestamp >= erc20StartDate) {
+            assertTrue(isNewPeriod_, "isNewPeriod should be true after startDate");
+            assertGt(currentPeriod_, 0, "Current period should be > 0 after startDate");
+        } else {
+            // If before the start date, available should be 0.
+            assertEq(available_, 0, "Available should be 0 before start date");
+            assertFalse(isNewPeriod_, "isNewPeriod should be false before start date");
+            assertEq(currentPeriod_, 0, "Current period should be 0 before start date");
+        }
     }
 
     ////////////////////// Helper Functions //////////////////////
