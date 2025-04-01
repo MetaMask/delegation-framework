@@ -22,7 +22,7 @@ source verify-utils.sh
 
 CONTRACT_PATH="lib/SCL/src/lib/libSCL_RIP7212.sol"
 CONTRACT_NAME="SCL_RIP7212"
-ADDRESS="0x06d0e66B5c97398a14eF4227d107C24A588CDb40"
+ADDRESS="0xCCD3B747F3DBd349fa3af4eBC7d0C31aE6f21dd1"
 
 # No constructor, no external library references
 CONSTRUCTOR_ARGS=""
