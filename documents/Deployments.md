@@ -1,4 +1,4 @@
-# Deployments README
+# Deployments
 
 ## **Deterministic Deployment**
 

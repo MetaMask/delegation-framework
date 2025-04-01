@@ -134,6 +134,10 @@ forge script script/DeployEIP7702StatelessDeleGator.s.sol --rpc-url <your_rpc_ur
 forge script script/DeployMultiSigDeleGator.s.sol --private-key $PRIVATE_KEY --broadcast
 ```
 
+### Deployments
+
+[Read more on "Deployments" ->](/documents/Deployments.md)
+
 ### Javascript
 
 Currently in Gated Alpha phase. Sign up to be an early partner [here](https://gator.metamask.io).
