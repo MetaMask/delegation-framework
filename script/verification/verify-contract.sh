@@ -19,15 +19,17 @@ source ./verify-utils.sh
 
 # Example for contract verfication
 ###############################################################################
-CONTRACT_NAME="HybridDeleGator"
-CONTRACT_PATH="src/$CONTRACT_NAME.sol"
-ADDRESS="0xf4E57F579ad8169D0d4Da7AedF71AC3f83e8D2b4"
+CONTRACT_NAME="NativeTokenPaymentEnforcer"
+CONTRACT_PATH="src/enforcers/$CONTRACT_NAME.sol"
+ADDRESS="0x4803a326ddED6dDBc60e659e5ed12d85c7582811"
 
 # Example: you can encode constructor arguments with cast directly here:
+
 CONSTRUCTOR_ARGS=$(cast abi-encode \
-  "constructor(address, address)" \
-  "0x739309deED0Ae184E66a427ACa432aE1D91d022e" \
-  "0x0000000071727De22E5E9d8BAf0edAc6f37da032")
+  "constructor(address,address)" \
+  "0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3" \
+  "0x44B8C6ae3C304213c3e298495e12497Ed3E56E41" \
+  )
 
 # No external library references
 LIB_STRING=""
