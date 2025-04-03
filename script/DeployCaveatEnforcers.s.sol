@@ -102,9 +102,6 @@ contract DeployCaveatEnforcers is Script {
         deployedAddress = address(new ERC1155BalanceGteEnforcer{ salt: salt }());
         console2.log("ERC1155BalanceGteEnforcer: %s", deployedAddress);
 
-        deployedAddress = address(new ExactCalldataBatchEnforcer{ salt: salt }());
-        console2.log("ExactCalldataBatchEnforcer: %s", deployedAddress);
-
         deployedAddress = address(new ExactCalldataEnforcer{ salt: salt }());
         console2.log("ExactCalldataEnforcer: %s", deployedAddress);
 
