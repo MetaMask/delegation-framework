@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2Step.sol";
@@ -20,11 +22,21 @@ import { CALLTYPE_SINGLE, EXECTYPE_DEFAULT } from "../utils/Constants.sol";
  *      with this enforcer as its first element. Its arguments indicate whether the swap should enforce the token
  *      whitelist ("Token-Whitelist-Enforced") or not ("Token-Whitelist-Not-Enforced"). The root delegator is
  *      responsible for including this enforcer to signal the desired behavior.
+ *
+ * @dev This adapter is intended to be used with the Swaps API. Accordingly, all API requests must include a valid
+ *      signature that incorporates an expiration timestamp. The signature is verified during swap execution to ensure
+ *      that it is still valid.
  */
 contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     using ModeLib for ModeCode;
     using ExecutionLib for bytes;
     using SafeERC20 for IERC20;
+
+    struct SignatureData {
+        bytes apiData;
+        uint256 expiration;
+        bytes signature;
+    }
 
     ////////////////////////////// State //////////////////////////////
 
@@ -42,6 +54,9 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
 
     /// @dev The enforcer used to compare args and terms
     address public immutable argsEqualityCheckEnforcer;
+
+    /// @dev Address of the API signer account.
+    address public swapApiSigner;
 
     /// @dev Indicates if a token is allowed to be used in the swaps
     mapping(IERC20 token => bool allowed) public isTokenAllowed;
@@ -69,6 +84,9 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /// @dev Emitted when the allowed aggregator ID status changes.
     event ChangedAggregatorIdStatus(bytes32 indexed aggregatorIdHash, string aggregatorId, bool status);
 
+    /// @dev Emitted when the Signer API is updated.
+    event SwapApiSignerUpdated(address indexed newSigner);
+
     ////////////////////////////// Errors //////////////////////////////
 
     /// @dev Error thrown when the caller is not the delegation manager
@@ -77,7 +95,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /// @dev Error thrown when the call is not made by this contract itself.
     error NotSelf();
 
-    /// @dev Error thrown when msg.sender is not the leaf delegatior.
+    /// @dev Error thrown when msg.sender is not the leaf delegator.
     error NotLeafDelegator();
 
     /// @dev Error thrown when an execution with an unsupported CallType is made.
@@ -113,6 +131,12 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /// @dev Error when the delegations do not include the ArgsEqualityCheckEnforcer
     error MissingArgsEqualityCheckEnforcer();
 
+    /// @dev Error thrown when API signature is invalid.
+    error InvalidApiSignature();
+
+    /// @dev Error thrown when the signature expiration has passed.
+    error SignatureExpired();
+
     ////////////////////////////// Modifiers //////////////////////////////
 
     /**
@@ -136,6 +160,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /**
      * @notice Initializes the DelegationMetaSwapAdapter contract.
      * @param _owner The initial owner of the contract.
+     * @param _swapApiSigner The initial swap API signer.
      * @param _delegationManager The address of the trusted DelegationManager contract has privileged access to call
      *        executeByExecutor based on a given delegation.
      * @param _metaSwap The address of the trusted MetaSwap contract.
@@ -143,15 +168,18 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
      */
     constructor(
         address _owner,
+        address _swapApiSigner,
         IDelegationManager _delegationManager,
         IMetaSwap _metaSwap,
         address _argsEqualityCheckEnforcer
     )
         Ownable(_owner)
     {
+        swapApiSigner = _swapApiSigner;
         delegationManager = _delegationManager;
         metaSwap = _metaSwap;
         argsEqualityCheckEnforcer = _argsEqualityCheckEnforcer;
+        emit SwapApiSignerUpdated(_swapApiSigner);
         emit SetDelegationManager(_delegationManager);
         emit SetMetaSwap(_metaSwap);
         emit SetArgsEqualityCheckEnforcer(_argsEqualityCheckEnforcer);
@@ -165,15 +193,27 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     receive() external payable { }
 
     /**
-     * @notice Executes a token swap using a delegation and transfers the swapped tokens to the root delegator.
+     * @notice Executes a token swap using a delegation and transfers the swapped tokens to the root delegator, after validating
+     * signature and expiration.
      * @dev The msg.sender must be the leaf delegator
-     * @param _apiData Encoded swap parameters, used by the aggregator.
+     * @param _signatureData Includes:
+     * - apiData Encoded swap parameters, used by the aggregator.
+     * - expiration Timestamp after which the signature is invalid.
+     * - signature Signature validating the provided apiData.
      * @param _delegations Array of Delegation objects containing delegation-specific data, sorted leaf to root.
      * @param _useTokenWhitelist Indicates whether the tokens must be validated or not.
      */
-    function swapByDelegation(bytes calldata _apiData, Delegation[] memory _delegations, bool _useTokenWhitelist) external {
+    function swapByDelegation(
+        SignatureData calldata _signatureData,
+        Delegation[] memory _delegations,
+        bool _useTokenWhitelist
+    )
+        external
+    {
+        _validateSignature(_signatureData);
+
         (string memory aggregatorId_, IERC20 tokenFrom_, IERC20 tokenTo_, uint256 amountFrom_, bytes memory swapData_) =
-            _decodeApiData(_apiData);
+            _decodeApiData(_signatureData.apiData);
         uint256 delegationsLength_ = _delegations.length;
 
         if (delegationsLength_ == 0) revert InvalidEmptyDelegations();
@@ -265,6 +305,15 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         uint256 obtainedAmount_ = _getSelfBalance(_tokenTo) - balanceToBefore_;
 
         _sendTokens(_tokenTo, obtainedAmount_, _recipient);
+    }
+
+    /**
+     * @notice Updates the address authorized to sign API requests.
+     * @param _newSigner The new authorized signer address.
+     */
+    function setSwapApiSigner(address _newSigner) external onlyOwner {
+        swapApiSigner = _newSigner;
+        emit SwapApiSignerUpdated(_newSigner);
     }
 
     /**
@@ -438,5 +487,19 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         if (address(_token) == address(0)) return address(this).balance;
 
         return _token.balanceOf(address(this));
+    }
+
+    /**
+     * @dev Validates the expiration and signature of the provided apiData.
+     * @param _signatureData Contains the apiData, the expiration and signature.
+     */
+    function _validateSignature(SignatureData memory _signatureData) private view {
+        if (block.timestamp > _signatureData.expiration) revert SignatureExpired();
+
+        bytes32 messageHash_ = keccak256(abi.encodePacked(_signatureData.apiData, _signatureData.expiration));
+        bytes32 ethSignedMessageHash_ = MessageHashUtils.toEthSignedMessageHash(messageHash_);
+
+        address recoveredSigner_ = ECDSA.recover(ethSignedMessageHash_, _signatureData.signature);
+        if (recoveredSigner_ != swapApiSigner) revert InvalidApiSignature();
     }
 }
