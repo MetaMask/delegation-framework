@@ -15,8 +15,11 @@ import { CALLTYPE_SINGLE, EXECTYPE_DEFAULT } from "../utils/Constants.sol";
 
 /**
  * @title DelegationMetaSwapAdapter
- * @notice Acts as a middleman to orchestrate token swaps using delegations
- *         and an aggregator (MetaSwap).
+ * @notice Acts as a middleman to orchestrate token swaps using delegations and an aggregator (MetaSwap).
+ * @dev This contract depends on an ArgsEqualityCheckEnforcer. The root delegation must include a caveat
+ *      with this enforcer as its first element. Its arguments indicate whether the swap should enforce the token
+ *      whitelist ("Enforce Token Whitelist") or skip the whitelist ("Skip Token Whitelist"). The root delegator is
+ *      responsible for including this enforcer to signal the desired behavior.
  */
 contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     using ModeLib for ModeCode;
@@ -31,6 +34,9 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /// @dev The MetaSwap contract used to swap tokens
     IMetaSwap public immutable metaSwap;
 
+    /// @dev The enforcer used to compare args and terms
+    address public immutable argsEqualityCheckEnforcer;
+
     /// @dev Indicates if a token is allowed to be used in the swaps
     mapping(IERC20 token => bool allowed) public isTokenAllowed;
 
@@ -44,6 +50,9 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
 
     /// @dev Emitted when the MetaSwap contract address is set.
     event SetMetaSwap(IMetaSwap indexed newMetaSwap);
+
+    /// @dev Emitted when the Args Equality Check Enforcer contract address is set.
+    event SetArgsEqualityCheckEnforcer(address newArgsEqualityCheckEnforcer);
 
     /// @dev Emitted when the contract sends tokens (or native tokens) to a recipient.
     event SentTokens(IERC20 indexed token, address indexed recipient, uint256 amount);
@@ -95,6 +104,9 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /// @dev Error when the contract did not receive enough tokens to perform the swap.
     error InsufficientTokens();
 
+    /// @dev Error when the delegations do not include the ArgsEqualityCheckEnforcer
+    error MissingArgsEqualityCheckEnforcer();
+
     ////////////////////////////// Modifiers //////////////////////////////
 
     /**
@@ -116,16 +128,26 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     ////////////////////////////// Constructor //////////////////////////////
 
     /**
-     * @notice Initializes the DelegationMetaSwapAdapter contract
-     * @param _owner The initial owner of the contract
-     * @param _delegationManager the address of the trusted DelegationManager contract that will have root access to this contract
-     * @param _metaSwap the address of the trusted MetaSwap contract.
+     * @notice Initializes the DelegationMetaSwapAdapter contract.
+     * @param _owner The initial owner of the contract.
+     * @param _delegationManager The address of the trusted DelegationManager contract that will have root access to this contract.
+     * @param _metaSwap The address of the trusted MetaSwap contract.
+     * @param _argsEqualityCheckEnforcer The address of the ArgsEqualityCheckEnforcer contract.
      */
-    constructor(address _owner, IDelegationManager _delegationManager, IMetaSwap _metaSwap) Ownable(_owner) {
+    constructor(
+        address _owner,
+        IDelegationManager _delegationManager,
+        IMetaSwap _metaSwap,
+        address _argsEqualityCheckEnforcer
+    )
+        Ownable(_owner)
+    {
         delegationManager = _delegationManager;
         metaSwap = _metaSwap;
+        argsEqualityCheckEnforcer = _argsEqualityCheckEnforcer;
         emit SetDelegationManager(_delegationManager);
         emit SetMetaSwap(_metaSwap);
+        emit SetArgsEqualityCheckEnforcer(_argsEqualityCheckEnforcer);
     }
 
     ////////////////////////////// External Methods //////////////////////////////
@@ -140,16 +162,18 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
      * @dev The msg.sender must be the leaf delegator
      * @param _apiData Encoded swap parameters, used by the aggregator.
      * @param _delegations Array of Delegation objects containing delegation-specific data, sorted leaf to root.
+     * @param _useTokenWhitelist Indicates whether the tokens must be validated or not.
      */
-    function swapByDelegation(bytes calldata _apiData, Delegation[] memory _delegations) external {
+    function swapByDelegation(bytes calldata _apiData, Delegation[] memory _delegations, bool _useTokenWhitelist) external {
         (string memory aggregatorId_, IERC20 tokenFrom_, IERC20 tokenTo_, uint256 amountFrom_, bytes memory swapData_) =
             _decodeApiData(_apiData);
         uint256 delegationsLength_ = _delegations.length;
 
         if (delegationsLength_ == 0) revert InvalidEmptyDelegations();
         if (tokenFrom_ == tokenTo_) revert InvalidIdenticalTokens();
-        if (!isTokenAllowed[tokenFrom_]) revert TokenFromIsNotAllowed(tokenFrom_);
-        if (!isTokenAllowed[tokenTo_]) revert TokenToIsNotAllowed(tokenTo_);
+
+        _validateTokens(tokenFrom_, tokenTo_, _delegations, _useTokenWhitelist);
+
         if (!isAggregatorAllowed[keccak256(abi.encode(aggregatorId_))]) revert AggregatorIdIsNotAllowed(aggregatorId_);
         if (_delegations[0].delegator != msg.sender) revert NotLeafDelegator();
 
@@ -339,6 +363,42 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         }
 
         emit SentTokens(_token, _recipient, _amount);
+    }
+
+    /**
+     * @dev Validates that the tokens are whitelisted or not based on the _useTokenWhitelist flag.
+     * @dev Adds the argsCheckEnforcer args to later validate if the token whitelist must be have been used or not.
+     * @param _tokenFrom The input token of the swap.
+     * @param _tokenTo The output token of the swap.
+     * @param _delegations The delegation chain; the last delegation must include the ArgsEqualityCheckEnforcer.
+     * @param _useTokenWhitelist Flag indicating whether token whitelist checks should be enforced.
+     */
+    function _validateTokens(
+        IERC20 _tokenFrom,
+        IERC20 _tokenTo,
+        Delegation[] memory _delegations,
+        bool _useTokenWhitelist
+    )
+        private
+        view
+    {
+        // The Args Enforcer must be the first caveat in the root delegation
+        uint256 lastIndex_ = _delegations.length - 1;
+        if (
+            _delegations[lastIndex_].caveats.length == 0
+                || _delegations[lastIndex_].caveats[0].enforcer != argsEqualityCheckEnforcer
+        ) {
+            revert MissingArgsEqualityCheckEnforcer();
+        }
+
+        // The args are set by this contract depending on the useTokenWhitelist flag
+        if (_useTokenWhitelist) {
+            if (!isTokenAllowed[_tokenFrom]) revert TokenFromIsNotAllowed(_tokenFrom);
+            if (!isTokenAllowed[_tokenTo]) revert TokenToIsNotAllowed(_tokenTo);
+            _delegations[lastIndex_].caveats[0].args = abi.encode("Enforce Token Whitelist");
+        } else {
+            _delegations[lastIndex_].caveats[0].args = abi.encode("Skip Token Whitelist");
+        }
     }
 
     /**
