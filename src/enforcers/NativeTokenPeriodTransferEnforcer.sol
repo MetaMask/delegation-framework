@@ -170,23 +170,21 @@ contract NativeTokenPeriodTransferEnforcer is CaveatEnforcer {
 
         (uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) = getTermsInfo(_terms);
 
-        // Validate terms.
-        require(startDate_ > 0, "NativeTokenPeriodTransferEnforcer:invalid-zero-start-date");
-        require(periodDuration_ > 0, "NativeTokenPeriodTransferEnforcer:invalid-zero-period-duration");
-        require(periodAmount_ > 0, "NativeTokenPeriodTransferEnforcer:invalid-zero-period-amount");
-
-        // Ensure the transfer period has started.
-        require(block.timestamp >= startDate_, "NativeTokenPeriodTransferEnforcer:transfer-not-started");
-
         PeriodicAllowance storage allowance_ = periodicAllowances[msg.sender][_delegationHash];
 
         // Initialize the allowance on first use.
         if (allowance_.startDate == 0) {
+            // Validate terms.
+            require(startDate_ > 0, "NativeTokenPeriodTransferEnforcer:invalid-zero-start-date");
+            require(periodAmount_ > 0, "NativeTokenPeriodTransferEnforcer:invalid-zero-period-amount");
+            require(periodDuration_ > 0, "NativeTokenPeriodTransferEnforcer:invalid-zero-period-duration");
+
+            // Ensure the transfer period has started.
+            require(block.timestamp >= startDate_, "NativeTokenPeriodTransferEnforcer:transfer-not-started");
+
             allowance_.periodAmount = periodAmount_;
             allowance_.periodDuration = periodDuration_;
             allowance_.startDate = startDate_;
-            allowance_.lastTransferPeriod = 0;
-            allowance_.transferredInCurrentPeriod = 0;
         }
 
         // Calculate available ETH using the current allowance state.
