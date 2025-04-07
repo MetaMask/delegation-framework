@@ -18,7 +18,7 @@ import { CALLTYPE_SINGLE, EXECTYPE_DEFAULT } from "../utils/Constants.sol";
  * @notice Acts as a middleman to orchestrate token swaps using delegations and an aggregator (MetaSwap).
  * @dev This contract depends on an ArgsEqualityCheckEnforcer. The root delegation must include a caveat
  *      with this enforcer as its first element. Its arguments indicate whether the swap should enforce the token
- *      whitelist ("Enforce Token Whitelist") or skip the whitelist ("Skip Token Whitelist"). The root delegator is
+ *      whitelist ("Token-Whitelist-Enforced") or not ("Token-Whitelist-Not-Enforced"). The root delegator is
  *      responsible for including this enforcer to signal the desired behavior.
  */
 contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
@@ -27,6 +27,12 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     using SafeERC20 for IERC20;
 
     ////////////////////////////// State //////////////////////////////
+
+    /// @dev Constant value used to enforce the token whitelist
+    string public constant WHITELIST_ENFORCED = "Token-Whitelist-Enforced";
+
+    /// @dev Constant value used to avoid enforcing the token whitelist
+    string public constant WHITELIST_NOT_ENFORCED = "Token-Whitelist-Not-Enforced";
 
     /// @dev The DelegationManager contract that has root access to this contract
     IDelegationManager public immutable delegationManager;
@@ -52,7 +58,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     event SetMetaSwap(IMetaSwap indexed newMetaSwap);
 
     /// @dev Emitted when the Args Equality Check Enforcer contract address is set.
-    event SetArgsEqualityCheckEnforcer(address newArgsEqualityCheckEnforcer);
+    event SetArgsEqualityCheckEnforcer(address indexed newArgsEqualityCheckEnforcer);
 
     /// @dev Emitted when the contract sends tokens (or native tokens) to a recipient.
     event SentTokens(IERC20 indexed token, address indexed recipient, uint256 amount);
@@ -130,7 +136,8 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /**
      * @notice Initializes the DelegationMetaSwapAdapter contract.
      * @param _owner The initial owner of the contract.
-     * @param _delegationManager The address of the trusted DelegationManager contract that will have root access to this contract.
+     * @param _delegationManager The address of the trusted DelegationManager contract has privileged access to call
+     *        executeByExecutor based on a given delegation.
      * @param _metaSwap The address of the trusted MetaSwap contract.
      * @param _argsEqualityCheckEnforcer The address of the ArgsEqualityCheckEnforcer contract.
      */
@@ -395,9 +402,9 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         if (_useTokenWhitelist) {
             if (!isTokenAllowed[_tokenFrom]) revert TokenFromIsNotAllowed(_tokenFrom);
             if (!isTokenAllowed[_tokenTo]) revert TokenToIsNotAllowed(_tokenTo);
-            _delegations[lastIndex_].caveats[0].args = abi.encode("Enforce Token Whitelist");
+            _delegations[lastIndex_].caveats[0].args = abi.encode(WHITELIST_ENFORCED);
         } else {
-            _delegations[lastIndex_].caveats[0].args = abi.encode("Skip Token Whitelist");
+            _delegations[lastIndex_].caveats[0].args = abi.encode(WHITELIST_NOT_ENFORCED);
         }
     }
 
