@@ -383,6 +383,9 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         );
 
         if (swapTokenFrom_ != tokenFrom_) revert TokenFromMismath();
+
+        // When the fee is deducted from the tokenFrom the (feeAmount) plus the amount actually swapped (swapAmountFrom)
+        // must equal the total provided (amountFrom); otherwise, the input is inconsistent.
         if (!feeTo_ && (feeAmount_ + swapAmountFrom_ != amountFrom_)) revert AmountFromMismath();
 
         tokenTo_ = swapTokenTo_;
