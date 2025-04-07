@@ -825,6 +825,85 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         delegationMetaSwapAdapter.withdraw(IERC20(address(0)), withdrawAmount_, address(delegationMetaSwapAdapter));
     }
 
+    function test_revert_swapByDelegation_invalidSwapFunctionSelector() public {
+        _setUpMockContracts();
+
+        // Create an invalid apiData with the WRONG 4-byte function selector.
+        // The correct one is IMetaSwap.swap.selector.
+        bytes4 invalidSelector_ = 0xDEADBEEF;
+
+        // The rest of the data can mimic the correct structure:
+        bytes memory invalidApiData_ = abi.encodePacked(
+            invalidSelector_, // WRONG!
+            abi.encode(
+                "aggregatorId",
+                IERC20(tokenA), // tokenFrom
+                uint256(1 ether),
+                hex""
+            )
+        );
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = _getVaultDelegation();
+
+        // Call swapByDelegation from the subVault's perspective
+        vm.prank(address(subVault.deleGator));
+        vm.expectRevert(DelegationMetaSwapAdapter.InvalidSwapFunctionSelector.selector);
+        delegationMetaSwapAdapter.swapByDelegation(invalidApiData_, delegations_);
+    }
+
+    function test_revert_swapByDelegation_tokenFromMismatch() public {
+        _setUpMockContracts();
+
+        // Changing the token from, it must be tokenA but using ETH
+        bytes memory validApiData_ = _encodeApiData(aggregatorId, IERC20(address(0)), amountFrom, swapDataTokenAtoTokenB);
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = _getVaultDelegation();
+
+        vm.prank(address(subVault.deleGator));
+        vm.expectRevert(DelegationMetaSwapAdapter.TokenFromMismath.selector);
+        delegationMetaSwapAdapter.swapByDelegation(validApiData_, delegations_);
+    }
+
+    function test_revert_swapByDelegation_amountFromMismatch() public {
+        _setUpMockContracts();
+
+        // Top-level param: 1 ether
+        uint256 topLevelAmountFrom = 1 ether;
+
+        // aggregator-level amounts that won't add up to 1.0 if feeTo = false
+        uint256 aggregatorAmountFrom_ = 0.9 ether;
+        uint256 aggregatorFee_ = 0.05 ether;
+        bool feeTo_ = false; // ensures sum must match top-level exactly
+
+        bytes memory invalidSwapData_ = abi.encode(
+            tokenA,
+            tokenB,
+            aggregatorAmountFrom_,
+            uint256(1 ether),
+            hex"",
+            aggregatorFee_,
+            address(0),
+            feeTo_ // false => sum(0.9 + 0.05 = 0.95) mismatch
+        );
+
+        bytes memory apiData_ = abi.encodeWithSelector(
+            IMetaSwap.swap.selector,
+            aggregatorId,
+            tokenA,
+            topLevelAmountFrom, // 1 ether
+            invalidSwapData_
+        );
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = _getVaultDelegation();
+
+        vm.prank(address(subVault.deleGator));
+        vm.expectRevert(DelegationMetaSwapAdapter.AmountFromMismath.selector);
+        delegationMetaSwapAdapter.swapByDelegation(apiData_, delegations_);
+    }
+
     // Test that the constructor emits the SetDelegationManager and SetMetaSwap events.
     function test_event_constructor_SetDelegationManager_SetMetaSwap() public {
         // Use dummy addresses for testing.
