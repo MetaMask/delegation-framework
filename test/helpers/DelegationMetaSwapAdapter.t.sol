@@ -59,7 +59,9 @@ abstract contract DelegationMetaSwapAdapterBaseTest is BaseTest {
     RedeemerEnforcer public redeemerEnforcer;
     bytes public swapDataTokenAtoTokenB;
 
-    bytes public argsEqualityEnforcerTerms = abi.encode("Enforce Token Whitelist");
+    string public constant WHITELIST_ENFORCED = "Token-Whitelist-Enforced";
+    string public constant WHITELIST_NOT_ENFORCED = "Token-Whitelist-Not-Enforced";
+    bytes public argsEqualityEnforcerTerms = abi.encode(WHITELIST_ENFORCED);
 
     //////////////////////// Constructor & Setup ////////////////////////
 
@@ -388,7 +390,7 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         assertFalse(delegationMetaSwapAdapter.isTokenAllowed(tokenB), "TokenB should be disabled");
 
         // Setting the args enforcer terms to skip the token whitelist
-        argsEqualityEnforcerTerms = abi.encode("Skip Token Whitelist");
+        argsEqualityEnforcerTerms = abi.encode(WHITELIST_NOT_ENFORCED);
 
         // Build a valid delegation chain (which includes the argsEqualityCheckEnforcer in the first caveat).
         Delegation[] memory delegations_ = new Delegation[](2);
