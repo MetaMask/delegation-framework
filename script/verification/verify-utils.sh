@@ -7,6 +7,7 @@
 # Default Chains to Iterate Over
 #################################
 CHAIN_IDS=(
+  1          # ethereum
   11155111   # sepolia
   59141      # linea-sepolia
   59144      # linea
@@ -15,6 +16,8 @@ CHAIN_IDS=(
   10         # optimism
   42161      # arbitrum
   137        # polygon
+  100        # gnosis
+  56         # binance
 )
 
 ##########################################
@@ -26,14 +29,17 @@ CHAIN_IDS=(
 get_api_key() {
     local chain_id="$1"
     case "$chain_id" in
-        11155111) echo "$ETHERSCAN_API_KEY" ;;
-        59141)    echo "$LINEASCAN_API_KEY" ;;
-        59144)    echo "$LINEASCAN_API_KEY" ;;
-        8453)     echo "$BASESCAN_API_KEY"  ;;
-        84532)    echo "$BASESCAN_API_KEY"  ;;
-        10)       echo "$OPTIMISTIC_API_KEY" ;;
-        42161)    echo "$ARBISCAN_API_KEY"   ;;
-        137)      echo "$POLYGONSCAN_API_KEY" ;;
+        1) echo "$ETHERSCAN_API_KEY" ;; # ethereum
+        11155111) echo "$ETHERSCAN_API_KEY" ;;  # sepolia
+        59141)    echo "$LINEASCAN_API_KEY" ;; # linea-sepolia
+        59144)    echo "$LINEASCAN_API_KEY" ;; # linea
+        8453)     echo "$BASESCAN_API_KEY"  ;; # base
+        84532)    echo "$BASESCAN_API_KEY"  ;; # base-sepolia
+        10)       echo "$OPTIMISTIC_API_KEY" ;; # optimism
+        42161)    echo "$ARBISCAN_API_KEY"   ;; # arbitrum
+        137)      echo "$POLYGONSCAN_API_KEY" ;; # polygon
+        100)      echo "$GNOSISSCAN_API_KEY" ;; # gnosis
+        56)       echo "$BINANCESCAN_API_KEY" ;; # binance
         *)
             echo "Unknown chain ID: $chain_id" >&2
             return 1

@@ -5,6 +5,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { BasicERC20 } from "../utils/BasicERC20.t.sol";
 import { BaseTest } from "../utils/BaseTest.t.sol";
@@ -24,6 +25,8 @@ import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/Mes
 import { DelegationManager } from "../../src/DelegationManager.sol";
 import { HybridDeleGator } from "../../src/HybridDeleGator.sol";
 import { EntryPoint } from "@account-abstraction/core/EntryPoint.sol";
+import { CALLTYPE_SINGLE, CALLTYPE_BATCH, EXECTYPE_DEFAULT, EXECTYPE_TRY } from "../../src/utils/Constants.sol";
+
 import "forge-std/Test.sol";
 
 /**
@@ -699,6 +702,26 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         vm.prank(owner);
         delegationMetaSwapAdapter.withdraw(IERC20(address(0)), withdrawAmount_, recipient_);
         assertEq(recipient_.balance, withdrawAmount_, "Recipient should receive the withdrawn ETH");
+    }
+
+    // Test execute from executor
+    function test_executeFromExecutor() public {
+        _setUpMockContracts();
+
+        vm.startPrank(address(delegationManager));
+
+        bytes memory encodedExecution_ = ExecutionLib.encodeSingle(address(0), 0, hex"");
+
+        // Does not revert
+        delegationMetaSwapAdapter.executeFromExecutor(singleDefaultMode, encodedExecution_);
+
+        // Revert for anything other than single default
+        vm.expectRevert(abi.encodeWithSelector(DelegationMetaSwapAdapter.UnsupportedCallType.selector, CALLTYPE_BATCH));
+        delegationMetaSwapAdapter.executeFromExecutor(batchDefaultMode, encodedExecution_);
+        vm.expectRevert(abi.encodeWithSelector(DelegationMetaSwapAdapter.UnsupportedExecType.selector, EXECTYPE_TRY));
+        delegationMetaSwapAdapter.executeFromExecutor(singleTryMode, encodedExecution_);
+        vm.expectRevert(abi.encodeWithSelector(DelegationMetaSwapAdapter.UnsupportedCallType.selector, CALLTYPE_BATCH));
+        delegationMetaSwapAdapter.executeFromExecutor(batchTryMode, encodedExecution_);
     }
 
     // Test that updateAllowedTokens emits the ChangedTokenStatus event.
