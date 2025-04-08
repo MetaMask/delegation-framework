@@ -107,11 +107,15 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
         multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
-    /// @notice Reverts if the ERC20 execution call data length is invalid.
+    /// @notice Reverts if the ERC20 execution call data contains value
     function test_InvalidExecutionLengthErc20() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
-        bytes memory invalidExecData_ = new bytes(67);
-        vm.expectRevert("MultiTokenPeriodEnforcer:invalid-execution-length");
+
+        bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
+        // Value greater than 0
+        bytes memory invalidExecData_ = _encodeSingleExecution(address(basicERC20), 1, callData_);
+
+        vm.expectRevert("MultiTokenPeriodEnforcer:invalid-value-in-erc20-transfer");
         multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, invalidExecData_, dummyDelegationHash, address(0), redeemer);
     }
 

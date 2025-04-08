@@ -6,6 +6,7 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";
+import "forge-std/Test.sol";
 
 /**
  * @title MultiTokenPeriodEnforcer
@@ -89,6 +90,11 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
 
         // Not yet initialized; simulate using provided terms.
         (uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) = getTermsInfo(_terms, _token);
+
+        uint256 gasleft_ = gasleft();
+        getAllTermsInfo(_terms);
+        console2.log("gasleft():", uint256(gasleft_ - gasleft()));
+
         PeriodicAllowance memory allowance_ = PeriodicAllowance({
             periodAmount: periodAmount_,
             periodDuration: periodDuration_,
@@ -146,14 +152,18 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         returns (uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_)
     {
         uint256 termsLength_ = _terms.length;
-        require(termsLength_ % 116 == 0 && termsLength_ != 0, "MultiTokenPeriodEnforcer:invalid-terms-length");
-        uint256 numConfigs_ = termsLength_ / 116;
-        for (uint256 i = 0; i < numConfigs_; i++) {
-            uint256 offset_ = i * 116;
+        require(termsLength_ != 0 && termsLength_ % 116 == 0, "MultiTokenPeriodEnforcer:invalid-terms-length");
+
+        // Iterate over the byte offset directly in increments of 116 bytes.
+        for (uint256 offset_ = 0; offset_ < termsLength_; offset_ += 116) {
+            // Extract token address from the first 20 bytes.
             address token_ = address(bytes20(_terms[offset_:offset_ + 20]));
             if (token_ == _token) {
+                // Get periodAmount from the next 32 bytes.
                 periodAmount_ = uint256(bytes32(_terms[offset_ + 20:offset_ + 52]));
+                // Get periodDuration from the subsequent 32 bytes.
                 periodDuration_ = uint256(bytes32(_terms[offset_ + 52:offset_ + 84]));
+                // Get startDate from the final 32 bytes.
                 startDate_ = uint256(bytes32(_terms[offset_ + 84:offset_ + 116]));
                 return (periodAmount_, periodDuration_, startDate_);
             }
@@ -188,11 +198,17 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         periodDurations_ = new uint256[](numConfigs_);
         startDates_ = new uint256[](numConfigs_);
 
-        for (uint256 i = 0; i < numConfigs_; i++) {
+        // Loop over each configuration using its index.
+        for (uint256 i = 0; i < numConfigs_; ++i) {
+            // Calculate the starting offset for this configuration.
             uint256 offset_ = i * 116;
+            // Get the token address from the first 20 bytes.
             tokens_[i] = address(bytes20(_terms[offset_:offset_ + 20]));
+            // Get the periodAmount from the next 32 bytes.
             periodAmounts_[i] = uint256(bytes32(_terms[offset_ + 20:offset_ + 52]));
+            // Get the periodDuration from the following 32 bytes.
             periodDurations_[i] = uint256(bytes32(_terms[offset_ + 52:offset_ + 84]));
+            // Get the startDate from the final 32 bytes.
             startDates_[i] = uint256(bytes32(_terms[offset_ + 84:offset_ + 116]));
         }
     }
@@ -202,7 +218,7 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
     /**
      * @notice Validates and consumes a transfer (native or ERC20) by ensuring the amount does not exceed the available limit.
      * @dev Decodes the execution data based on token type:
-     *      - For native transfers (_token == address(0)): decodes (target, value, callData) and requires callData to be empty.
+     *      - For native transfers (_token == address(0)): decodes (target, value, callData).
      *      - For ERC20 transfers (_token != address(0)): decodes (target, , callData) and requires callData length to be 68 with a
      * valid IERC20.transfer selector.
      * @param _terms The concatenated configurations.
@@ -223,16 +239,18 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
 
         // Decode _executionCallData using decodeSingle.
         (address target_, uint256 value_, bytes calldata callData_) = _executionCallData.decodeSingle();
-        if (value_ > 0) {
-            // Native transfer.
-            token_ = address(0);
-            transferAmount_ = value_;
-        } else {
+
+        if (callData_.length == 68) {
             // ERC20 transfer.
-            require(callData_.length == 68, "MultiTokenPeriodEnforcer:invalid-execution-length");
+            require(value_ == 0, "MultiTokenPeriodEnforcer:invalid-value-in-erc20-transfer");
             require(bytes4(callData_[0:4]) == IERC20.transfer.selector, "MultiTokenPeriodEnforcer:invalid-method");
             token_ = target_;
             transferAmount_ = uint256(bytes32(callData_[36:68]));
+        } else {
+            // Native transfer.
+            require(value_ > 0, "MultiTokenPeriodEnforcer:invalid-zero-value-in-native-transfer");
+            token_ = address(0);
+            transferAmount_ = value_;
         }
 
         // Retrieve the configuration for the token from _terms.
