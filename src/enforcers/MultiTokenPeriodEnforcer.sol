@@ -246,11 +246,14 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
             require(bytes4(callData_[0:4]) == IERC20.transfer.selector, "MultiTokenPeriodEnforcer:invalid-method");
             token_ = target_;
             transferAmount_ = uint256(bytes32(callData_[36:68]));
-        } else {
+        } else if (callData_.length == 0) {
             // Native transfer.
             require(value_ > 0, "MultiTokenPeriodEnforcer:invalid-zero-value-in-native-transfer");
             token_ = address(0);
             transferAmount_ = value_;
+        } else {
+            // If callData length is neither 68 nor 0, revert.
+            revert("MultiTokenPeriodEnforcer:invalid-call-data-length");
         }
 
         // Retrieve the configuration for the token from _terms.

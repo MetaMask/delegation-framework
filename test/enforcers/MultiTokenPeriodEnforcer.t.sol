@@ -437,19 +437,29 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(currentPeriodAtBoundary_, 2, "Current period should be 2 at boundary");
     }
 
-    /// @notice Tests native transfer behavior when non-empty callData is provided.
-    /// @dev Although the spec expects empty callData for native transfers, the current implementation does not enforce it.
+    /// @notice Reverts if the execution call data (decoded) is neither 68 bytes (ERC20) nor 0 bytes (native).
+    function test_InvalidCallDataLengthForERC20() public {
+        bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
+        // Build a valid ERC20 callData (normally 68 bytes).
+        bytes memory validCallData_ = _encodeERC20Transfer(bob, 100);
+        // Append an extra byte to force an invalid length (e.g. 69 bytes).
+        bytes memory invalidCallData_ = abi.encodePacked(validCallData_, bytes1(0x00));
+        // Build execution data with the invalid callData.
+        bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, invalidCallData_);
+        vm.expectRevert("MultiTokenPeriodEnforcer:invalid-call-data-length");
+        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
+    }
+
+    /// @notice Reverts if a native transfer is provided with non-empty callData.
+    /// @dev Updated to expect a revert since the new requirement is to allow only an empty callData for native transfers.
     function test_NativeTransferWithNonEmptyCallData() public {
         bytes memory terms_ = abi.encodePacked(address(0), nativePeriodAmount, nativePeriodDuration, nativeStartDate);
-        // Prepare execution data for a native transfer with non-empty callData.
+        // Prepare non-empty callData (which is not allowed for native transfers).
         bytes memory nonEmptyCallData_ = "non-empty";
+        // Build execution data that contains the non-empty callData.
         bytes memory execData_ = abi.encodePacked(bob, nativePeriodAmount / 2, nonEmptyCallData_);
-        // This should pass and reduce the available allowance.
+        vm.expectRevert("MultiTokenPeriodEnforcer:invalid-call-data-length");
         multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
-        (uint256 available_,,) = multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(0));
-        assertEq(
-            available_, nativePeriodAmount - (nativePeriodAmount / 2), "Available not reduced correctly with non-empty callData"
-        );
     }
 
     /// @notice Tests that multiple beforeHook calls within the same period correctly accumulate the transferred amount.
