@@ -462,6 +462,17 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
         multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
+    /// @notice Reverts if a native transfer is attempted with a zero value.
+    function test_InvalidZeroValueInNativeTransfer() public {
+        // Build a native token configuration _terms blob.
+        bytes memory terms_ = abi.encodePacked(address(0), nativePeriodAmount, nativePeriodDuration, nativeStartDate);
+        // Build execution call data for a native transfer using zero value.
+        bytes memory execData_ = _encodeNativeTransfer(bob, 0);
+        // Expect the revert with the specific error message.
+        vm.expectRevert("MultiTokenPeriodEnforcer:invalid-zero-value-in-native-transfer");
+        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
+    }
+
     /// @notice Tests that multiple beforeHook calls within the same period correctly accumulate the transferred amount.
     function test_MultipleBeforeHookCallsMaintainsState() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
@@ -758,6 +769,58 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
             assertEq(availableB_, periodAmountB_ - 200, "Token B available amount incorrect");
             assertEq(availableC_, periodAmountC_ - 0.2 ether, "Token C available amount incorrect");
         }
+    }
+
+    // / @notice Helper to generate a _terms blob with a configurable number of token configurations.
+    // / @param _amountcount The number of token configurations to include in the blob.
+    // / @param _basicERC20 The address of the erc20 token.
+    // / @param _periodAmount The period amount (uint256) to include in each configuration.
+    // / @param _periodDuration The period duration (uint256) to include in each configuration.
+    // / @param _startDate The start date (uint256) to include in each configuration.
+    function _generateTerms(
+        uint256 _amountcount,
+        address _basicERC20,
+        uint256 _periodAmount,
+        uint256 _periodDuration,
+        uint256 _startDate
+    )
+        internal
+        returns (bytes memory terms)
+    {
+        bytes memory blob_;
+        // Adding the basic token to the first place.
+        // blob_ = abi.encodePacked(blob_, _basicERC20, _periodAmount, _periodDuration, _startDate);
+
+        for (uint256 i = 0; i < _amountcount; i++) {
+            (address tokenAddress_) = makeAddr(string(abi.encodePacked("token", i)));
+            blob_ = abi.encodePacked(blob_, tokenAddress_, _periodAmount, _periodDuration, _startDate);
+        }
+        // Adding the basic token to the last place.
+        blob_ = abi.encodePacked(blob_, _basicERC20, _periodAmount, _periodDuration, _startDate);
+        return blob_;
+    }
+
+    /// @notice Measures the gas cost for beforeHook when provided with a _terms blob containing a configurable number of token
+    /// configurations.
+    ///         Initially set for 10 token configurations. Adjust `numTokens` to test with a different quantity.
+    function test_GasCostBeforeHookForMultipleTokens() public {
+        // Set the number of token configurations (adjustable later).
+        uint256 numTokens = 1;
+        // Generate a _terms blob with numTokens configurations.
+        // The matching configuration for basicERC20 is positioned at the end.
+        bytes memory terms = _generateTerms(numTokens, address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
+
+        // Prepare a valid ERC20 execution call data (68 bytes) that corresponds to basicERC20.
+        uint256 transferAmount = 100; // Must be less than erc20PeriodAmount.
+        bytes memory callData = _encodeERC20Transfer(bob, transferAmount);
+        bytes memory execData = _encodeSingleExecution(address(basicERC20), 0, callData);
+
+        // uint256 gasBefore = gasleft();
+        for (uint256 i; i < 10; ++i) {
+            multiTokenEnforcer.beforeHook(terms, "", singleDefaultMode, execData, dummyDelegationHash, address(0), redeemer);
+        }
+        // uint256 gasUsed = gasBefore - gasleft();
+        // console2.log("Gas used for beforeHook with", numTokens + 1, "token configurations:", gasUsed);
     }
 
     /// @notice Tests getAvailableAmount for an ERC20 token when no beforeHook has been called,

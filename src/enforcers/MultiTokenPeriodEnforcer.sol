@@ -6,7 +6,6 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";
-import "forge-std/Test.sol";
 
 /**
  * @title MultiTokenPeriodEnforcer
@@ -17,6 +16,21 @@ import "forge-std/Test.sol";
  *        - 32 bytes: periodAmount.
  *        - 32 bytes: periodDuration (in seconds).
  *        - 32 bytes: startDate for the first period.
+ *
+ *      For optimal gas usage, it is recommended that the configurations in _terms are sorted
+ *      from the most frequently used token to the least frequently used token. Tokens placed
+ *      earlier in the sequence will be processed first, reducing gas consumption.
+ *
+ *      The logic does not support duplicated token entries in the _terms. In the event that
+ *      duplicate tokens are provided, the enforcer will only consider the configuration for the
+ *      first occurrence and ignore subsequent configurations. This design choice is made to
+ *      optimize gas efficiency and will not result in a revert.
+ *
+ *      Additionally, the enforcer does not support restrictions on the recipient address or
+ *      arbitrary calldata. For ERC20 transfers, the execution data is strictly required to
+ *      match the IERC20.transfer function selector with a zero ETH value, and for native transfers,
+ *      only an empty calldata is permitted.
+ *
  *      The _executionCallData always contains instructions for one token transfer.
  */
 contract MultiTokenPeriodEnforcer is CaveatEnforcer {
@@ -33,7 +47,8 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
     }
 
     // Mapping from delegation manager => delegation hash => token address => PeriodicAllowance.
-    mapping(address => mapping(bytes32 => mapping(address => PeriodicAllowance))) public periodicAllowances;
+    mapping(address delegationManager => mapping(bytes32 delegationHash => mapping(address token => PeriodicAllowance))) public
+        periodicAllowances;
 
     ////////////////////////////// Events //////////////////////////////
 
@@ -91,10 +106,6 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         // Not yet initialized; simulate using provided terms.
         (uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) = getTermsInfo(_terms, _token);
 
-        uint256 gasleft_ = gasleft();
-        getAllTermsInfo(_terms);
-        console2.log("gasleft():", uint256(gasleft_ - gasleft()));
-
         PeriodicAllowance memory allowance_ = PeriodicAllowance({
             periodAmount: periodAmount_,
             periodDuration: periodDuration_,
@@ -107,8 +118,8 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
 
     /**
      * @notice Hook called before a transfer to enforce the periodic limit.
-     * @dev For ERC20 transfers, expects _executionCallData to decode to (target, , callData)
-     *      with callData length of 68 and beginning with IERC20.transfer.selector.
+     * @dev For ERC20 transfers, expects _executionCallData to decode to (target,, callData)
+     *      with callData length of 68, beginning with IERC20.transfer.selector and zero value.
      *      For native transfers, expects _executionCallData to decode to (target, value, callData)
      *      with an empty callData.
      * @param _terms A concatenation of one or more 116-byte configurations.
@@ -155,7 +166,7 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         require(termsLength_ != 0 && termsLength_ % 116 == 0, "MultiTokenPeriodEnforcer:invalid-terms-length");
 
         // Iterate over the byte offset directly in increments of 116 bytes.
-        for (uint256 offset_ = 0; offset_ < termsLength_; offset_ += 116) {
+        for (uint256 offset_ = 0; offset_ < termsLength_;) {
             // Extract token address from the first 20 bytes.
             address token_ = address(bytes20(_terms[offset_:offset_ + 20]));
             if (token_ == _token) {
@@ -166,6 +177,10 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
                 // Get startDate from the final 32 bytes.
                 startDate_ = uint256(bytes32(_terms[offset_ + 84:offset_ + 116]));
                 return (periodAmount_, periodDuration_, startDate_);
+            }
+
+            unchecked {
+                offset_ += 116;
             }
         }
         revert("MultiTokenPeriodEnforcer:token-config-not-found");
@@ -199,7 +214,7 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         startDates_ = new uint256[](numConfigs_);
 
         // Loop over each configuration using its index.
-        for (uint256 i = 0; i < numConfigs_; ++i) {
+        for (uint256 i = 0; i < numConfigs_;) {
             // Calculate the starting offset for this configuration.
             uint256 offset_ = i * 116;
             // Get the token address from the first 20 bytes.
@@ -210,6 +225,10 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
             periodDurations_[i] = uint256(bytes32(_terms[offset_ + 52:offset_ + 84]));
             // Get the startDate from the final 32 bytes.
             startDates_[i] = uint256(bytes32(_terms[offset_ + 84:offset_ + 116]));
+
+            unchecked {
+                i++;
+            }
         }
     }
 
@@ -218,9 +237,9 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
     /**
      * @notice Validates and consumes a transfer (native or ERC20) by ensuring the amount does not exceed the available limit.
      * @dev Decodes the execution data based on token type:
-     *      - For native transfers (_token == address(0)): decodes (target, value, callData).
-     *      - For ERC20 transfers (_token != address(0)): decodes (target, , callData) and requires callData length to be 68 with a
-     * valid IERC20.transfer selector.
+     *      - For native transfers (_token == address(0)): expect no calldata, value greater than zero.
+     *      - For ERC20 transfers (_token != address(0)): requires callData length to be 68 with a
+     *        valid IERC20.transfer selector, and zero value.
      * @param _terms The concatenated configurations.
      * @param _executionCallData The encoded execution data.
      * @param _delegationHash The delegation hash.
