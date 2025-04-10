@@ -214,7 +214,7 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         startDates_ = new uint256[](numConfigs_);
 
         // Loop over each configuration using its index.
-        for (uint256 i = 0; i < numConfigs_;) {
+        for (uint256 i = 0; i < numConfigs_; ++i) {
             // Calculate the starting offset for this configuration.
             uint256 offset_ = i * 116;
             // Get the token address from the first 20 bytes.
@@ -225,10 +225,6 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
             periodDurations_[i] = uint256(bytes32(_terms[offset_ + 52:offset_ + 84]));
             // Get the startDate from the final 32 bytes.
             startDates_[i] = uint256(bytes32(_terms[offset_ + 84:offset_ + 116]));
-
-            unchecked {
-                i++;
-            }
         }
     }
 
