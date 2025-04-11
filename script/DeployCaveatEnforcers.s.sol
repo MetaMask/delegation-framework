@@ -27,6 +27,7 @@ import { IdEnforcer } from "../src/enforcers/IdEnforcer.sol";
 import { LimitedCallsEnforcer } from "../src/enforcers/LimitedCallsEnforcer.sol";
 import { MultiTokenPeriodEnforcer } from "../src/enforcers/MultiTokenPeriodEnforcer.sol";
 import { NativeBalanceGteEnforcer } from "../src/enforcers/NativeBalanceGteEnforcer.sol";
+import { NativeTokenMaxLossEnforcer } from "../src/enforcers/NativeTokenMaxLossEnforcer.sol";
 import { NativeTokenPaymentEnforcer } from "../src/enforcers/NativeTokenPaymentEnforcer.sol";
 import { NativeTokenPeriodTransferEnforcer } from "../src/enforcers/NativeTokenPeriodTransferEnforcer.sol";
 import { NativeTokenStreamingEnforcer } from "../src/enforcers/NativeTokenStreamingEnforcer.sol";
@@ -127,6 +128,9 @@ contract DeployCaveatEnforcers is Script {
 
         deployedAddress = address(new NativeBalanceGteEnforcer{ salt: salt }());
         console2.log("NativeBalanceGteEnforcer: %s", deployedAddress);
+
+        deployedAddress = address(new NativeTokenMaxLossEnforcer{ salt: salt }());
+        console2.log("NativeTokenMaxLossEnforcer: %s", deployedAddress);
 
         address argsEqualityCheckEnforcer = address(new ArgsEqualityCheckEnforcer{ salt: salt }());
         console2.log("ArgsEqualityCheckEnforcer: %s", argsEqualityCheckEnforcer);
