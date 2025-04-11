@@ -6,6 +6,7 @@ import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 import { BasicERC20 } from "../utils/BasicERC20.t.sol";
 import { BaseTest } from "../utils/BaseTest.t.sol";
@@ -1180,6 +1181,37 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         vm.prank(address(subVault.deleGator));
         vm.expectRevert(DelegationMetaSwapAdapter.InvalidApiSignature.selector);
         delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
+    }
+
+    function test_getSigner() public {
+        // TODO: change this
+        address expectedSigner_ = address(0);
+        uint256 expiration_ = 0;
+        bytes memory apiData_ = hex"";
+        bytes memory signature_ = hex"";
+
+        address recoveredSigner_ = _getSignerFromSignature(expiration_, apiData_, signature_);
+        console2.log("recoveredSigner_:", address(recoveredSigner_));
+        assertEq(recoveredSigner_, expectedSigner_, "Recovered signer different than expected");
+    }
+
+    function _getSignerFromSignature(
+        uint256 _expiration,
+        bytes memory _apiData,
+        bytes memory _signature
+    )
+        private
+        pure
+        returns (address)
+    {
+        // Ignore this validation for testing
+        // if (block.timestamp > _expiration) revert DelegationMetaSwapAdapter.SignatureExpired();
+
+        bytes32 messageHash_ = keccak256(abi.encodePacked(_apiData, _expiration));
+        bytes32 ethSignedMessageHash_ = MessageHashUtils.toEthSignedMessageHash(messageHash_);
+
+        address recoveredSigner_ = ECDSA.recover(ethSignedMessageHash_, _signature);
+        return recoveredSigner_;
     }
 
     /**
