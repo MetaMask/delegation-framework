@@ -218,7 +218,7 @@ contract LogicalOrWrapperEnforcer is CaveatEnforcer {
         CaveatGroup[] memory caveatGroups_ = abi.decode(_terms, (CaveatGroup[]));
         SelectedGroup memory selectedGroup_ = abi.decode(_args, (SelectedGroup));
 
-        require(selectedGroup_.groupIndex <= caveatGroups_.length, "LogicalOrWrapperEnforcer:invalid-group-index");
+        require(selectedGroup_.groupIndex < caveatGroups_.length, "LogicalOrWrapperEnforcer:invalid-group-index");
 
         CaveatGroup memory caveatGroup_ = caveatGroups_[selectedGroup_.groupIndex];
         uint256 caveatsLength_ = caveatGroup_.caveats.length;
