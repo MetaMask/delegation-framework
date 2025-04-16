@@ -99,8 +99,11 @@ contract LogicalOrWrapperEnforcer is CaveatEnforcer {
         override
         onlyDefaultExecutionMode(_mode)
     {
-        _callHook(
-            _terms, _args, _mode, _executionCallData, _delegationHash, _delegator, _redeemer, CaveatEnforcer.beforeAllHook.selector
+        _executeHook(
+            _terms,
+            _args,
+            Params(_mode, _executionCallData, _delegationHash, _delegator, _redeemer),
+            CaveatEnforcer.beforeAllHook.selector
         );
     }
 
@@ -128,8 +131,11 @@ contract LogicalOrWrapperEnforcer is CaveatEnforcer {
         override
         onlyDefaultExecutionMode(_mode)
     {
-        _callHook(
-            _terms, _args, _mode, _executionCallData, _delegationHash, _delegator, _redeemer, CaveatEnforcer.beforeHook.selector
+        _executeHook(
+            _terms,
+            _args,
+            Params(_mode, _executionCallData, _delegationHash, _delegator, _redeemer),
+            CaveatEnforcer.beforeHook.selector
         );
     }
 
@@ -157,8 +163,11 @@ contract LogicalOrWrapperEnforcer is CaveatEnforcer {
         override
         onlyDefaultExecutionMode(_mode)
     {
-        _callHook(
-            _terms, _args, _mode, _executionCallData, _delegationHash, _delegator, _redeemer, CaveatEnforcer.afterHook.selector
+        _executeHook(
+            _terms,
+            _args,
+            Params(_mode, _executionCallData, _delegationHash, _delegator, _redeemer),
+            CaveatEnforcer.afterHook.selector
         );
     }
 
@@ -186,46 +195,15 @@ contract LogicalOrWrapperEnforcer is CaveatEnforcer {
         override
         onlyDefaultExecutionMode(_mode)
     {
-        _callHook(
-            _terms, _args, _mode, _executionCallData, _delegationHash, _delegator, _redeemer, CaveatEnforcer.afterAllHook.selector
+        _executeHook(
+            _terms,
+            _args,
+            Params(_mode, _executionCallData, _delegationHash, _delegator, _redeemer),
+            CaveatEnforcer.afterAllHook.selector
         );
     }
 
     ////////////////////////////// Internal Methods //////////////////////////////
-
-    /**
-     * @notice A wrapper that builds the Params struct and calls _executeHook with the provided hook selector
-     * @dev This function serves as an adapter between the public hook functions and the internal execution logic
-     * @param _terms Encoded array of CaveatGroup, where each group contains multiple caveats to evaluate
-     * @param _args Encoded SelectedGroup specifying which group to evaluate and arguments for its caveats
-     * @param _mode The execution mode
-     * @param _executionCallData The execution data
-     * @param _delegationHash The hash identifying the delegation
-     * @param _delegator The address of the delegator
-     * @param _redeemer The address redeeming the delegation
-     * @param _hookSelector The function selector for the hook to execute
-     */
-    function _callHook(
-        bytes calldata _terms,
-        bytes calldata _args,
-        ModeCode _mode,
-        bytes calldata _executionCallData,
-        bytes32 _delegationHash,
-        address _delegator,
-        address _redeemer,
-        bytes4 _hookSelector
-    )
-        internal
-    {
-        Params memory params_ = Params({
-            mode: _mode,
-            executionCallData: _executionCallData,
-            delegationHash: _delegationHash,
-            delegator: _delegator,
-            redeemer: _redeemer
-        });
-        _executeHook(_terms, _args, params_, _hookSelector);
-    }
 
     /**
      * @notice Internal function that executes the specified hook on all caveats in a group
