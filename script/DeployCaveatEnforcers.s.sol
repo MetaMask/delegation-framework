@@ -12,20 +12,20 @@ import { AllowedTargetsEnforcer } from "../src/enforcers/AllowedTargetsEnforcer.
 import { ArgsEqualityCheckEnforcer } from "../src/enforcers/ArgsEqualityCheckEnforcer.sol";
 import { BlockNumberEnforcer } from "../src/enforcers/BlockNumberEnforcer.sol";
 import { DeployedEnforcer } from "../src/enforcers/DeployedEnforcer.sol";
-import { ERC20BalanceGteEnforcer } from "../src/enforcers/ERC20BalanceGteEnforcer.sol";
+import { ERC20BalanceChangeEnforcer } from "../src/enforcers/ERC20BalanceChangeEnforcer.sol";
 import { ERC20TransferAmountEnforcer } from "../src/enforcers/ERC20TransferAmountEnforcer.sol";
 import { ERC20StreamingEnforcer } from "../src/enforcers/ERC20StreamingEnforcer.sol";
 import { ERC20PeriodTransferEnforcer } from "../src/enforcers/ERC20PeriodTransferEnforcer.sol";
-import { ERC721BalanceGteEnforcer } from "../src/enforcers/ERC721BalanceGteEnforcer.sol";
+import { ERC721BalanceChangeEnforcer } from "../src/enforcers/ERC721BalanceChangeEnforcer.sol";
 import { ERC721TransferEnforcer } from "../src/enforcers/ERC721TransferEnforcer.sol";
-import { ERC1155BalanceGteEnforcer } from "../src/enforcers/ERC1155BalanceGteEnforcer.sol";
+import { ERC1155BalanceChangeEnforcer } from "../src/enforcers/ERC1155BalanceChangeEnforcer.sol";
 import { ExactCalldataEnforcer } from "../src/enforcers/ExactCalldataEnforcer.sol";
 import { ExactExecutionBatchEnforcer } from "../src/enforcers/ExactExecutionBatchEnforcer.sol";
 import { ExactExecutionEnforcer } from "../src/enforcers/ExactExecutionEnforcer.sol";
 import { IdEnforcer } from "../src/enforcers/IdEnforcer.sol";
 import { LimitedCallsEnforcer } from "../src/enforcers/LimitedCallsEnforcer.sol";
 import { MultiTokenPeriodEnforcer } from "../src/enforcers/MultiTokenPeriodEnforcer.sol";
-import { NativeBalanceGteEnforcer } from "../src/enforcers/NativeBalanceGteEnforcer.sol";
+import { NativeBalanceChangeEnforcer } from "../src/enforcers/NativeBalanceChangeEnforcer.sol";
 import { NativeTokenPaymentEnforcer } from "../src/enforcers/NativeTokenPaymentEnforcer.sol";
 import { NativeTokenPeriodTransferEnforcer } from "../src/enforcers/NativeTokenPeriodTransferEnforcer.sol";
 import { NativeTokenStreamingEnforcer } from "../src/enforcers/NativeTokenStreamingEnforcer.sol";
@@ -82,8 +82,8 @@ contract DeployCaveatEnforcers is Script {
         deployedAddress = address(new DeployedEnforcer{ salt: salt }());
         console2.log("DeployedEnforcer: %s", deployedAddress);
 
-        deployedAddress = address(new ERC20BalanceGteEnforcer{ salt: salt }());
-        console2.log("ERC20BalanceGteEnforcer: %s", deployedAddress);
+        deployedAddress = address(new ERC20BalanceChangeEnforcer{ salt: salt }());
+        console2.log("ERC20BalanceChangeEnforcer: %s", deployedAddress);
 
         deployedAddress = address(new ERC20TransferAmountEnforcer{ salt: salt }());
         console2.log("ERC20TransferAmountEnforcer: %s", deployedAddress);
@@ -94,14 +94,14 @@ contract DeployCaveatEnforcers is Script {
         deployedAddress = address(new ERC20StreamingEnforcer{ salt: salt }());
         console2.log("ERC20StreamingEnforcer: %s", deployedAddress);
 
-        deployedAddress = address(new ERC721BalanceGteEnforcer{ salt: salt }());
-        console2.log("ERC721BalanceGteEnforcer: %s", deployedAddress);
+        deployedAddress = address(new ERC721BalanceChangeEnforcer{ salt: salt }());
+        console2.log("ERC721BalanceChangeEnforcer: %s", deployedAddress);
 
         deployedAddress = address(new ERC721TransferEnforcer{ salt: salt }());
         console2.log("ERC721TransferEnforcer: %s", deployedAddress);
 
-        deployedAddress = address(new ERC1155BalanceGteEnforcer{ salt: salt }());
-        console2.log("ERC1155BalanceGteEnforcer: %s", deployedAddress);
+        deployedAddress = address(new ERC1155BalanceChangeEnforcer{ salt: salt }());
+        console2.log("ERC1155BalanceChangeEnforcer: %s", deployedAddress);
 
         deployedAddress = address(new ExactCalldataEnforcer{ salt: salt }());
         console2.log("ExactCalldataEnforcer: %s", deployedAddress);
@@ -121,8 +121,8 @@ contract DeployCaveatEnforcers is Script {
         deployedAddress = address(new MultiTokenPeriodEnforcer{ salt: salt }());
         console2.log("MultiTokenPeriodEnforcer: %s", deployedAddress);
 
-        deployedAddress = address(new NativeBalanceGteEnforcer{ salt: salt }());
-        console2.log("NativeBalanceGteEnforcer: %s", deployedAddress);
+        deployedAddress = address(new NativeBalanceChangeEnforcer{ salt: salt }());
+        console2.log("NativeBalanceChangeEnforcer: %s", deployedAddress);
 
         address argsEqualityCheckEnforcer = address(new ArgsEqualityCheckEnforcer{ salt: salt }());
         console2.log("ArgsEqualityCheckEnforcer: %s", argsEqualityCheckEnforcer);

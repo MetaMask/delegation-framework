@@ -7,15 +7,19 @@ import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";
 
 /**
- * @title ERC20BalanceGteEnforcer
- * @dev This contract enforces that the delegator's ERC20 balance has increased by at least the specified amount
+ * @title ERC20BalanceChangeEnforcer
+ * @dev This contract enforces that the delegator's ERC20 balance has changed by at least the specified amount
  * after the execution has been executed, measured between the `beforeHook` and `afterHook` calls, regardless of what the execution
- * is.
- * @dev This contract has no enforcement of how the balance increases. It's meant to be used alongside additional enforcers to
+ * is. The change can be either an increase or decrease based on the `shouldBalanceIncrease` flag.
+ * @dev This contract has no enforcement of how the balance changes. It's meant to be used alongside additional enforcers to
  * create granular permissions.
  * @dev This enforcer operates only in default execution mode.
+ * @dev Security Notice: This enforcer tracks balance changes by comparing the recipient's balance before and after execution. Since
+ * enforcers watching the same recipient share state, a single balance modification may satisfy multiple enforcers simultaneously.
+ * Users should avoid tracking the same recipient's balance on multiple enforcers in a single delegation chain to prevent unintended
+ * behavior.
  */
-contract ERC20BalanceGteEnforcer is CaveatEnforcer {
+contract ERC20BalanceChangeEnforcer is CaveatEnforcer {
     ////////////////////////////// State //////////////////////////////
 
     mapping(bytes32 hashKey => uint256 balance) public balanceCache;
@@ -38,8 +42,11 @@ contract ERC20BalanceGteEnforcer is CaveatEnforcer {
 
     /**
      * @notice This function caches the delegators ERC20 balance before the delegation is executed.
-     * @param _terms 72 packed bytes where: the first 20 bytes is the address of the recipient, the next 20 bytes
-     * is the address of the token, the next 32 bytes is the amount of tokens the balance should be greater than or equal to
+     * @param _terms 73 packed bytes where:
+     * - first byte: boolean indicating if the balance should increase
+     * - next 20 bytes: address of the token
+     * - next 20 bytes: address of the recipient
+     * - next 32 bytes: amount the balance should change by
      * @param _mode The execution mode. (Must be Default execType)
      */
     function beforeHook(
@@ -55,18 +62,21 @@ contract ERC20BalanceGteEnforcer is CaveatEnforcer {
         override
         onlyDefaultExecutionMode(_mode)
     {
-        (address recipient_, address token_,) = getTermsInfo(_terms);
+        (, address token_, address recipient_,) = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, token_, _delegationHash);
-        require(!isLocked[hashKey_], "ERC20BalanceGteEnforcer:enforcer-is-locked");
+        require(!isLocked[hashKey_], "ERC20BalanceChangeEnforcer:enforcer-is-locked");
         isLocked[hashKey_] = true;
         uint256 balance_ = IERC20(token_).balanceOf(recipient_);
         balanceCache[hashKey_] = balance_;
     }
 
     /**
-     * @notice This function enforces that the delegators ERC20 balance has increased by at least the amount provided.
-     * @param _terms 72 packed bytes where: the first 20 bytes is the address of the recipient, the next 20 bytes
-     * is the address of the token, the next 32 bytes is the amount the balance should be greater than
+     * @notice This function enforces that the delegators ERC20 balance has changed by at least the amount provided.
+     * @param _terms 73 packed bytes where:
+     * - first byte: boolean indicating if the balance should increase
+     * - next 20 bytes: address of the token
+     * - next 20 bytes: address of the recipient
+     * - next 32 bytes: amount the balance should change by
      */
     function afterHook(
         bytes calldata _terms,
@@ -80,25 +90,35 @@ contract ERC20BalanceGteEnforcer is CaveatEnforcer {
         public
         override
     {
-        (address recipient_, address token_, uint256 amount_) = getTermsInfo(_terms);
+        (bool shouldBalanceIncrease_, address token_, address recipient_, uint256 amount_) = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, token_, _delegationHash);
         delete isLocked[hashKey_];
         uint256 balance_ = IERC20(token_).balanceOf(recipient_);
-        require(balance_ >= balanceCache[hashKey_] + amount_, "ERC20BalanceGteEnforcer:balance-not-gt");
+        if (shouldBalanceIncrease_) {
+            require(balance_ >= balanceCache[hashKey_] + amount_, "ERC20BalanceChangeEnforcer:insufficient-balance-increase");
+        } else {
+            require(balance_ >= balanceCache[hashKey_] - amount_, "ERC20BalanceChangeEnforcer:exceeded-balance-decrease");
+        }
     }
 
     /**
      * @notice Decodes the terms used in this CaveatEnforcer.
      * @param _terms encoded data that is used during the execution hooks.
-     * @return recipient_ The address of the recipient.
+     * @return shouldBalanceIncrease_ Boolean indicating if the balance should increase (true) or decrease (false).
      * @return token_ The address of the token.
-     * @return amount_ The amount the balance should be greater than.
+     * @return recipient_ The address of the recipient.
+     * @return amount_ The amount the balance should change by.
      */
-    function getTermsInfo(bytes calldata _terms) public pure returns (address recipient_, address token_, uint256 amount_) {
-        require(_terms.length == 72, "ERC20BalanceGteEnforcer:invalid-terms-length");
-        recipient_ = address(bytes20(_terms[:20]));
-        token_ = address(bytes20(_terms[20:40]));
-        amount_ = uint256(bytes32(_terms[40:]));
+    function getTermsInfo(bytes calldata _terms)
+        public
+        pure
+        returns (bool shouldBalanceIncrease_, address token_, address recipient_, uint256 amount_)
+    {
+        require(_terms.length == 73, "ERC20BalanceChangeEnforcer:invalid-terms-length");
+        shouldBalanceIncrease_ = _terms[0] != 0;
+        token_ = address(bytes20(_terms[1:21]));
+        recipient_ = address(bytes20(_terms[21:41]));
+        amount_ = uint256(bytes32(_terms[41:]));
     }
 
     ////////////////////////////// Internal Methods //////////////////////////////

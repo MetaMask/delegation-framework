@@ -7,12 +7,17 @@ import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";
 
 /**
- * @title ERC1155BalanceGteEnforcer
+ * @title ERC1155BalanceChangeEnforcer
  * @dev This contract enforces that the ERC1155 token balance of a recipient for a specific token ID
- * has increased by at least the specified amount after the execution, measured between the `beforeHook` and `afterHook` calls.
+ * has changed by at least the specified amount after the execution, measured between the `beforeHook` and `afterHook` calls.
+ * The change can be either an increase or decrease based on the `shouldBalanceIncrease` flag.
  * @dev This enforcer operates only in default execution mode.
+ * @dev Security Notice: This enforcer tracks balance changes by comparing the recipient's balance before and after execution. Since
+ * enforcers watching the same recipient share state, a single balance modification may satisfy multiple enforcers simultaneously.
+ * Users should avoid tracking the same recipient's balance on multiple enforcers in a single delegation chain to prevent unintended
+ * behavior.
  */
-contract ERC1155BalanceGteEnforcer is CaveatEnforcer {
+contract ERC1155BalanceChangeEnforcer is CaveatEnforcer {
     ////////////////////////////// State //////////////////////////////
 
     mapping(bytes32 hashKey => uint256 balance) public balanceCache;
@@ -47,11 +52,12 @@ contract ERC1155BalanceGteEnforcer is CaveatEnforcer {
 
     /**
      * @notice This function caches the recipient's ERC1155 token balance before the delegation is executed.
-     * @param _terms 104 bytes where:
-     * - first 20 bytes: address of the ERC1155 token,
-     * - next 20 bytes: address of the recipient,
-     * - next 32 bytes: token ID,
-     * - next 32 bytes: amount the balance should increase by.
+     * @param _terms 105 bytes where:
+     * - first byte: boolean indicating if the balance should increase
+     * - next 20 bytes: address of the ERC1155 token
+     * - next 20 bytes: address of the recipient
+     * - next 32 bytes: token ID
+     * - next 32 bytes: amount the balance should change by
      * @param _mode The execution mode. (Must be Default execType)
      * @param _delegationHash The hash of the delegation.
      */
@@ -68,21 +74,23 @@ contract ERC1155BalanceGteEnforcer is CaveatEnforcer {
         override
         onlyDefaultExecutionMode(_mode)
     {
-        (address token_, address recipient_, uint256 tokenId_,) = getTermsInfo(_terms);
+        (, address token_, address recipient_, uint256 tokenId_,) = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, token_, recipient_, tokenId_, _delegationHash);
-        require(!isLocked[hashKey_], "ERC1155BalanceGteEnforcer:enforcer-is-locked");
+        require(!isLocked[hashKey_], "ERC1155BalanceChangeEnforcer:enforcer-is-locked");
         isLocked[hashKey_] = true;
         uint256 balance_ = IERC1155(token_).balanceOf(recipient_, tokenId_);
         balanceCache[hashKey_] = balance_;
     }
 
     /**
-     * @notice This function enforces that the recipient's ERC1155 token balance has increased by at least the amount provided.
-     * @param _terms 104 bytes where:
-     * - first 20 bytes: address of the ERC1155 token,
-     * - next 20 bytes: address of the recipient,
-     * - next 32 bytes: token ID,
-     * - next 32 bytes: amount the balance should increase by.
+     * @notice This function enforces that the recipient's ERC1155 token balance has changed by at least the amount provided.
+     * @param _terms 105 bytes where:
+     * - first byte: boolean indicating if the balance should increase
+     * - next 20 bytes: address of the ERC1155 token
+     * - next 20 bytes: address of the recipient
+     * - next 32 bytes: token ID
+     * - next 32 bytes: amount the balance should change by
+     * @param _delegationHash The hash of the delegation.
      */
     function afterHook(
         bytes calldata _terms,
@@ -96,31 +104,37 @@ contract ERC1155BalanceGteEnforcer is CaveatEnforcer {
         public
         override
     {
-        (address token_, address recipient_, uint256 tokenId_, uint256 amount_) = getTermsInfo(_terms);
+        (bool shouldBalanceIncrease_, address token_, address recipient_, uint256 tokenId_, uint256 amount_) = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, token_, recipient_, tokenId_, _delegationHash);
         delete isLocked[hashKey_];
         uint256 balance_ = IERC1155(token_).balanceOf(recipient_, tokenId_);
-        require(balance_ >= balanceCache[hashKey_] + amount_, "ERC1155BalanceGteEnforcer:balance-not-gt");
+        if (shouldBalanceIncrease_) {
+            require(balance_ >= balanceCache[hashKey_] + amount_, "ERC1155BalanceChangeEnforcer:insufficient-balance-increase");
+        } else {
+            require(balance_ >= balanceCache[hashKey_] - amount_, "ERC1155BalanceChangeEnforcer:exceeded-balance-decrease");
+        }
     }
 
     /**
      * @notice Decodes the terms used in this CaveatEnforcer.
      * @param _terms Encoded data that is used during the execution hooks.
+     * @return shouldBalanceIncrease_ Boolean indicating if the balance should increase (true) or decrease (false).
      * @return token_ The address of the ERC1155 token.
      * @return recipient_ The address of the recipient of the token.
      * @return tokenId_ The ID of the ERC1155 token.
-     * @return amount_ The amount the balance should increase by.
+     * @return amount_ The amount the balance should change by.
      */
     function getTermsInfo(bytes calldata _terms)
         public
         pure
-        returns (address token_, address recipient_, uint256 tokenId_, uint256 amount_)
+        returns (bool shouldBalanceIncrease_, address token_, address recipient_, uint256 tokenId_, uint256 amount_)
     {
-        require(_terms.length == 104, "ERC1155BalanceGteEnforcer:invalid-terms-length");
-        token_ = address(bytes20(_terms[:20]));
-        recipient_ = address(bytes20(_terms[20:40]));
-        tokenId_ = uint256(bytes32(_terms[40:72]));
-        amount_ = uint256(bytes32(_terms[72:]));
+        require(_terms.length == 105, "ERC1155BalanceChangeEnforcer:invalid-terms-length");
+        shouldBalanceIncrease_ = _terms[0] != 0;
+        token_ = address(bytes20(_terms[1:21]));
+        recipient_ = address(bytes20(_terms[21:41]));
+        tokenId_ = uint256(bytes32(_terms[41:73]));
+        amount_ = uint256(bytes32(_terms[73:]));
     }
 
     ////////////////////////////// Internal Methods //////////////////////////////
