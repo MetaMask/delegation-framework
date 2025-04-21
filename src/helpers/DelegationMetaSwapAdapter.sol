@@ -146,6 +146,9 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /// @dev Error thrown when the signature expiration has passed.
     error SignatureExpired();
 
+    /// @dev Error thrown when the address is zero.
+    error InvalidZeroAddress();
+
     ////////////////////////////// Modifiers //////////////////////////////
 
     /**
@@ -184,6 +187,11 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     )
         Ownable(_owner)
     {
+        if (
+            _swapApiSigner == address(0) || address(_delegationManager) == address(0) || address(_metaSwap) == address(0)
+                || _argsEqualityCheckEnforcer == address(0)
+        ) revert InvalidZeroAddress();
+
         swapApiSigner = _swapApiSigner;
         delegationManager = _delegationManager;
         metaSwap = _metaSwap;
@@ -274,7 +282,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
      * @param _tokenTo The output token of the swap.
      * @param _recipient The address that will receive the swapped tokens.
      * @param _amountFrom The amount of tokens to be swapped.
-     * @param _balanceFromBefore The contract’s balance of _tokenFrom before the incoming token transfer is credited.
+     * @param _balanceFromBefore The contract's balance of _tokenFrom before the incoming token transfer is credited.
      * @param _swapData Arbitrary data required by the aggregator (e.g. encoded swap params).
      */
     function swapTokens(
@@ -524,7 +532,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
      * @param _signatureData Contains the apiData, the expiration and signature.
      */
     function _validateSignature(SignatureData memory _signatureData) private view {
-        if (block.timestamp > _signatureData.expiration) revert SignatureExpired();
+        if (block.timestamp >= _signatureData.expiration) revert SignatureExpired();
 
         bytes32 messageHash_ = keccak256(abi.encodePacked(_signatureData.apiData, _signatureData.expiration));
         bytes32 ethSignedMessageHash_ = MessageHashUtils.toEthSignedMessageHash(messageHash_);
