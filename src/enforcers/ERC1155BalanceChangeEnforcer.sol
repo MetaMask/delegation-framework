@@ -56,7 +56,7 @@ contract ERC1155BalanceChangeEnforcer is CaveatEnforcer {
     /**
      * @notice This function caches the recipient's ERC1155 token balance before the delegation is executed.
      * @param _terms 105 bytes where:
-     * - first byte: boolean indicating if the balance should decrease
+     * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
      * - next 20 bytes: address of the ERC1155 token
      * - next 20 bytes: address of the recipient
      * - next 32 bytes: token ID
@@ -89,7 +89,7 @@ contract ERC1155BalanceChangeEnforcer is CaveatEnforcer {
     /**
      * @notice This function enforces that the recipient's ERC1155 token balance has changed by the expected amount.
      * @param _terms 105 bytes where:
-     * - first byte: boolean indicating if the balance should decrease
+     * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
      * - next 20 bytes: address of the ERC1155 token
      * - next 20 bytes: address of the recipient
      * - next 32 bytes: token ID
@@ -123,7 +123,7 @@ contract ERC1155BalanceChangeEnforcer is CaveatEnforcer {
     /**
      * @notice Decodes the terms used in this CaveatEnforcer.
      * @param _terms Encoded data that is used during the execution hooks.
-     * @return isDecrease_ Boolean indicating if the balance should decrease (true) or increase (false).
+     * @return isDecrease_ Boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00).
      * @return token_ The address of the ERC1155 token.
      * @return recipient_ The address of the recipient of the token.
      * @return tokenId_ The ID of the ERC1155 token.

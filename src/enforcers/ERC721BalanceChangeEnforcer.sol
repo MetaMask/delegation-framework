@@ -54,7 +54,7 @@ contract ERC721BalanceChangeEnforcer is CaveatEnforcer {
     /**
      * @notice This function caches the delegator's ERC721 token balance before the delegation is executed.
      * @param _terms 73 bytes where:
-     * - first byte: boolean indicating if the balance should decrease
+     * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
      * - next 20 bytes: address of the ERC721 token
      * - next 20 bytes: address of the recipient
      * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
@@ -86,7 +86,7 @@ contract ERC721BalanceChangeEnforcer is CaveatEnforcer {
     /**
      * @notice This function enforces that the delegator's ERC721 token balance has changed by the expected amount.
      * @param _terms 73 bytes where:
-     * - first byte: boolean indicating if the balance should decrease
+     * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
      * - next 20 bytes: address of the ERC721 token
      * - next 20 bytes: address of the recipient
      * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
@@ -119,7 +119,7 @@ contract ERC721BalanceChangeEnforcer is CaveatEnforcer {
     /**
      * @notice Decodes the terms used in this CaveatEnforcer.
      * @param _terms Encoded data that is used during the execution hooks.
-     * @return isDecrease_ Boolean indicating if the balance should decrease (true) or increase (false).
+     * @return isDecrease_ Boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00).
      * @return token_ The address of the ERC721 token.
      * @return recipient_ The address of the recipient of the token.
      * @return amount_ Balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
