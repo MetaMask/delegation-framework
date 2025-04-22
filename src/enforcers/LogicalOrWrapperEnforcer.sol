@@ -4,6 +4,7 @@ pragma solidity 0.8.23;
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 
+import { IDelegationManager } from "../interfaces/IDelegationManager.sol";
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode, Caveat } from "../utils/Types.sol";
 
@@ -72,6 +73,15 @@ contract LogicalOrWrapperEnforcer is CaveatEnforcer {
     }
 
     ////////////////////////////// State //////////////////////////////
+
+    /// @dev The Delegation Manager contract to redeem the delegation
+    IDelegationManager public immutable delegationManager;
+
+    ////////////////////////////// Constructor //////////////////////////////
+
+    constructor(IDelegationManager _delegationManager) {
+        delegationManager = _delegationManager;
+    }
 
     ////////////////////////////// Public Methods //////////////////////////////
 

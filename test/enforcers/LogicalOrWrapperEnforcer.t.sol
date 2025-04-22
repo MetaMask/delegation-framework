@@ -23,7 +23,7 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
 
     function setUp() public override {
         super.setUp();
-        logicalOrWrapperEnforcer = new LogicalOrWrapperEnforcer();
+        logicalOrWrapperEnforcer = new LogicalOrWrapperEnforcer(delegationManager);
         allowedMethodsEnforcer = new AllowedMethodsEnforcer();
         timestampEnforcer = new TimestampEnforcer();
         vm.label(address(logicalOrWrapperEnforcer), "Logical OR Wrapper Enforcer");
