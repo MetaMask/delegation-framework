@@ -8,16 +8,17 @@ import { ModeCode } from "../utils/Types.sol";
 
 /**
  * @title ERC20BalanceChangeEnforcer
- * @dev This contract enforces that the delegator's ERC20 balance has changed by at least the specified amount
- * after the execution has been executed, measured between the `beforeHook` and `afterHook` calls, regardless of what the execution
- * is. The change can be either an increase or decrease based on the `shouldBalanceIncrease` flag.
+ * @dev This contract allows setting up some guardrails around balance changes. By specifying an amount and a direction
+ * (decrease/increase), one can enforce a maximum decrease or minimum increase in after-execution balance.
+ * The change can be either a decrease or increase based on the `isDecrease` flag.
  * @dev This contract has no enforcement of how the balance changes. It's meant to be used alongside additional enforcers to
  * create granular permissions.
  * @dev This enforcer operates only in default execution mode.
  * @dev Security Notice: This enforcer tracks balance changes by comparing the recipient's balance before and after execution. Since
  * enforcers watching the same recipient share state, a single balance modification may satisfy multiple enforcers simultaneously.
  * Users should avoid tracking the same recipient's balance on multiple enforcers in a single delegation chain to prevent unintended
- * behavior.
+ * behavior. Given its potential for concurrent condition fulfillment, use this enforcer at your own risk and ensure it aligns with
+ * your intended security model.
  */
 contract ERC20BalanceChangeEnforcer is CaveatEnforcer {
     ////////////////////////////// State //////////////////////////////
@@ -43,10 +44,11 @@ contract ERC20BalanceChangeEnforcer is CaveatEnforcer {
     /**
      * @notice This function caches the delegators ERC20 balance before the delegation is executed.
      * @param _terms 73 packed bytes where:
-     * - first byte: boolean indicating if the balance should increase
+     * - first byte: boolean indicating if the balance should decrease
      * - next 20 bytes: address of the token
      * - next 20 bytes: address of the recipient
-     * - next 32 bytes: amount the balance should change by
+     * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
+     * isDecrease)
      * @param _mode The execution mode. (Must be Default execType)
      */
     function beforeHook(
@@ -71,12 +73,13 @@ contract ERC20BalanceChangeEnforcer is CaveatEnforcer {
     }
 
     /**
-     * @notice This function enforces that the delegators ERC20 balance has changed by at least the amount provided.
+     * @notice This function enforces that the delegators ERC20 balance has changed by the expected amount.
      * @param _terms 73 packed bytes where:
-     * - first byte: boolean indicating if the balance should increase
+     * - first byte: boolean indicating if the balance should decrease
      * - next 20 bytes: address of the token
      * - next 20 bytes: address of the recipient
-     * - next 32 bytes: amount the balance should change by
+     * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
+     * isDecrease)
      */
     function afterHook(
         bytes calldata _terms,
@@ -90,32 +93,33 @@ contract ERC20BalanceChangeEnforcer is CaveatEnforcer {
         public
         override
     {
-        (bool shouldBalanceIncrease_, address token_, address recipient_, uint256 amount_) = getTermsInfo(_terms);
+        (bool isDecrease_, address token_, address recipient_, uint256 amount_) = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, token_, _delegationHash);
         delete isLocked[hashKey_];
         uint256 balance_ = IERC20(token_).balanceOf(recipient_);
-        if (shouldBalanceIncrease_) {
-            require(balance_ >= balanceCache[hashKey_] + amount_, "ERC20BalanceChangeEnforcer:insufficient-balance-increase");
-        } else {
+        if (isDecrease_) {
             require(balance_ >= balanceCache[hashKey_] - amount_, "ERC20BalanceChangeEnforcer:exceeded-balance-decrease");
+        } else {
+            require(balance_ >= balanceCache[hashKey_] + amount_, "ERC20BalanceChangeEnforcer:insufficient-balance-increase");
         }
     }
 
     /**
      * @notice Decodes the terms used in this CaveatEnforcer.
      * @param _terms encoded data that is used during the execution hooks.
-     * @return shouldBalanceIncrease_ Boolean indicating if the balance should increase (true) or decrease (false).
+     * @return isDecrease_ Boolean indicating if the balance should decrease (true) or increase (false).
      * @return token_ The address of the token.
      * @return recipient_ The address of the recipient.
-     * @return amount_ The amount the balance should change by.
+     * @return amount_ Balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
+     * isDecrease)
      */
     function getTermsInfo(bytes calldata _terms)
         public
         pure
-        returns (bool shouldBalanceIncrease_, address token_, address recipient_, uint256 amount_)
+        returns (bool isDecrease_, address token_, address recipient_, uint256 amount_)
     {
         require(_terms.length == 73, "ERC20BalanceChangeEnforcer:invalid-terms-length");
-        shouldBalanceIncrease_ = _terms[0] != 0;
+        isDecrease_ = _terms[0] != 0;
         token_ = address(bytes20(_terms[1:21]));
         recipient_ = address(bytes20(_terms[21:41]));
         amount_ = uint256(bytes32(_terms[41:]));

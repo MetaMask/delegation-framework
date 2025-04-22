@@ -33,12 +33,12 @@ contract NativeBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
     // Validates the terms get decoded correctly
     function test_decodedTheTerms() public {
-        bytes memory terms_ = abi.encodePacked(true, address(users.carol.deleGator), uint256(100));
-        bool shouldBalanceIncrease_;
+        bytes memory terms_ = abi.encodePacked(false, address(users.carol.deleGator), uint256(100));
+        bool isDecrease_;
         uint256 amount_;
         address recipient_;
-        (shouldBalanceIncrease_, recipient_, amount_) = enforcer.getTermsInfo(terms_);
-        assertTrue(shouldBalanceIncrease_);
+        (isDecrease_, recipient_, amount_) = enforcer.getTermsInfo(terms_);
+        assertFalse(isDecrease_);
         assertEq(recipient_, address(users.carol.deleGator));
         assertEq(amount_, 100);
     }
@@ -47,7 +47,7 @@ contract NativeBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     function test_allow_ifBalanceIncreases() public {
         address recipient_ = delegator;
         // Expect it to increase by at least 100
-        bytes memory terms_ = abi.encodePacked(true, recipient_, uint256(100));
+        bytes memory terms_ = abi.encodePacked(false, recipient_, uint256(100));
 
         // Increase by 100
         vm.startPrank(dm);
@@ -66,7 +66,7 @@ contract NativeBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         address recipient_ = delegator;
         vm.deal(recipient_, 1000); // Start with 1000
         // Expect it to decrease by at most 100
-        bytes memory terms_ = abi.encodePacked(false, recipient_, uint256(100));
+        bytes memory terms_ = abi.encodePacked(true, recipient_, uint256(100));
 
         // Decrease by 50
         vm.startPrank(dm);
@@ -86,7 +86,7 @@ contract NativeBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     function test_notAllow_insufficientIncrease() public {
         address recipient_ = delegator;
         // Expect it to increase by at least 100
-        bytes memory terms_ = abi.encodePacked(true, recipient_, uint256(100));
+        bytes memory terms_ = abi.encodePacked(false, recipient_, uint256(100));
 
         // Increase by 10, expect revert
         vm.startPrank(dm);
@@ -101,7 +101,7 @@ contract NativeBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         address recipient_ = delegator;
         vm.deal(recipient_, 1000); // Start with 1000
         // Expect it to decrease by at most 100
-        bytes memory terms_ = abi.encodePacked(false, recipient_, uint256(100));
+        bytes memory terms_ = abi.encodePacked(true, recipient_, uint256(100));
 
         // Decrease by 150, expect revert
         vm.startPrank(dm);
@@ -115,7 +115,7 @@ contract NativeBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     function test_notAllow_reenterALockedEnforcer() public {
         address recipient_ = delegator;
         // Expect it to increase by at least 100
-        bytes memory terms_ = abi.encodePacked(true, recipient_, uint256(100));
+        bytes memory terms_ = abi.encodePacked(false, recipient_, uint256(100));
         bytes32 delegationHash_ = bytes32(uint256(99999999));
 
         // Increase by 100
@@ -143,12 +143,12 @@ contract NativeBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_;
 
         // Too small
-        terms_ = abi.encodePacked(true, recipient_, uint8(100));
+        terms_ = abi.encodePacked(false, recipient_, uint8(100));
         vm.expectRevert(bytes("NativeBalanceChangeEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
 
         // Too large
-        terms_ = abi.encodePacked(true, uint256(100), uint256(100));
+        terms_ = abi.encodePacked(false, uint256(100), uint256(100));
         vm.expectRevert(bytes("NativeBalanceChangeEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
     }
@@ -158,7 +158,7 @@ contract NativeBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         address recipient_ = delegator;
 
         // Expect balance to increase so much that the validation overflows
-        bytes memory terms_ = abi.encodePacked(true, recipient_, type(uint256).max);
+        bytes memory terms_ = abi.encodePacked(false, recipient_, type(uint256).max);
         vm.deal(recipient_, type(uint256).max);
         vm.startPrank(dm);
         enforcer.beforeHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);

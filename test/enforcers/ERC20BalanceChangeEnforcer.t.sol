@@ -42,9 +42,9 @@ contract ERC20BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
     // Validates the terms get decoded correctly for an increase scenario
     function test_decodedTheTerms() public {
-        bytes memory terms_ = abi.encodePacked(true, address(token), address(recipient), uint256(100));
-        (bool shouldBalanceIncrease_, address token_, address recipient_, uint256 amount_) = enforcer.getTermsInfo(terms_);
-        assertTrue(shouldBalanceIncrease_);
+        bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(100));
+        (bool isDecrease_, address token_, address recipient_, uint256 amount_) = enforcer.getTermsInfo(terms_);
+        assertEq(isDecrease_, false);
         assertEq(token_, address(token));
         assertEq(recipient_, address(recipient));
         assertEq(amount_, 100);
@@ -52,8 +52,8 @@ contract ERC20BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
     // Validates that a balance has increased at least the expected amount
     function test_allow_ifBalanceIncreases() public {
-        // Terms: [flag=true, token, recipient, amount=100]
-        bytes memory terms_ = abi.encodePacked(true, address(token), address(recipient), uint256(100));
+        // Terms: [flag=false, token, recipient, amount=100]
+        bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(100));
 
         // Increase by 100
         vm.prank(dm);
@@ -74,9 +74,9 @@ contract ERC20BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
     // Validates that a delegation can be reused with different recipients (for increase) without interference
     function test_allow_reuseDelegationWithDifferentRecipients() public {
-        // Terms for two different recipients (flag=true indicates increase expected)
-        bytes memory terms1_ = abi.encodePacked(true, address(token), address(recipient), uint256(100));
-        bytes memory terms2_ = abi.encodePacked(true, address(token), address(delegator), uint256(100));
+        // Terms for two different recipients (flag=false indicates increase expected)
+        bytes memory terms1_ = abi.encodePacked(false, address(token), address(recipient), uint256(100));
+        bytes memory terms2_ = abi.encodePacked(false, address(token), address(delegator), uint256(100));
 
         // Increase for recipient
         vm.prank(dm);
@@ -96,7 +96,7 @@ contract ERC20BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     // Validates that a balance decrease within the allowed range passes.
-    // For decreases (flag = false), the enforcer now checks that the final balance is not below the cached balance minus the
+    // For decreases (flag = true), the enforcer now checks that the final balance is not below the cached balance minus the
     // allowed amount.
     // Example: if the cached balance is 100 and the allowed decrease is 10, the final balance must be at least 90.
     function test_allow_ifBalanceDoesNotDecreaseTooMuch() public {
@@ -105,8 +105,8 @@ contract ERC20BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(delegator);
         token.mint(recipient, initialBalance_);
 
-        // Terms: flag=false (decrease expected), token, recipient, allowed decrease amount = 10.
-        bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(10));
+        // Terms: flag=true (decrease expected), token, recipient, allowed decrease amount = 10.
+        bytes memory terms_ = abi.encodePacked(true, address(token), address(recipient), uint256(10));
 
         // Cache the initial balance via beforeHook.
         vm.prank(dm);
@@ -127,8 +127,8 @@ contract ERC20BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(delegator);
         token.mint(recipient, initialBalance_);
 
-        // Terms: flag=false (decrease expected), token, recipient, allowed maximum decrease = 10.
-        bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(10));
+        // Terms: flag=true (decrease expected), token, recipient, allowed maximum decrease = 10.
+        bytes memory terms_ = abi.encodePacked(true, address(token), address(recipient), uint256(10));
 
         vm.prank(dm);
         enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
@@ -146,8 +146,8 @@ contract ERC20BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
     // Reverts if an increase hasn't been sufficient
     function test_notAllow_insufficientIncrease() public {
-        // Terms: flag=true (increase expected), required increase of 100 tokens.
-        bytes memory terms_ = abi.encodePacked(true, address(token), address(recipient), uint256(100));
+        // Terms: flag=false (increase expected), required increase of 100 tokens.
+        bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(100));
 
         // Mint only 10 tokens (insufficient increase)
         vm.prank(dm);
@@ -161,7 +161,7 @@ contract ERC20BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
     // Reverts if the enforcer is locked (i.e. reentrant beforeHook)
     function test_notAllow_reenterALockedEnforcer() public {
-        bytes memory terms_ = abi.encodePacked(true, address(token), address(recipient), uint256(100));
+        bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(100));
         bytes32 delegationHash_ = bytes32(uint256(99999999));
 
         vm.startPrank(dm);
@@ -189,7 +189,7 @@ contract ERC20BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
     // Reverts if no increase happens when one is expected
     function test_notAllow_noIncreaseToRecipient() public {
-        bytes memory terms_ = abi.encodePacked(true, address(token), address(recipient), uint256(100));
+        bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(100));
 
         // Cache the initial balance.
         vm.prank(dm);
@@ -206,26 +206,26 @@ contract ERC20BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_;
 
         // Too small: missing required bytes (should be 73 bytes)
-        terms_ = abi.encodePacked(true, address(token), address(recipient), uint8(100));
+        terms_ = abi.encodePacked(false, address(token), address(recipient), uint8(100));
         vm.expectRevert(bytes("ERC20BalanceChangeEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
 
         // Too large: extra bytes beyond 73.
-        terms_ = abi.encodePacked(true, address(token), address(recipient), uint256(100), uint256(100));
+        terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(100), uint256(100));
         vm.expectRevert(bytes("ERC20BalanceChangeEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
     }
 
     // Validates that an invalid token address (address(0)) reverts when calling beforeHook.
     function test_invalid_tokenAddress() public {
-        bytes memory terms_ = abi.encodePacked(true, address(0), address(recipient), uint256(100));
+        bytes memory terms_ = abi.encodePacked(false, address(0), address(recipient), uint256(100));
         vm.expectRevert();
         enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Reverts when the balance increase triggers an overflow.
     function test_notAllow_expectingOverflow() public {
-        bytes memory terms_ = abi.encodePacked(true, address(token), address(recipient), type(uint256).max);
+        bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), type(uint256).max);
 
         vm.prank(dm);
         enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
