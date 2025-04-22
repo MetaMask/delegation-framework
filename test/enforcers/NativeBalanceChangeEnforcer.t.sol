@@ -34,11 +34,11 @@ contract NativeBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     // Validates the terms get decoded correctly
     function test_decodedTheTerms() public {
         bytes memory terms_ = abi.encodePacked(false, address(users.carol.deleGator), uint256(100));
-        bool isDecrease_;
+        bool enforceDecrease_;
         uint256 amount_;
         address recipient_;
-        (isDecrease_, recipient_, amount_) = enforcer.getTermsInfo(terms_);
-        assertFalse(isDecrease_);
+        (enforceDecrease_, recipient_, amount_) = enforcer.getTermsInfo(terms_);
+        assertFalse(enforceDecrease_);
         assertEq(recipient_, address(users.carol.deleGator));
         assertEq(amount_, 100);
     }

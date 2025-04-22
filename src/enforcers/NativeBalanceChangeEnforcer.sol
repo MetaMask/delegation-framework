@@ -8,7 +8,7 @@ import { ModeCode } from "../utils/Types.sol";
  * @title NativeBalanceChangeEnforcer
  * @dev This contract allows setting up some guardrails around balance changes. By specifying an amount and a direction
  * (decrease/increase), one can enforce a maximum decrease or minimum increase in after-execution balance.
- * The change can be either a decrease or increase based on the `isDecrease` flag.
+ * The change can be either a decrease or increase based on the `enforceDecrease` flag.
  * @dev This contract has no enforcement of how the balance changes. It's meant to be used alongside additional enforcers to
  * create granular permissions.
  * @dev This enforcer operates only in default execution mode.
@@ -44,7 +44,7 @@ contract NativeBalanceChangeEnforcer is CaveatEnforcer {
      * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
      * - next 20 bytes: address of the recipient
      * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
-     * isDecrease)
+     * enforceDecrease)
      * @param _mode The execution mode. (Must be Default execType)
      * @param _delegationHash The hash of the delegation.
      */
@@ -74,7 +74,7 @@ contract NativeBalanceChangeEnforcer is CaveatEnforcer {
      * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
      * - next 20 bytes: address of the recipient
      * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
-     * isDecrease)
+     * enforceDecrease)
      * @param _delegationHash The hash of the delegation.
      */
     function afterHook(
@@ -89,10 +89,10 @@ contract NativeBalanceChangeEnforcer is CaveatEnforcer {
         public
         override
     {
-        (bool isDecrease_, address recipient_, uint256 amount_) = getTermsInfo(_terms);
+        (bool enforceDecrease_, address recipient_, uint256 amount_) = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, _delegationHash);
         delete isLocked[hashKey_];
-        if (isDecrease_) {
+        if (enforceDecrease_) {
             require(recipient_.balance >= balanceCache[hashKey_] - amount_, "NativeBalanceChangeEnforcer:exceeded-balance-decrease");
         } else {
             require(
@@ -107,15 +107,15 @@ contract NativeBalanceChangeEnforcer is CaveatEnforcer {
      * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
      * - next 20 bytes: address of the recipient
      * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
-     * isDecrease)
-     * @return isDecrease_ Boolean indicating if the balance should decrease (true) or increase (false).
+     * enforceDecrease)
+     * @return enforceDecrease_ Boolean indicating if the balance should decrease (true) or increase (false).
      * @return recipient_ The address of the recipient whose balance will change.
      * @return amount_ Balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
-     * isDecrease)
+     * enforceDecrease)
      */
-    function getTermsInfo(bytes calldata _terms) public pure returns (bool isDecrease_, address recipient_, uint256 amount_) {
+    function getTermsInfo(bytes calldata _terms) public pure returns (bool enforceDecrease_, address recipient_, uint256 amount_) {
         require(_terms.length == 53, "NativeBalanceChangeEnforcer:invalid-terms-length");
-        isDecrease_ = _terms[0] != 0;
+        enforceDecrease_ = _terms[0] != 0;
         recipient_ = address(bytes20(_terms[1:21]));
         amount_ = uint256(bytes32(_terms[21:]));
     }

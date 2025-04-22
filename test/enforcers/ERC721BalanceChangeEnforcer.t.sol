@@ -43,8 +43,8 @@ contract ERC721BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     // Validates the terms get decoded correctly (increase scenario)
     function test_decodedTheTerms() public {
         bytes memory terms_ = abi.encodePacked(true, address(token), address(delegator), uint256(1));
-        (bool isDecrease_, address token_, address recipient_, uint256 amount_) = enforcer.getTermsInfo(terms_);
-        assertTrue(isDecrease_);
+        (bool enforceDecrease_, address token_, address recipient_, uint256 amount_) = enforcer.getTermsInfo(terms_);
+        assertTrue(enforceDecrease_);
         assertEq(token_, address(token));
         assertEq(recipient_, delegator);
         assertEq(amount_, 1);

@@ -47,8 +47,9 @@ contract ERC1155BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     // Terms format: [bool shouldBalanceIncrease, address token, address recipient, uint256 tokenId, uint256 amount]
     function test_decodedTheTerms() public {
         bytes memory terms_ = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(100));
-        (bool isDecrease_, address token_, address recipient_, uint256 tokenId_, uint256 amount_) = enforcer.getTermsInfo(terms_);
-        assertEq(isDecrease_, true);
+        (bool enforceDecrease_, address token_, address recipient_, uint256 tokenId_, uint256 amount_) =
+            enforcer.getTermsInfo(terms_);
+        assertEq(enforceDecrease_, true);
         assertEq(token_, address(token));
         assertEq(recipient_, delegator);
         assertEq(tokenId_, tokenId);
