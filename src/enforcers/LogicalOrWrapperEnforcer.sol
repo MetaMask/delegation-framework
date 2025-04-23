@@ -83,6 +83,13 @@ contract LogicalOrWrapperEnforcer is CaveatEnforcer {
         delegationManager = _delegationManager;
     }
 
+    ////////////////////////////// Modifiers //////////////////////////////
+
+    modifier onlyDelegationManager() {
+        require(msg.sender == address(delegationManager), "LogicalOrWrapperEnforcer:only-delegation-manager");
+        _;
+    }
+
     ////////////////////////////// Public Methods //////////////////////////////
 
     /**
@@ -108,6 +115,7 @@ contract LogicalOrWrapperEnforcer is CaveatEnforcer {
         public
         override
         onlyDefaultExecutionMode(_mode)
+        onlyDelegationManager
     {
         _executeHook(
             _terms,
@@ -140,6 +148,7 @@ contract LogicalOrWrapperEnforcer is CaveatEnforcer {
         public
         override
         onlyDefaultExecutionMode(_mode)
+        onlyDelegationManager
     {
         _executeHook(
             _terms,
@@ -172,6 +181,7 @@ contract LogicalOrWrapperEnforcer is CaveatEnforcer {
         public
         override
         onlyDefaultExecutionMode(_mode)
+        onlyDelegationManager
     {
         _executeHook(
             _terms,
@@ -204,6 +214,7 @@ contract LogicalOrWrapperEnforcer is CaveatEnforcer {
         public
         override
         onlyDefaultExecutionMode(_mode)
+        onlyDelegationManager
     {
         _executeHook(
             _terms,
