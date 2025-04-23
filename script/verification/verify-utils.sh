@@ -9,42 +9,48 @@
 CHAIN_IDS=(
   1          # ethereum
   11155111   # sepolia
-  59141      # linea-sepolia
   59144      # linea
+  59141      # linea-sepolia
   8453       # base
   84532      # base-sepolia
   10         # optimism
   42161      # arbitrum
   137        # polygon
   100        # gnosis
+  10200      # gnosis-chiado
   56         # binance
 )
 
 ##########################################
-# FUNCTION: get_api_key(chain_id)
+# FUNCTION: get_chain_config(chain_id)
 #
-# Fetch the appropriate API key based on
-# the chain ID from environment variables.
+# Fetch the appropriate API key, verifier, RPC URL, and verifier URL
+# based on the chain ID from environment variables.
+#
+# Returns: array with [api_key, verifier, rpc_url, verifier_url]
 ##########################################
-get_api_key() {
+get_chain_config() {
     local chain_id="$1"
+    local -a config
     case "$chain_id" in
-        1) echo "$ETHERSCAN_API_KEY" ;; # ethereum
-        11155111) echo "$ETHERSCAN_API_KEY" ;;  # sepolia
-        59141)    echo "$LINEASCAN_API_KEY" ;; # linea-sepolia
-        59144)    echo "$LINEASCAN_API_KEY" ;; # linea
-        8453)     echo "$BASESCAN_API_KEY"  ;; # base
-        84532)    echo "$BASESCAN_API_KEY"  ;; # base-sepolia
-        10)       echo "$OPTIMISTIC_API_KEY" ;; # optimism
-        42161)    echo "$ARBISCAN_API_KEY"   ;; # arbitrum
-        137)      echo "$POLYGONSCAN_API_KEY" ;; # polygon
-        100)      echo "$GNOSISSCAN_API_KEY" ;; # gnosis
-        56)       echo "$BINANCESCAN_API_KEY" ;; # binance
+        1) config=("$ETHERSCAN_API_KEY" "etherscan" "$MAINNET_RPC_URL" "https://etherscan.io/") ;; # ethereum
+        11155111) config=("$ETHERSCAN_API_KEY" "etherscan" "$SEPOLIA_RPC_URL" "https://sepolia.etherscan.io/") ;;  # sepolia
+        59144)    config=("$LINEASCAN_API_KEY" "etherscan" "$LINEA_RPC_URL" "https://lineascan.build/") ;; # linea
+        59141)    config=("$LINEASCAN_API_KEY" "etherscan" "$LINEA_SEPOLIA_RPC_URL" "https://sepolia.lineascan.build/") ;; # linea-sepolia
+        8453)     config=("$BASESCAN_API_KEY" "etherscan" "$BASE_RPC_URL" "https://basescan.org/")  ;; # base
+        84532)    config=("$BASESCAN_API_KEY" "etherscan" "$BASE_SEPOLIA_RPC_URL" "https://sepolia.basescan.org/")  ;; # base-sepolia
+        10)       config=("$OPTIMISTIC_API_KEY" "etherscan" "$OPTIMISM_RPC_URL" "https://optimistic.etherscan.io/") ;; # optimism
+        42161)    config=("$ARBISCAN_API_KEY" "etherscan" "$ARBITRUM_RPC_URL" "https://arbiscan.io/")   ;; # arbitrum
+        137)      config=("$POLYGONSCAN_API_KEY" "etherscan" "$POLYGON_RPC_URL" "https://polygonscan.com/") ;; # polygon
+        100)      config=("$GNOSISSCAN_API_KEY" "etherscan" "$GNOSIS_RPC_URL" "https://gnosisscan.io/") ;; # gnosis
+        10200) config=("$GNOSISSCAN_API_KEY" "blockscout" "$GNOSIS_CHIADO_RPC_URL" "https://gnosis-chiado.blockscout.com/api") ;; # gnosis-chiado
+        56)       config=("$BINANCESCAN_API_KEY" "etherscan" "$BINANCE_RPC_URL" "https://bscscan.com/") ;; # binance
         *)
             echo "Unknown chain ID: $chain_id" >&2
             return 1
         ;;
     esac
+    echo "${config[@]}"
 }
 
 #########################################################################
@@ -74,19 +80,34 @@ verify_across_chains() {
       echo "============================================="
       echo "Verifying $contract_name at $contract_address on chain: $chain_id"
       echo "============================================="
-      local api_key
-      api_key="$(get_api_key "$chain_id")"
-
+      
+      # Get all chain config values at once
+      local -a config
+      config=($(get_chain_config "$chain_id"))
+      local api_key="${config[0]}"
+      local verifier="${config[1]}"
+      local rpc_url="${config[2]}"
+      local verifier_url="${config[3]}"
       # Build the base forge verify command
       local cmd=(
         forge verify-contract
+        --rpc-url "$rpc_url"
         --chain-id "$chain_id"
         --num-of-optimizations 200
-        --watch
-        --etherscan-api-key "$api_key"
-        "$contract_address"
-        "$contract_file:$contract_name"
+        --verifier "$verifier"
       )
+
+      # Only add etherscan-api-key if verifier is etherscan
+      if [[ "$verifier" == "etherscan" ]]; then
+        cmd+=( --etherscan-api-key "$api_key" )
+      fi
+
+      # Only add verifier-url if verifier is blockscout
+      if [[ "$verifier" == "blockscout" ]]; then
+        cmd+=( --verifier-url "$verifier_url" )
+      fi
+
+      cmd+=( --watch "$contract_address" "$contract_file:$contract_name" )
 
       # If we have constructor args
       if [[ -n "$constructor_args" ]]; then
