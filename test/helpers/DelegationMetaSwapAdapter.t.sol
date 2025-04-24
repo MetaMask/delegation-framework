@@ -6,6 +6,7 @@ import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import { BasicERC20 } from "../utils/BasicERC20.t.sol";
 import { BaseTest } from "../utils/BaseTest.t.sol";
@@ -475,6 +476,37 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
 
         vm.expectRevert("ArgsEqualityCheckEnforcer:different-args-and-terms");
         delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, false);
+    }
+
+    /**
+     * @notice Tests that the swapByDelegation function is protected against reentrancy attacks
+     */
+    function test_revertOnReentrancy() public {
+        // Set up mock contracts
+        _setUpMockContracts();
+
+        // Create malicious token that will attempt reentrancy
+        ReentrantToken maliciousToken_ = new ReentrantToken(address(delegationMetaSwapAdapter));
+        tokenA = BasicERC20(address(maliciousToken_));
+
+        _updateAllowedTokens();
+
+        // Build the delegation chain
+        Delegation[] memory delegations_ = new Delegation[](2);
+        Delegation memory vaultDelegation_ = _getVaultDelegation();
+        Delegation memory subVaultDelegation_ = _getSubVaultDelegation(EncoderLib._getDelegationHash(vaultDelegation_));
+        delegations_[1] = vaultDelegation_;
+        delegations_[0] = subVaultDelegation_;
+
+        // Prepare swap data with malicious token
+        bytes memory swapData_ = _encodeSwapData(IERC20(tokenA), IERC20(tokenB), amountFrom, amountTo, hex"", 0, address(0), true);
+        bytes memory apiData_ = _encodeApiData(aggregatorId, IERC20(tokenA), amountFrom, swapData_);
+        DelegationMetaSwapAdapter.SignatureData memory sigData_ = _buildSigData(apiData_);
+
+        // Attempt reentrancy attack
+        vm.prank(address(subVault.deleGator));
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
     }
 
     /// @notice Verifies that only the current owner can initiate ownership transfer.
@@ -1442,5 +1474,22 @@ contract MetaSwapMock {
         } else {
             tokenTo_.safeTransfer(msg.sender, _amount);
         }
+    }
+}
+
+// Helper contract that attempts reentrancy
+contract ReentrantToken is ERC20 {
+    address public immutable delegationMetaSwapAdapter;
+
+    constructor(address _delegationMetaSwapAdapter) ERC20("Malicious", "MAL") {
+        delegationMetaSwapAdapter = _delegationMetaSwapAdapter;
+    }
+
+    function transfer(address, uint256) public override returns (bool) {
+        // Attempt to reenter swapByDelegation
+        DelegationMetaSwapAdapter(payable(delegationMetaSwapAdapter)).swapByDelegation(
+            DelegationMetaSwapAdapter.SignatureData({ signature: hex"", expiration: 0, apiData: hex"" }), new Delegation[](0), true
+        );
+        return true;
     }
 }

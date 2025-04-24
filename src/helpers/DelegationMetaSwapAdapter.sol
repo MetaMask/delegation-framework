@@ -6,6 +6,7 @@ import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/Mes
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 import { ExecutionHelper } from "@erc7579/core/ExecutionHelper.sol";
@@ -27,7 +28,7 @@ import { CALLTYPE_SINGLE, EXECTYPE_DEFAULT } from "../utils/Constants.sol";
  *      signature that incorporates an expiration timestamp. The signature is verified during swap execution to ensure
  *      that it is still valid.
  */
-contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
+contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step, ReentrancyGuard {
     using ModeLib for ModeCode;
     using ExecutionLib for bytes;
     using SafeERC20 for IERC20;
@@ -218,6 +219,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         bool _useTokenWhitelist
     )
         external
+        nonReentrant
     {
         _validateSignature(_signatureData);
 
@@ -274,7 +276,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
      * @param _tokenTo The output token of the swap.
      * @param _recipient The address that will receive the swapped tokens.
      * @param _amountFrom The amount of tokens to be swapped.
-     * @param _balanceFromBefore The contract’s balance of _tokenFrom before the incoming token transfer is credited.
+     * @param _balanceFromBefore The contract's balance of _tokenFrom before the incoming token transfer is credited.
      * @param _swapData Arbitrary data required by the aggregator (e.g. encoded swap params).
      */
     function swapTokens(
