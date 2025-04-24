@@ -132,10 +132,10 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     error InvalidSwapFunctionSelector();
 
     /// @dev Error when the tokenFrom in the api data and swap data do not match.
-    error TokenFromMismath();
+    error TokenFromMismatch();
 
     /// @dev Error when the amountFrom in the api data and swap data do not match.
-    error AmountFromMismath();
+    error AmountFromMismatch();
 
     /// @dev Error when the delegations do not include the ArgsEqualityCheckEnforcer
     error MissingArgsEqualityCheckEnforcer();
@@ -498,11 +498,11 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
             (address, IERC20, IERC20, uint256, uint256, bytes, uint256, address, bool)
         );
 
-        if (swapTokenFrom_ != tokenFrom_) revert TokenFromMismath();
+        if (swapTokenFrom_ != tokenFrom_) revert TokenFromMismatch();
 
         // When the fee is deducted from the tokenFrom the (feeAmount) plus the amount actually swapped (swapAmountFrom)
         // must equal the total provided (amountFrom); otherwise, the input is inconsistent.
-        if (!feeTo_ && (feeAmount_ + swapAmountFrom_ != amountFrom_)) revert AmountFromMismath();
+        if (!feeTo_ && (feeAmount_ + swapAmountFrom_ != amountFrom_)) revert AmountFromMismatch();
 
         tokenTo_ = swapTokenTo_;
     }

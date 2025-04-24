@@ -1019,7 +1019,7 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         DelegationMetaSwapAdapter.SignatureData memory sigData_ = _buildSigData(validApiData_);
 
         vm.prank(address(subVault.deleGator));
-        vm.expectRevert(DelegationMetaSwapAdapter.TokenFromMismath.selector);
+        vm.expectRevert(DelegationMetaSwapAdapter.TokenFromMismatch.selector);
         delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
     }
 
@@ -1059,7 +1059,7 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         DelegationMetaSwapAdapter.SignatureData memory sigData_ = _buildSigData(apiData_);
 
         vm.prank(address(subVault.deleGator));
-        vm.expectRevert(DelegationMetaSwapAdapter.AmountFromMismath.selector);
+        vm.expectRevert(DelegationMetaSwapAdapter.AmountFromMismatch.selector);
         delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
     }
 
