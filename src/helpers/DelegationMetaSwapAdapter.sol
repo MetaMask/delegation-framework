@@ -234,15 +234,17 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         if (_delegations[0].delegator != msg.sender) revert NotLeafDelegator();
 
         // Prepare the call that will be executed internally via onlySelf
-        bytes memory encodedSwap_ = abi.encodeWithSelector(
-            this.swapTokens.selector,
-            aggregatorId_,
-            tokenFrom_,
-            tokenTo_,
-            _delegations[delegationsLength_ - 1].delegator,
-            amountFrom_,
-            _getSelfBalance(tokenFrom_),
-            swapData_
+        bytes memory encodedSwap_ = abi.encodeCall(
+            this.swapTokens,
+            (
+                aggregatorId_,
+                tokenFrom_,
+                tokenTo_,
+                _delegations[delegationsLength_ - 1].delegator,
+                amountFrom_,
+                _getSelfBalance(tokenFrom_),
+                swapData_
+            )
         );
 
         bytes[] memory permissionContexts_ = new bytes[](2);
@@ -258,7 +260,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         if (address(tokenFrom_) == address(0)) {
             executionCallDatas_[0] = ExecutionLib.encodeSingle(address(this), amountFrom_, hex"");
         } else {
-            bytes memory encodedTransfer_ = abi.encodeWithSelector(IERC20.transfer.selector, address(this), amountFrom_);
+            bytes memory encodedTransfer_ = abi.encodeCall(IERC20.transfer, (address(this), amountFrom_));
             executionCallDatas_[0] = ExecutionLib.encodeSingle(address(tokenFrom_), 0, encodedTransfer_);
         }
         executionCallDatas_[1] = ExecutionLib.encodeSingle(address(this), 0, encodedSwap_);
@@ -274,7 +276,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
      * @param _tokenTo The output token of the swap.
      * @param _recipient The address that will receive the swapped tokens.
      * @param _amountFrom The amount of tokens to be swapped.
-     * @param _balanceFromBefore The contract’s balance of _tokenFrom before the incoming token transfer is credited.
+     * @param _balanceFromBefore The contract's balance of _tokenFrom before the incoming token transfer is credited.
      * @param _swapData Arbitrary data required by the aggregator (e.g. encoded swap params).
      */
     function swapTokens(
