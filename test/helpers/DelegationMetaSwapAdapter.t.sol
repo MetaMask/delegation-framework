@@ -1156,6 +1156,14 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         assertEq(delegationMetaSwapAdapter.swapApiSigner(), newSigner_, "Swap API signer was not updated");
     }
 
+    /// @notice Tests that the owner cannot set the swap API signer to the zero address.
+    function test_revert_setSwapApiSigner_ifZeroAddress() public {
+        _setUpMockContracts();
+        vm.prank(owner);
+        vm.expectRevert(DelegationMetaSwapAdapter.InvalidZeroAddress.selector);
+        delegationMetaSwapAdapter.setSwapApiSigner(address(0));
+    }
+
     /// @notice Tests that a non-owner calling setSwapApiSigner reverts.
     function test_revert_setSwapApiSigner_ifNotOwner() public {
         _setUpMockContracts();

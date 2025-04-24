@@ -329,6 +329,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
      * @param _newSigner The new authorized signer address.
      */
     function setSwapApiSigner(address _newSigner) external onlyOwner {
+        if (_newSigner == address(0)) revert InvalidZeroAddress();
         swapApiSigner = _newSigner;
         emit SwapApiSignerUpdated(_newSigner);
     }
