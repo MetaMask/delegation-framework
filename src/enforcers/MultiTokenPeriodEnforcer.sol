@@ -117,6 +117,48 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
     }
 
     /**
+     * @notice Decodes all configurations contained in _terms.
+     * @dev Expects _terms length to be a multiple of 116.
+     * @param _terms A concatenation of 116-byte configurations.
+     * @return tokens_ An array of token addresses.
+     * @return periodAmounts_ An array of period amounts.
+     * @return periodDurations_ An array of period durations (in seconds).
+     * @return startDates_ An array of start dates for the first period.
+     */
+    function getAllTermsInfo(bytes calldata _terms)
+        external
+        pure
+        returns (
+            address[] memory tokens_,
+            uint256[] memory periodAmounts_,
+            uint256[] memory periodDurations_,
+            uint256[] memory startDates_
+        )
+    {
+        uint256 termsLength_ = _terms.length;
+        require(termsLength_ % 116 == 0 && termsLength_ != 0, "MultiTokenPeriodEnforcer:invalid-terms-length");
+        uint256 numConfigs_ = termsLength_ / 116;
+        tokens_ = new address[](numConfigs_);
+        periodAmounts_ = new uint256[](numConfigs_);
+        periodDurations_ = new uint256[](numConfigs_);
+        startDates_ = new uint256[](numConfigs_);
+
+        // Loop over each configuration using its index.
+        for (uint256 i = 0; i < numConfigs_; ++i) {
+            // Calculate the starting offset for this configuration.
+            uint256 offset_ = i * 116;
+            // Get the token address from the first 20 bytes.
+            tokens_[i] = address(bytes20(_terms[offset_:offset_ + 20]));
+            // Get the periodAmount from the next 32 bytes.
+            periodAmounts_[i] = uint256(bytes32(_terms[offset_ + 20:offset_ + 52]));
+            // Get the periodDuration from the following 32 bytes.
+            periodDurations_[i] = uint256(bytes32(_terms[offset_ + 52:offset_ + 84]));
+            // Get the startDate from the final 32 bytes.
+            startDates_[i] = uint256(bytes32(_terms[offset_ + 84:offset_ + 116]));
+        }
+    }
+
+    /**
      * @notice Hook called before a transfer to enforce the periodic limit.
      * @dev For ERC20 transfers, expects _executionCallData to decode to (target,, callData)
      *      with callData length of 68, beginning with IERC20.transfer.selector and zero value.
@@ -184,48 +226,6 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
             }
         }
         revert("MultiTokenPeriodEnforcer:token-config-not-found");
-    }
-
-    /**
-     * @notice Decodes all configurations contained in _terms.
-     * @dev Expects _terms length to be a multiple of 116.
-     * @param _terms A concatenation of 116-byte configurations.
-     * @return tokens_ An array of token addresses.
-     * @return periodAmounts_ An array of period amounts.
-     * @return periodDurations_ An array of period durations (in seconds).
-     * @return startDates_ An array of start dates for the first period.
-     */
-    function getAllTermsInfo(bytes calldata _terms)
-        public
-        pure
-        returns (
-            address[] memory tokens_,
-            uint256[] memory periodAmounts_,
-            uint256[] memory periodDurations_,
-            uint256[] memory startDates_
-        )
-    {
-        uint256 termsLength_ = _terms.length;
-        require(termsLength_ % 116 == 0 && termsLength_ != 0, "MultiTokenPeriodEnforcer:invalid-terms-length");
-        uint256 numConfigs_ = termsLength_ / 116;
-        tokens_ = new address[](numConfigs_);
-        periodAmounts_ = new uint256[](numConfigs_);
-        periodDurations_ = new uint256[](numConfigs_);
-        startDates_ = new uint256[](numConfigs_);
-
-        // Loop over each configuration using its index.
-        for (uint256 i = 0; i < numConfigs_; ++i) {
-            // Calculate the starting offset for this configuration.
-            uint256 offset_ = i * 116;
-            // Get the token address from the first 20 bytes.
-            tokens_[i] = address(bytes20(_terms[offset_:offset_ + 20]));
-            // Get the periodAmount from the next 32 bytes.
-            periodAmounts_[i] = uint256(bytes32(_terms[offset_ + 20:offset_ + 52]));
-            // Get the periodDuration from the following 32 bytes.
-            periodDurations_[i] = uint256(bytes32(_terms[offset_ + 52:offset_ + 84]));
-            // Get the startDate from the final 32 bytes.
-            startDates_[i] = uint256(bytes32(_terms[offset_ + 84:offset_ + 116]));
-        }
     }
 
     ////////////////////////////// Internal Methods //////////////////////////////
