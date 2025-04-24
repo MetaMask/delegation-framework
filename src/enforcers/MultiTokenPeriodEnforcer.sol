@@ -17,6 +17,10 @@ import { ModeCode } from "../utils/Types.sol";
  *        - 32 bytes: periodDuration (in seconds).
  *        - 32 bytes: startDate for the first period.
  *
+ *      The _args parameter must contain a single uint256 value representing the index of the token
+ *      configuration to use from the _terms array. This index must be less than the total number
+ *      of configurations in _terms.
+ *
  *      For optimal gas usage, it is recommended that the configurations in _terms are sorted
  *      from the most frequently used token to the least frequently used token. Tokens placed
  *      earlier in the sequence will be processed first, reducing gas consumption.
@@ -83,7 +87,7 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
      * @param _delegationHash The delegation hash.
      * @param _delegationManager The delegation manager's address.
      * @param _terms A concatenation of one or more 116-byte configurations.
-     * @param _token The token for which the available amount is requested (address(0) for native).
+     * @param _args A single uint256 value representing the index of the token configuration to use.
      * @return availableAmount_ The remaining transferable amount in the current period.
      * @return isNewPeriod_ True if a new period has begun.
      * @return currentPeriod_ The current period index.
@@ -92,20 +96,21 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         bytes32 _delegationHash,
         address _delegationManager,
         bytes calldata _terms,
-        address _token
+        bytes calldata _args
     )
         external
         view
         returns (uint256 availableAmount_, bool isNewPeriod_, uint256 currentPeriod_)
     {
-        PeriodicAllowance memory storedAllowance_ = periodicAllowances[_delegationManager][_delegationHash][_token];
+        (address token_, uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) =
+            getTermsInfo(_terms, abi.decode(_args, (uint256)));
+
+        PeriodicAllowance memory storedAllowance_ = periodicAllowances[_delegationManager][_delegationHash][token_];
         if (storedAllowance_.startDate != 0) {
             return _getAvailableAmount(storedAllowance_);
         }
 
         // Not yet initialized; simulate using provided terms.
-        (uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) = getTermsInfo(_terms, _token);
-
         PeriodicAllowance memory allowance_ = PeriodicAllowance({
             periodAmount: periodAmount_,
             periodDuration: periodDuration_,
@@ -123,6 +128,7 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
      *      For native transfers, expects _executionCallData to decode to (target, value, callData)
      *      with an empty callData.
      * @param _terms A concatenation of one or more 116-byte configurations.
+     * @param _args A single uint256 value representing the index of the token configuration to use.
      * @param _mode The execution mode (must be single callType, default execType).
      * @param _executionCallData The encoded execution data.
      * @param _delegationHash The delegation hash.
@@ -130,7 +136,7 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
      */
     function beforeHook(
         bytes calldata _terms,
-        bytes calldata,
+        bytes calldata _args,
         ModeCode _mode,
         bytes calldata _executionCallData,
         bytes32 _delegationHash,
@@ -142,48 +148,38 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         onlySingleCallTypeMode(_mode)
         onlyDefaultExecutionMode(_mode)
     {
-        _validateAndConsumeTransfer(_terms, _executionCallData, _delegationHash, _redeemer);
+        _validateAndConsumeTransfer(_terms, _args, _executionCallData, _delegationHash, _redeemer);
     }
 
     /**
-     * @notice Searches the provided _terms for a configuration matching _token.
+     * @notice Retrieves the configuration for a specific token index from _terms.
      * @dev Expects _terms length to be a multiple of 116.
      * @param _terms A concatenation of 116-byte configurations.
-     * @param _token The token address to search for (address(0) for native transfers).
+     * @param _tokenIndex The index of the token configuration to retrieve.
+     * @return token_ The token address at the specified index.
      * @return periodAmount_ The maximum transferable amount for this token.
      * @return periodDuration_ The period duration (in seconds) for this token.
      * @return startDate_ The start date for the first period.
      */
     function getTermsInfo(
         bytes calldata _terms,
-        address _token
+        uint256 _tokenIndex
     )
         public
         pure
-        returns (uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_)
+        returns (address token_, uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_)
     {
         uint256 termsLength_ = _terms.length;
         require(termsLength_ != 0 && termsLength_ % 116 == 0, "MultiTokenPeriodEnforcer:invalid-terms-length");
 
-        // Iterate over the byte offset directly in increments of 116 bytes.
-        for (uint256 offset_ = 0; offset_ < termsLength_;) {
-            // Extract token address from the first 20 bytes.
-            address token_ = address(bytes20(_terms[offset_:offset_ + 20]));
-            if (token_ == _token) {
-                // Get periodAmount from the next 32 bytes.
-                periodAmount_ = uint256(bytes32(_terms[offset_ + 20:offset_ + 52]));
-                // Get periodDuration from the subsequent 32 bytes.
-                periodDuration_ = uint256(bytes32(_terms[offset_ + 52:offset_ + 84]));
-                // Get startDate from the final 32 bytes.
-                startDate_ = uint256(bytes32(_terms[offset_ + 84:offset_ + 116]));
-                return (periodAmount_, periodDuration_, startDate_);
-            }
+        uint256 numConfigs_ = termsLength_ / 116;
+        require(_tokenIndex < numConfigs_, "MultiTokenPeriodEnforcer:invalid-token-index");
 
-            unchecked {
-                offset_ += 116;
-            }
-        }
-        revert("MultiTokenPeriodEnforcer:token-config-not-found");
+        uint256 offset_ = _tokenIndex * 116;
+        token_ = address(bytes20(_terms[offset_:offset_ + 20]));
+        periodAmount_ = uint256(bytes32(_terms[offset_ + 20:offset_ + 52]));
+        periodDuration_ = uint256(bytes32(_terms[offset_ + 52:offset_ + 84]));
+        startDate_ = uint256(bytes32(_terms[offset_ + 84:offset_ + 116]));
     }
 
     /**
@@ -237,12 +233,14 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
      *      - For ERC20 transfers (_token != address(0)): requires callData length to be 68 with a
      *        valid IERC20.transfer selector, and zero value.
      * @param _terms The concatenated configurations.
+     * @param _args A single uint256 value representing the index of the token configuration to use.
      * @param _executionCallData The encoded execution data.
      * @param _delegationHash The delegation hash.
      * @param _redeemer The address intended to receive the tokens/ETH.
      */
     function _validateAndConsumeTransfer(
         bytes calldata _terms,
+        bytes calldata _args,
         bytes calldata _executionCallData,
         bytes32 _delegationHash,
         address _redeemer
@@ -251,28 +249,32 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
     {
         uint256 transferAmount_;
         address token_;
+        {
+            // Decode _executionCallData using decodeSingle.
+            (address target_, uint256 value_, bytes calldata callData_) = _executionCallData.decodeSingle();
 
-        // Decode _executionCallData using decodeSingle.
-        (address target_, uint256 value_, bytes calldata callData_) = _executionCallData.decodeSingle();
-
-        if (callData_.length == 68) {
-            // ERC20 transfer.
-            require(value_ == 0, "MultiTokenPeriodEnforcer:invalid-value-in-erc20-transfer");
-            require(bytes4(callData_[0:4]) == IERC20.transfer.selector, "MultiTokenPeriodEnforcer:invalid-method");
-            token_ = target_;
-            transferAmount_ = uint256(bytes32(callData_[36:68]));
-        } else if (callData_.length == 0) {
-            // Native transfer.
-            require(value_ > 0, "MultiTokenPeriodEnforcer:invalid-zero-value-in-native-transfer");
-            token_ = address(0);
-            transferAmount_ = value_;
-        } else {
-            // If callData length is neither 68 nor 0, revert.
-            revert("MultiTokenPeriodEnforcer:invalid-call-data-length");
+            if (callData_.length == 68) {
+                // ERC20 transfer.
+                require(value_ == 0, "MultiTokenPeriodEnforcer:invalid-value-in-erc20-transfer");
+                require(bytes4(callData_[0:4]) == IERC20.transfer.selector, "MultiTokenPeriodEnforcer:invalid-method");
+                token_ = target_;
+                transferAmount_ = uint256(bytes32(callData_[36:68]));
+            } else if (callData_.length == 0) {
+                // Native transfer.
+                require(value_ > 0, "MultiTokenPeriodEnforcer:invalid-zero-value-in-native-transfer");
+                token_ = address(0);
+                transferAmount_ = value_;
+            } else {
+                // If callData length is neither 68 nor 0, revert.
+                revert("MultiTokenPeriodEnforcer:invalid-call-data-length");
+            }
         }
+        // Get the token configuration from the specified index
+        (address configuredToken_, uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) =
+            getTermsInfo(_terms, abi.decode(_args, (uint256)));
 
-        // Retrieve the configuration for the token from _terms.
-        (uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) = getTermsInfo(_terms, token_);
+        // Verify that the token in the execution matches the configured token
+        require(token_ == configuredToken_, "MultiTokenPeriodEnforcer:token-mismatch");
 
         // Use the multi-token mapping.
         PeriodicAllowance storage allowance_ = periodicAllowances[msg.sender][_delegationHash][token_];

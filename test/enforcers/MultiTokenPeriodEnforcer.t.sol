@@ -58,104 +58,111 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
     function test_InvalidTermsLength() public {
         bytes memory invalidTerms_ = new bytes(115); // not a multiple of 116
         vm.expectRevert("MultiTokenPeriodEnforcer:invalid-terms-length");
-        multiTokenEnforcer.getTermsInfo(invalidTerms_, address(basicERC20));
+        multiTokenEnforcer.getTermsInfo(invalidTerms_, 0);
     }
 
-    /// @notice Reverts if a token configuration is not found in _terms.
-    function test_TokenConfigNotFound() public {
-        // Encode only an ERC20 configuration.
+    /// @notice Reverts if the token index is out of bounds.
+    function test_InvalidTokenIndex() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
-        // Request native config (address(0)) which is not present.
-        vm.expectRevert("MultiTokenPeriodEnforcer:token-config-not-found");
-        multiTokenEnforcer.getTermsInfo(terms_, address(0));
+        vm.expectRevert("MultiTokenPeriodEnforcer:invalid-token-index");
+        multiTokenEnforcer.getTermsInfo(terms_, 1);
+    }
+
+    /// @notice Reverts if the token in the execution doesn't match the configured token at the specified index.
+    function test_TokenMismatch() public {
+        bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
+        bytes memory args_ = abi.encode(uint256(0)); // Index 0 is basicERC20
+        bytes memory callData_ = _encodeERC20Transfer(bob, 100);
+        bytes memory execData_ = _encodeSingleExecution(address(basicERC20B), 0, callData_); // Using wrong token
+        vm.expectRevert("MultiTokenPeriodEnforcer:token-mismatch");
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Reverts if the ERC20 config has a zero start date.
     function test_InvalidZeroStartDateErc20() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, uint256(0));
+        bytes memory args_ = abi.encode(uint256(0));
         bytes memory callData_ = _encodeERC20Transfer(bob, 100);
         bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
         vm.expectRevert("MultiTokenPeriodEnforcer:invalid-zero-start-date");
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Reverts if the ERC20 config has a zero period duration.
     function test_InvalidZeroPeriodDurationErc20() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, uint256(0), erc20StartDate);
+        bytes memory args_ = abi.encode(uint256(0));
         bytes memory callData_ = _encodeERC20Transfer(bob, 100);
         bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
         vm.expectRevert("MultiTokenPeriodEnforcer:invalid-zero-period-duration");
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Reverts if the ERC20 config has a zero period amount.
     function test_InvalidZeroPeriodAmountErc20() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), uint256(0), erc20PeriodDuration, erc20StartDate);
+        bytes memory args_ = abi.encode(uint256(0));
         bytes memory callData_ = _encodeERC20Transfer(bob, 100);
         bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
         vm.expectRevert("MultiTokenPeriodEnforcer:invalid-zero-period-amount");
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Reverts if the ERC20 transfer is attempted before the start date.
     function test_TransferNotStartedErc20() public {
         uint256 futureStart_ = block.timestamp + 100;
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, futureStart_);
+        bytes memory args_ = abi.encode(uint256(0));
         bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
         bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
         vm.expectRevert("MultiTokenPeriodEnforcer:transfer-not-started");
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Reverts if the ERC20 execution call data contains value
     function test_InvalidExecutionLengthErc20() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
+        bytes memory args_ = abi.encode(uint256(0));
 
         bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
         // Value greater than 0
         bytes memory invalidExecData_ = _encodeSingleExecution(address(basicERC20), 1, callData_);
 
         vm.expectRevert("MultiTokenPeriodEnforcer:invalid-value-in-erc20-transfer");
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, invalidExecData_, dummyDelegationHash, address(0), redeemer);
-    }
-
-    /// @notice Reverts if the ERC20 target does not match the token in _terms.
-    function test_InvalidContractErc20() public {
-        bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
-        bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
-        bytes memory invalidExecData_ = _encodeSingleExecution(address(0xdead), 0, callData_);
-        vm.expectRevert("MultiTokenPeriodEnforcer:token-config-not-found");
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, invalidExecData_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, invalidExecData_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Reverts if the ERC20 call data selector is invalid.
     function test_InvalidMethodErc20() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
+        bytes memory args_ = abi.encode(uint256(0));
         bytes memory invalidCallData_ = abi.encodeWithSelector(IERC20.transferFrom.selector, redeemer, 500);
         bytes memory invalidExecData_ = _encodeSingleExecution(address(basicERC20), 0, invalidCallData_);
         vm.expectRevert("MultiTokenPeriodEnforcer:invalid-method");
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, invalidExecData_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, invalidExecData_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Reverts if an ERC20 transfer exceeds the available allowance.
     function test_TransferAmountExceededErc20() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
+        bytes memory args_ = abi.encode(uint256(0));
         // First transfer: 800 tokens.
         bytes memory callData1_ = _encodeERC20Transfer(bob, 800);
         bytes memory execData1_ = _encodeSingleExecution(address(basicERC20), 0, callData1_);
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData1_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData1_, dummyDelegationHash, address(0), redeemer);
 
         // Second transfer: attempt 300 tokens (exceeds remaining allowance).
         bytes memory callData2_ = _encodeERC20Transfer(bob, 300);
         bytes memory execData2_ = _encodeSingleExecution(address(basicERC20), 0, callData2_);
         vm.expectRevert("MultiTokenPeriodEnforcer:transfer-amount-exceeded");
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData2_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData2_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Tests a successful ERC20 transfer and verifies that the TransferredInPeriod event is emitted.
     function test_SuccessfulTransferAndEventErc20() public {
         uint256 transferAmount_ = 500;
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
+        bytes memory args_ = abi.encode(uint256(0));
         bytes memory callData_ = _encodeERC20Transfer(bob, transferAmount_);
         bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
 
@@ -171,52 +178,52 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
             transferAmount_,
             block.timestamp
         );
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
-        (uint256 available_,,) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(basicERC20));
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
+        (uint256 available_,,) = multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, args_);
         assertEq(available_, erc20PeriodAmount - transferAmount_);
     }
 
     /// @notice Tests multiple ERC20 transfers within the same period.
     function test_MultipleTransfersInSamePeriodErc20() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
+        bytes memory args_ = abi.encode(uint256(0));
         // First transfer: 400 tokens.
         bytes memory callData1_ = _encodeERC20Transfer(bob, 400);
         bytes memory execData1_ = _encodeSingleExecution(address(basicERC20), 0, callData1_);
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData1_, dummyDelegationHash, address(0), bob);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData1_, dummyDelegationHash, address(0), bob);
 
         // Second transfer: 300 tokens.
         bytes memory callData2_ = _encodeERC20Transfer(bob, 300);
         bytes memory execData2_ = _encodeSingleExecution(address(basicERC20), 0, callData2_);
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData2_, dummyDelegationHash, address(0), bob);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData2_, dummyDelegationHash, address(0), bob);
 
-        (uint256 available_,,) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(basicERC20));
+        (uint256 available_,,) = multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, args_);
         assertEq(available_, erc20PeriodAmount - 700);
 
         // Third transfer: attempt 400 tokens (should exceed allowance).
         bytes memory callData3_ = _encodeERC20Transfer(bob, 400);
         bytes memory execData3_ = _encodeSingleExecution(address(basicERC20), 0, callData3_);
         vm.expectRevert("MultiTokenPeriodEnforcer:transfer-amount-exceeded");
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData3_, dummyDelegationHash, address(0), bob);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData3_, dummyDelegationHash, address(0), bob);
     }
 
     /// @notice Tests that the ERC20 allowance resets when a new period begins.
     function test_NewPeriodResetsAllowanceErc20() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
+        bytes memory args_ = abi.encode(uint256(0));
         // First transfer: 800 tokens.
         bytes memory callData1_ = _encodeERC20Transfer(bob, 800);
         bytes memory execData1_ = _encodeSingleExecution(address(basicERC20), 0, callData1_);
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData1_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData1_, dummyDelegationHash, address(0), redeemer);
 
         (uint256 availableBefore_,, uint256 periodBefore_) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(basicERC20));
+            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, args_);
         assertEq(availableBefore_, erc20PeriodAmount - 800);
 
         vm.warp(block.timestamp + erc20PeriodDuration + 1);
 
         (uint256 availableAfter_, bool isNewPeriod_, uint256 periodAfter_) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(basicERC20));
+            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, args_);
         assertEq(availableAfter_, erc20PeriodAmount);
         assertTrue(isNewPeriod_);
         assertGt(periodAfter_, periodBefore_);
@@ -224,10 +231,10 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
         // New transfer: 600 tokens.
         bytes memory callData2_ = _encodeERC20Transfer(bob, 600);
         bytes memory execData2_ = _encodeSingleExecution(address(basicERC20), 0, callData2_);
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData2_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData2_, dummyDelegationHash, address(0), redeemer);
 
         (uint256 availableAfterTransfer_,,) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(basicERC20));
+            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, args_);
         assertEq(availableAfterTransfer_, erc20PeriodAmount - 600);
     }
 
@@ -298,6 +305,7 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
         uint256 transferAmount_ = 0.5 ether;
         bytes memory terms_ = abi.encodePacked(address(0), nativePeriodAmount, nativePeriodDuration, nativeStartDate);
         bytes memory execData_ = _encodeNativeTransfer(bob, transferAmount_);
+        bytes memory args_ = abi.encode(uint256(0));
 
         vm.expectEmit(true, true, true, true);
         emit MultiTokenPeriodEnforcer.TransferredInPeriod(
@@ -311,56 +319,58 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
             transferAmount_,
             block.timestamp
         );
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
-        (uint256 available_,,) = multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(0));
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
+        (uint256 available_,,) = multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, args_);
         assertEq(available_, nativePeriodAmount - transferAmount_);
     }
 
     /// @notice Tests multiple native transfers within the same period.
     function test_MultipleTransfersInSamePeriodNative() public {
         bytes memory terms_ = abi.encodePacked(address(0), nativePeriodAmount, nativePeriodDuration, nativeStartDate);
+        bytes memory args_ = abi.encode(uint256(0));
         // First transfer: 0.4 ether.
         bytes memory execData1_ = _encodeNativeTransfer(bob, 0.4 ether);
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData1_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData1_, dummyDelegationHash, address(0), redeemer);
 
         // Second transfer: 0.3 ether.
         bytes memory execData2_ = _encodeNativeTransfer(bob, 0.3 ether);
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData2_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData2_, dummyDelegationHash, address(0), redeemer);
 
-        (uint256 available_,,) = multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(0));
+        (uint256 available_,,) = multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, args_);
         assertEq(available_, nativePeriodAmount - 0.7 ether);
 
         // Third transfer: attempt 0.4 ether (should revert).
         bytes memory execData3_ = _encodeNativeTransfer(bob, 0.4 ether);
         vm.expectRevert("MultiTokenPeriodEnforcer:transfer-amount-exceeded");
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData3_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData3_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Tests that the native allowance resets when a new period begins.
     function test_NewPeriodResetsAllowanceNative() public {
         bytes memory terms_ = abi.encodePacked(address(0), nativePeriodAmount, nativePeriodDuration, nativeStartDate);
+        bytes memory args_ = abi.encode(uint256(0));
         // First transfer: 0.8 ether.
         bytes memory execData1_ = _encodeNativeTransfer(bob, 0.8 ether);
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData1_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData1_, dummyDelegationHash, address(0), redeemer);
 
         (uint256 availableBefore_,, uint256 periodBefore_) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(0));
+            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, args_);
         assertEq(availableBefore_, nativePeriodAmount - 0.8 ether);
 
         vm.warp(block.timestamp + nativePeriodDuration + 1);
 
         (uint256 availableAfter_, bool isNewPeriod_, uint256 periodAfter_) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(0));
+            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, args_);
         assertEq(availableAfter_, nativePeriodAmount);
         assertTrue(isNewPeriod_);
         assertGt(periodAfter_, periodBefore_);
 
         // New transfer: 0.3 ether.
         bytes memory execData2_ = _encodeNativeTransfer(bob, 0.3 ether);
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData2_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData2_, dummyDelegationHash, address(0), redeemer);
 
         (uint256 availableAfterTransfer_,,) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(0));
+            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, args_);
         assertEq(availableAfterTransfer_, nativePeriodAmount - 0.3 ether);
     }
 
@@ -371,10 +381,12 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
     function test_TermsMismatchAfterInitialization() public {
         // Initialize allowance using the initial ERC20 configuration.
         bytes memory initialTerms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
-        uint256 initialTransfer_ = 200;
-        bytes memory callData1_ = _encodeERC20Transfer(bob, initialTransfer_);
+        bytes memory args_ = abi.encode(uint256(0));
+        bytes memory callData1_ = _encodeERC20Transfer(bob, 200);
         bytes memory execData1_ = _encodeSingleExecution(address(basicERC20), 0, callData1_);
-        multiTokenEnforcer.beforeHook(initialTerms_, "", singleDefaultMode, execData1_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(
+            initialTerms_, args_, singleDefaultMode, execData1_, dummyDelegationHash, address(0), redeemer
+        );
 
         // Prepare new terms with different parameters.
         uint256 newPeriodAmount_ = erc20PeriodAmount + 500;
@@ -384,38 +396,36 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
         uint256 secondTransfer_ = 300;
         bytes memory callData2_ = _encodeERC20Transfer(bob, secondTransfer_);
         bytes memory execData2_ = _encodeSingleExecution(address(basicERC20), 0, callData2_);
-        multiTokenEnforcer.beforeHook(newTerms_, "", singleDefaultMode, execData2_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(newTerms_, args_, singleDefaultMode, execData2_, dummyDelegationHash, address(0), redeemer);
 
         // The stored allowance should still reflect the initial terms.
-        (uint256 available_,,) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), initialTerms_, address(basicERC20));
-        assertEq(available_, erc20PeriodAmount - (initialTransfer_ + secondTransfer_), "Stored state overridden by new terms");
+        (uint256 available_,,) = multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), initialTerms_, args_);
+        assertEq(available_, erc20PeriodAmount - (200 + secondTransfer_), "Stored state overridden by new terms");
     }
 
     /// @notice Tests that allowances are isolated per delegation manager (msg.sender).
     function test_AllowanceIsolationByDelegationManager() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
-        uint256 transferAmount_ = 400;
-        bytes memory callData_ = _encodeERC20Transfer(bob, transferAmount_);
+        bytes memory args_ = abi.encode(uint256(0));
+        bytes memory callData_ = _encodeERC20Transfer(bob, 100);
         bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
         // Call as the default delegation manager.
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
         // Now simulate a different delegation manager.
         address otherManager_ = address(0x456);
         vm.prank(otherManager_);
-        (uint256 availableOther_,,) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, otherManager_, terms_, address(basicERC20));
+        (uint256 availableOther_,,) = multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, otherManager_, terms_, args_);
         assertEq(availableOther_, erc20PeriodAmount, "Allowance not isolated by delegation manager");
     }
 
     /// @notice Tests boundary conditions in period calculation at exactly the start date and at a period boundary.
     function test_BoundaryPeriodCalculation() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
-
+        bytes memory args_ = abi.encode(uint256(0));
         // Warp to exactly the start date.
         vm.warp(erc20StartDate);
         (uint256 availableAtStart_, bool isNewAtStart_, uint256 currentPeriodAtStart_) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(basicERC20));
+            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, args_);
         assertEq(availableAtStart_, erc20PeriodAmount, "Available not full at startDate");
         assertTrue(isNewAtStart_, "isNewPeriod not true at startDate");
         assertEq(currentPeriodAtStart_, 1, "Current period should be 1 at startDate");
@@ -430,7 +440,7 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
         uint256 boundaryTime_ = erc20StartDate + erc20PeriodDuration;
         vm.warp(boundaryTime_);
         (uint256 availableAtBoundary_, bool isNewAtBoundary_, uint256 currentPeriodAtBoundary_) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(basicERC20));
+            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, args_);
         // Expect a reset: full allowance available and period index incremented.
         assertEq(availableAtBoundary_, erc20PeriodAmount, "Available should reset at period boundary");
         assertTrue(isNewAtBoundary_, "isNewPeriod should be true at boundary");
@@ -438,16 +448,13 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Reverts if the execution call data (decoded) is neither 68 bytes (ERC20) nor 0 bytes (native).
-    function test_InvalidCallDataLengthForERC20() public {
+    function test_InvalidCallDataLength() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
-        // Build a valid ERC20 callData (normally 68 bytes).
-        bytes memory validCallData_ = _encodeERC20Transfer(bob, 100);
-        // Append an extra byte to force an invalid length (e.g. 69 bytes).
-        bytes memory invalidCallData_ = abi.encodePacked(validCallData_, bytes1(0x00));
-        // Build execution data with the invalid callData.
-        bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, invalidCallData_);
+        bytes memory args_ = abi.encode(uint256(0));
+        bytes memory invalidCallData_ = abi.encodePacked(IERC20.transfer.selector, bob);
+        bytes memory invalidExecData_ = _encodeSingleExecution(address(basicERC20), 0, invalidCallData_);
         vm.expectRevert("MultiTokenPeriodEnforcer:invalid-call-data-length");
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, invalidExecData_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Reverts if a native transfer is provided with non-empty callData.
@@ -466,31 +473,30 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
     function test_InvalidZeroValueInNativeTransfer() public {
         // Build a native token configuration _terms blob.
         bytes memory terms_ = abi.encodePacked(address(0), nativePeriodAmount, nativePeriodDuration, nativeStartDate);
-        // Build execution call data for a native transfer using zero value.
+        bytes memory args_ = abi.encode(uint256(0));
         bytes memory execData_ = _encodeNativeTransfer(bob, 0);
-        // Expect the revert with the specific error message.
         vm.expectRevert("MultiTokenPeriodEnforcer:invalid-zero-value-in-native-transfer");
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
     }
 
     /// @notice Tests that multiple beforeHook calls within the same period correctly accumulate the transferred amount.
     function test_MultipleBeforeHookCallsMaintainsState() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
+        bytes memory args_ = abi.encode(uint256(0));
         // First call: transfer 300 tokens.
         uint256 firstTransfer_ = 300;
         bytes memory callData1_ = _encodeERC20Transfer(bob, firstTransfer_);
         bytes memory execData1_ = _encodeSingleExecution(address(basicERC20), 0, callData1_);
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData1_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData1_, dummyDelegationHash, address(0), redeemer);
 
         // Second call: transfer 200 tokens.
         uint256 secondTransfer_ = 200;
         bytes memory callData2_ = _encodeERC20Transfer(bob, secondTransfer_);
         bytes memory execData2_ = _encodeSingleExecution(address(basicERC20), 0, callData2_);
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, execData2_, dummyDelegationHash, address(0), redeemer);
+        multiTokenEnforcer.beforeHook(terms_, args_, singleDefaultMode, execData2_, dummyDelegationHash, address(0), redeemer);
 
         // Total transferred should be 500 tokens.
-        (uint256 available_,,) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(basicERC20));
+        (uint256 available_,,) = multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, args_);
         assertEq(
             available_, erc20PeriodAmount - (firstTransfer_ + secondTransfer_), "Multiple calls did not accumulate state properly"
         );
@@ -520,24 +526,31 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory nativeExecData_ = _encodeNativeTransfer(bob, nativeTransferAmount_);
 
         // Perform ERC20 transfer.
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, erc20ExecData_, dummyDelegationHash, address(0), redeemer);
+        bytes memory erc20Args_ = abi.encode(uint256(0));
+        multiTokenEnforcer.beforeHook(
+            terms_, erc20Args_, singleDefaultMode, erc20ExecData_, dummyDelegationHash, address(0), redeemer
+        );
         // Perform native transfer.
-        multiTokenEnforcer.beforeHook(terms_, "", singleDefaultMode, nativeExecData_, dummyDelegationHash, address(0), redeemer);
+        bytes memory nativeArgs_ = abi.encode(uint256(1));
+        multiTokenEnforcer.beforeHook(
+            terms_, nativeArgs_, singleDefaultMode, nativeExecData_, dummyDelegationHash, address(0), redeemer
+        );
 
         // Verify available amounts for each token.
-        (uint256 availableERC20_,,) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(basicERC20));
-        (uint256 availableNative_,,) = multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(0));
+        (uint256 availableERC20_,,) = multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, erc20Args_);
+        (uint256 availableNative_,,) =
+            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, nativeArgs_);
         assertEq(availableERC20_, erc20PeriodAmount - erc20TransferAmount_, "ERC20 allowance updated correctly");
         assertEq(availableNative_, nativePeriodAmount - nativeTransferAmount_, "Native allowance updated correctly");
     }
 
     /// @notice Integration: Confirms that different delegation hashes are tracked independently.
-    function test_IntegrationMultipleDelegations() public {
+    function test_IntegrationDifferentDelegationHashes() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
         // Build two delegations with different salts.
+        bytes memory args_ = abi.encode(uint256(0));
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(multiTokenEnforcer), terms: terms_ });
+        caveats_[0] = Caveat({ args: args_, enforcer: address(multiTokenEnforcer), terms: terms_ });
         Delegation memory delegation1_ =
             Delegation({ delegate: bob, delegator: alice, authority: ROOT_AUTHORITY, caveats: caveats_, salt: 0, signature: hex"" });
         Delegation memory delegation2_ =
@@ -561,10 +574,8 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
             users.bob, toDelegationArray(delegation2_), Execution({ target: address(basicERC20), value: 0, callData: callData2_ })
         );
 
-        (uint256 available1_,,) =
-            multiTokenEnforcer.getAvailableAmount(delHash1_, address(delegationManager), terms_, address(basicERC20));
-        (uint256 available2_,,) =
-            multiTokenEnforcer.getAvailableAmount(delHash2_, address(delegationManager), terms_, address(basicERC20));
+        (uint256 available1_,,) = multiTokenEnforcer.getAvailableAmount(delHash1_, address(delegationManager), terms_, args_);
+        (uint256 available2_,,) = multiTokenEnforcer.getAvailableAmount(delHash2_, address(delegationManager), terms_, args_);
         assertEq(available1_, erc20PeriodAmount - 600, "Delegation1 ERC20 allowance not updated correctly");
         assertEq(available2_, erc20PeriodAmount - 900, "Delegation2 ERC20 allowance not updated correctly");
     }
@@ -573,8 +584,9 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
     function test_GetAvailableAmountSimulationBeforeInitializationErc20() public {
         uint256 futureStart_ = block.timestamp + 100;
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, futureStart_);
+        bytes memory args_ = abi.encode(uint256(0));
         (uint256 availableBefore_, bool isNewPeriodBefore_, uint256 currentPeriodBefore_) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(basicERC20));
+            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, args_);
         assertEq(availableBefore_, 0, "Available should be 0 before start date");
         assertEq(isNewPeriodBefore_, false, "isNewPeriod false before start");
         assertEq(currentPeriodBefore_, 0, "Current period 0 before start");
@@ -582,7 +594,7 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
         vm.warp(futureStart_ + 1);
 
         (uint256 availableAfter_, bool isNewPeriodAfter_, uint256 currentPeriodAfter_) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(basicERC20));
+            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, args_);
         assertEq(availableAfter_, erc20PeriodAmount, "Available equals periodAmount after start");
         assertTrue(isNewPeriodAfter_, "isNewPeriod true after start");
         uint256 expectedPeriod_ = (block.timestamp - futureStart_) / erc20PeriodDuration + 1;
@@ -593,8 +605,9 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
     function test_GetAvailableAmountSimulationBeforeInitializationNative() public {
         uint256 futureStart_ = block.timestamp + 100;
         bytes memory terms_ = abi.encodePacked(address(0), nativePeriodAmount, nativePeriodDuration, futureStart_);
+        bytes memory args_ = abi.encode(uint256(0));
         (uint256 availableBefore_, bool isNewPeriodBefore_, uint256 currentPeriodBefore_) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(0));
+            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, args_);
         assertEq(availableBefore_, 0, "Available should be 0 before start");
         assertEq(isNewPeriodBefore_, false, "isNewPeriod false before start");
         assertEq(currentPeriodBefore_, 0, "Current period 0 before start");
@@ -602,7 +615,7 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
         vm.warp(futureStart_ + 1);
 
         (uint256 availableAfter_, bool isNewPeriodAfter_, uint256 currentPeriodAfter_) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(0));
+            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, args_);
         assertEq(availableAfter_, nativePeriodAmount, "Available equals periodAmount after start");
         assertTrue(isNewPeriodAfter_, "isNewPeriod true after start");
         uint256 expectedPeriod_ = (block.timestamp - futureStart_) / nativePeriodDuration + 1;
@@ -760,10 +773,11 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
         {
             // Verify available amounts for each token.
             (uint256 availableA_,,) =
-                multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(basicERC20));
+                multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, abi.encode(uint256(0)));
             (uint256 availableB_,,) =
-                multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(basicERC20B));
-            (uint256 availableC_,,) = multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(0));
+                multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, abi.encode(uint256(1)));
+            (uint256 availableC_,,) =
+                multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, abi.encode(uint256(2)));
 
             assertEq(availableA_, periodAmountA_ - 300, "Token A available amount incorrect");
             assertEq(availableB_, periodAmountB_ - 200, "Token B available amount incorrect");
@@ -828,10 +842,11 @@ contract MultiTokenPeriodEnforcerTest is CaveatEnforcerBaseTest {
     function test_GetAvailableAmountWithoutBeforeHookErc20() public {
         // Build an ERC20 configuration _terms blob.
         bytes memory terms_ = abi.encodePacked(address(basicERC20), erc20PeriodAmount, erc20PeriodDuration, erc20StartDate);
+        bytes memory args_ = abi.encode(uint256(0));
 
         // Call getAvailableAmount without any prior beforeHook call.
         (uint256 available_, bool isNewPeriod_, uint256 currentPeriod_) =
-            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, address(basicERC20));
+            multiTokenEnforcer.getAvailableAmount(dummyDelegationHash, address(this), terms_, args_);
 
         // Since no transfer has occurred, available amount should equal the periodAmount.
         assertEq(available_, erc20PeriodAmount, "Available amount should equal periodAmount when uninitialized");
