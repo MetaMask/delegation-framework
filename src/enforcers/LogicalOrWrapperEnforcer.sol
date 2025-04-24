@@ -31,7 +31,7 @@ import { ModeCode, Caveat } from "../utils/Types.sol";
  * @dev Behavior:
  *  - The enforcer iterates over all caveats in the specified `CaveatGroup`.
  *  - For a group to pass, all caveats within that group must succeed.
- *  - Every caveat is evaluated,
+ *  - Every caveat in the group is evaluated,
  *  - The group index provided via `SelectedGroup.groupIndex` must be valid (i.e. less than or equal to the length of the terms
  * array).
  *  - The length of `SelectedGroup.caveatArgs` must exactly match the number of caveats in the corresponding `CaveatGroup`.
