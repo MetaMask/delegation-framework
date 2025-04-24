@@ -47,14 +47,14 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     //////////////////// Error / Revert Tests //////////////////////
 
     /// @notice Ensures it reverts if _terms length is not exactly 96 bytes.
-    function testInvalidTermsLength() public {
+    function test_InvalidTermsLength() public {
         bytes memory invalidTerms_ = new bytes(95); // one byte short
         vm.expectRevert("NativeTokenPeriodTransferEnforcer:invalid-terms-length");
         nativeEnforcer.getTermsInfo(invalidTerms_);
     }
 
     /// @notice Reverts if the start date is zero.
-    function testInvalidZeroStartDate() public {
+    function test_InvalidZeroStartDate() public {
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, uint256(0));
         // Build execution call data: encode native transfer with beneficiary as target and 0.5 ether value.
         bytes memory execData_ = _encodeNativeTransfer(beneficiary, 0.5 ether);
@@ -63,7 +63,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Reverts if the period duration is zero.
-    function testInvalidZeroPeriodDuration() public {
+    function test_InvalidZeroPeriodDuration() public {
         bytes memory terms_ = abi.encodePacked(periodAmount, uint256(0), startDate);
         bytes memory execData_ = _encodeNativeTransfer(beneficiary, 0.5 ether);
         vm.expectRevert("NativeTokenPeriodTransferEnforcer:invalid-zero-period-duration");
@@ -71,7 +71,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Reverts if the period amount is zero.
-    function testInvalidZeroPeriodAmount() public {
+    function test_InvalidZeroPeriodAmount() public {
         bytes memory terms_ = abi.encodePacked(uint256(0), periodDuration, startDate);
         bytes memory execData_ = _encodeNativeTransfer(beneficiary, 0.5 ether);
         vm.expectRevert("NativeTokenPeriodTransferEnforcer:invalid-zero-period-amount");
@@ -79,7 +79,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Reverts if the transfer period has not started yet.
-    function testTransferNotStarted() public {
+    function test_TransferNotStarted() public {
         uint256 futureStart_ = block.timestamp + 100;
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, futureStart_);
         bytes memory execData_ = _encodeNativeTransfer(beneficiary, 0.5 ether);
@@ -88,7 +88,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Reverts if a transfer exceeds the available ETH allowance.
-    function testTransferAmount_Exceeded() public {
+    function test_TransferAmountExceeded() public {
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
         // First transfer: 0.8 ether.
         bytes memory execData1_ = _encodeNativeTransfer(beneficiary, 0.8 ether);
@@ -100,10 +100,28 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         nativeEnforcer.beforeHook(terms_, "", singleDefaultMode, execData2_, dummyDelegationHash, address(0), redeemer);
     }
 
+    /// @notice Reverts if the call data length is not zero for native transfers.
+    function test_InvalidCallDataLength() public {
+        bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
+        // Create execution data with non-empty call data
+        bytes memory execData_ = abi.encodePacked(beneficiary, uint256(1), hex"01"); // Adding 1 byte of call data
+        vm.expectRevert("NativeTokenPeriodTransferEnforcer:invalid-call-data-length");
+        nativeEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
+    }
+
+    /// @notice Reverts if the transfer value is zero for native transfers.
+    function test_InvalidZeroValueInNativeTransfer() public {
+        bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
+        // Create execution data with zero value
+        bytes memory execData_ = _encodeNativeTransfer(beneficiary, 0);
+        vm.expectRevert("NativeTokenPeriodTransferEnforcer:invalid-zero-value-in-native-transfer");
+        nativeEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
+    }
+
     ////////////////////// Successful and Multiple Transfers //////////////////////
 
     /// @notice Tests a successful native ETH transfer and verifies that the TransferredInPeriod event is emitted.
-    function testSuccessfulTransferAndEvent() public {
+    function test_SuccessfulTransferAndEvent() public {
         uint256 transferAmount_ = 0.5 ether;
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
         bytes memory execData_ = _encodeNativeTransfer(beneficiary, transferAmount_);
@@ -120,7 +138,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Tests multiple native ETH transfers within the same period and confirms that an over-transfer reverts.
-    function testMultipleTransfersInSamePeriod() public {
+    function test_MultipleTransfersInSamePeriod() public {
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
         // First transfer: 0.4 ether.
         bytes memory execData1_ = _encodeNativeTransfer(beneficiary, 0.4 ether);
@@ -141,7 +159,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Tests that the allowance resets when a new period begins.
-    function testNewPeriodResetsAllowance() public {
+    function test_NewPeriodResetsAllowance() public {
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
         // First transfer: 0.8 ether.
         bytes memory execData1_ = _encodeNativeTransfer(beneficiary, 0.8 ether);
@@ -167,7 +185,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     // should fail with invalid call type mode (batch instead of single mode)
-    function test_revertWithInvalidCallTypeMode() public {
+    function test_RevertWithInvalidCallTypeMode() public {
         bytes memory executionCallData_ = ExecutionLib.encodeBatch(new Execution[](2));
 
         vm.expectRevert("CaveatEnforcer:invalid-call-type");
@@ -176,7 +194,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     // should fail with invalid call type mode (try instead of default)
-    function test_revertWithInvalidExecutionMode() public {
+    function test_RevertWithInvalidExecutionMode() public {
         vm.prank(address(delegationManager));
         vm.expectRevert("CaveatEnforcer:invalid-execution-type");
         nativeEnforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
@@ -185,7 +203,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     ////////////////////// Integration Tests //////////////////////
 
     /// @notice Integration: Simulates a full native ETH transfer via delegation and verifies allowance update.
-    function test_integration_SuccessfulTransfer() public {
+    function test_IntegrationSuccessfulTransfer() public {
         uint256 transferAmount_ = 0.5 ether;
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
 
@@ -213,7 +231,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Integration: Fails if a native transfer exceeds the available ETH allowance.
-    function test_integration_OverTransferFails() public {
+    function test_IntegrationOverTransferFails() public {
         uint256 transferAmount_1 = 0.8 ether;
         uint256 transferAmount_2 = 0.3 ether; // total 1.1 ether, exceeds periodAmount = 1 ether
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
@@ -245,7 +263,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Integration: Verifies that the allowance resets in a new period for native transfers.
-    function test_integration_NewPeriodReset() public {
+    function test_IntegrationNewPeriodReset() public {
         uint256 transferAmount_ = 0.8 ether;
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
 
@@ -290,7 +308,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Integration: Confirms that different delegation hashes are tracked independently.
-    function test_integration_MultipleDelegations() public {
+    function test_IntegrationMultipleDelegations() public {
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, startDate);
 
         // Build two delegations with different salts (thus different hashes).
@@ -338,7 +356,7 @@ contract NativeTokenPeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     /// @notice Tests simulation of getAvailableAmount when no allowance is stored.
     ///         Initially, if the start date is in the future, available amount is zero;
     ///         after warping time past the start, available equals periodAmount.
-    function test_getAvailableAmountSimulationBeforeInitialization() public {
+    function test_GetAvailableAmountSimulationBeforeInitialization() public {
         uint256 futureStart_ = block.timestamp + 100;
         bytes memory terms_ = abi.encodePacked(periodAmount, periodDuration, futureStart_);
 

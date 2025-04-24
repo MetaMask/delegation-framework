@@ -43,14 +43,14 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     //////////////////// Error / Revert Tests //////////////////////
 
     /// @notice Ensures it reverts if _terms length is not exactly 116 bytes.
-    function testInvalidTermsLength() public {
+    function test_InvalidTermsLength() public {
         bytes memory invalidTerms_ = new bytes(115); // one byte short
         vm.expectRevert("ERC20PeriodTransferEnforcer:invalid-terms-length");
         erc20PeriodTransferEnforcer.getTermsInfo(invalidTerms_);
     }
 
     /// @notice Reverts if the start date is zero.
-    function testInvalidZeroStartDate() public {
+    function test_InvalidZeroStartDate() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, uint256(0));
         bytes memory callData_ = _encodeERC20Transfer(bob, 100);
         bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
@@ -59,7 +59,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Reverts if the period duration is zero.
-    function testInvalidZeroPeriodDuration() public {
+    function test_InvalidZeroPeriodDuration() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, uint256(0), startDate);
         bytes memory callData_ = _encodeERC20Transfer(bob, 100);
         bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
@@ -68,7 +68,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Reverts if the period amount is zero.
-    function testInvalidZeroPeriodAmount() public {
+    function test_InvalidZeroPeriodAmount() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), uint256(0), periodDuration, startDate);
         bytes memory callData_ = _encodeERC20Transfer(bob, 100);
         bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 0, callData_);
@@ -77,7 +77,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Reverts if the transfer period has not started yet.
-    function testTransferNotStarted() public {
+    function test_TransferNotStarted() public {
         uint256 futureStart_ = block.timestamp + 100;
         bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, futureStart_);
         bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
@@ -87,7 +87,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Reverts if the execution call data length is not 68 bytes.
-    function testInvalidExecutionLength() public {
+    function test_InvalidExecutionLength() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
         bytes memory invalidExecCallData_ = new bytes(67);
         vm.expectRevert("ERC20PeriodTransferEnforcer:invalid-execution-length");
@@ -96,8 +96,18 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         );
     }
 
+    /// @notice Reverts if a non-zero value is provided in the execution data for an ERC20 transfer.
+    function test_InvalidValueInERC20Transfer() public {
+        bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
+        bytes memory callData_ = _encodeERC20Transfer(bob, 100);
+        // Set value to 1 wei
+        bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 1, callData_);
+        vm.expectRevert("ERC20PeriodTransferEnforcer:invalid-value-in-erc20-transfer");
+        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
+    }
+
     /// @notice Reverts if the target contract in execution data does not match the token in terms_.
-    function testInvalidContract() public {
+    function test_InvalidContract() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
         bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
         bytes memory invalidExecCallData_ = _encodeSingleExecution(address(0xdead), 0, callData_);
@@ -108,7 +118,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Reverts if the method selector in call data is not for IERC20.transfer.
-    function testInvalidMethod() public {
+    function test_InvalidMethod() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
         bytes memory invalidCallData_ = abi.encodeWithSelector(IERC20.transferFrom.selector, redeemer, 500);
         bytes memory invalidExecCallData_ = _encodeSingleExecution(address(basicERC20), 0, invalidCallData_);
@@ -119,7 +129,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Reverts if a transfer exceeds the available allowance in the current period.
-    function testTransferAmountExceeded() public {
+    function test_TransferAmountExceeded() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
         // First transfer: 800 tokens.
         bytes memory callData1_ = _encodeERC20Transfer(bob, 800);
@@ -134,7 +144,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Tests a successful transfer and verifies that the TransferredInPeriod event is emitted correctly.
-    function testSuccessfulTransferAndEvent() public {
+    function test_SuccessfulTransferAndEvent() public {
         uint256 transferAmount_ = 500;
         bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
         bytes memory callData_ = _encodeERC20Transfer(bob, transferAmount_);
@@ -161,7 +171,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Tests multiple transfers within the same period and confirms that an over-transfer reverts.
-    function testMultipleTransfersInSamePeriod() public {
+    function test_MultipleTransfersInSamePeriod() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
         // First transfer: 400 tokens.
         bytes memory callData1_ = _encodeERC20Transfer(bob, 400);
@@ -185,7 +195,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Tests that the allowance resets when a new period begins.
-    function testNewPeriodResetsAllowance() public {
+    function test_NewPeriodResetsAllowance() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
         // First transfer: 800 tokens.
         bytes memory callData1_ = _encodeERC20Transfer(bob, 800);
@@ -216,7 +226,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     // should fail with invalid call type mode (batch instead of single mode)
-    function test_revertWithInvalidCallTypeMode() public {
+    function test_RevertWithInvalidCallTypeMode() public {
         bytes memory executionCallData_ = ExecutionLib.encodeBatch(new Execution[](2));
 
         vm.expectRevert("CaveatEnforcer:invalid-call-type");
@@ -227,7 +237,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     // should fail with invalid call type mode (try instead of default)
-    function test_revertWithInvalidExecutionMode() public {
+    function test_RevertWithInvalidExecutionMode() public {
         vm.prank(address(delegationManager));
         vm.expectRevert("CaveatEnforcer:invalid-execution-type");
         erc20PeriodTransferEnforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
@@ -236,7 +246,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     ////////////////////// Integration Tests //////////////////////
 
     /// @notice Integration: Successfully transfer tokens within the allowance and update state.
-    function test_integration_SuccessfulTransfer() public {
+    function test_IntegrationSuccessfulTransfer() public {
         uint256 transferAmount_ = 500;
         bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
         // Build execution: transfer transferAmount_ from token to redeemer.
@@ -262,7 +272,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Integration: Fails if a transfer exceeds the available tokens in the current period.
-    function test_integration_OverTransferFails() public {
+    function test_IntegrationOverTransferFails() public {
         uint256 transferAmount1_ = 800;
         uint256 transferAmount2_ = 300; // total would be 1100, over the periodAmount of 1000
         bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
@@ -290,7 +300,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Integration: Verifies that the allowance resets in a new period.
-    function test_integration_NewPeriodReset() public {
+    function test_IntegrationNewPeriodReset() public {
         uint256 transferAmount_ = 800;
         bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
         bytes memory callData_ = _encodeERC20Transfer(bob, transferAmount_);
@@ -332,7 +342,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /// @notice Integration: Confirms that different delegation hashes are tracked independently.
-    function test_integration_MultipleDelegations() public {
+    function test_IntegrationMultipleDelegations() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
 
         // Build two delegations with different salts (hence different hashes).
@@ -373,7 +383,7 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
     /// @notice Tests simulation of getAvailableAmount before and after the start date.
     ///         Initially, when the start date is in the future, the available amount is zero.
     ///         After warping time past the start date, the available amount equals periodAmount.
-    function test_getAvailableAmountSimulationBeforeInitialization() public {
+    function test_GetAvailableAmountSimulationBeforeInitialization() public {
         // Set start date in the future.
         uint256 futureStart_ = block.timestamp + 100;
         bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, futureStart_);

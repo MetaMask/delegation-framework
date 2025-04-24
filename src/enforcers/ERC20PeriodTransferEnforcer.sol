@@ -178,7 +178,9 @@ contract ERC20PeriodTransferEnforcer is CaveatEnforcer {
     )
         private
     {
-        (address target_,, bytes calldata callData_) = _executionCallData.decodeSingle();
+        (address target_, uint256 value_, bytes calldata callData_) = _executionCallData.decodeSingle();
+
+        require(value_ == 0, "ERC20PeriodTransferEnforcer:invalid-value-in-erc20-transfer");
 
         require(callData_.length == 68, "ERC20PeriodTransferEnforcer:invalid-execution-length");
 

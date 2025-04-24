@@ -166,7 +166,11 @@ contract NativeTokenPeriodTransferEnforcer is CaveatEnforcer {
     )
         private
     {
-        (, uint256 value_,) = _executionCallData.decodeSingle();
+        (, uint256 value_, bytes calldata callData_) = _executionCallData.decodeSingle();
+
+        require(callData_.length == 0, "NativeTokenPeriodTransferEnforcer:invalid-call-data-length");
+
+        require(value_ > 0, "NativeTokenPeriodTransferEnforcer:invalid-zero-value-in-native-transfer");
 
         (uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) = getTermsInfo(_terms);
 
