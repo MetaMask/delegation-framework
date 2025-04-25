@@ -17,18 +17,10 @@ import { ModeCode } from "../utils/Types.sol";
  *        - 32 bytes: periodDuration (in seconds).
  *        - 32 bytes: startDate for the first period.
  *
- *      The _args parameter must contain a single uint256 value representing the index of the token
- *      configuration to use from the _terms array. This index must be less than the total number
- *      of configurations in _terms.
- *
- *      For optimal gas usage, it is recommended that the configurations in _terms are sorted
- *      from the most frequently used token to the least frequently used token. Tokens placed
- *      earlier in the sequence will be processed first, reducing gas consumption.
- *
- *      The logic does not support duplicated token entries in the _terms. In the event that
- *      duplicate tokens are provided, the enforcer will only consider the configuration for the
- *      first occurrence and ignore subsequent configurations. This design choice is made to
- *      optimize gas efficiency and will not result in a revert.
+ *      Duplicate token entries in the terms are supported. Each configuration is identified
+ *      by its index, allowing the same token to have multiple distinct allowances.
+ *      The internal mapping includes the index in its hash key, enabling separate
+ *      tracking per configuration.
  *
  *      Additionally, the enforcer does not support restrictions on the recipient address or
  *      arbitrary calldata. For ERC20 transfers, the execution data is strictly required to
@@ -50,9 +42,8 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         uint256 transferredInCurrentPeriod; // Cumulative amount transferred in the current period.
     }
 
-    // Mapping from delegation manager => delegation hash => token address => PeriodicAllowance.
-    mapping(address delegationManager => mapping(bytes32 delegationHash => mapping(address token => PeriodicAllowance))) public
-        periodicAllowances;
+    // Mapping from hash key => PeriodicAllowance
+    mapping(bytes32 hashKey => PeriodicAllowance) public periodicAllowances;
 
     ////////////////////////////// Events //////////////////////////////
 
@@ -80,6 +71,20 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         uint256 transferTimestamp
     );
 
+    ////////////////////////////// External Methods //////////////////////////////
+
+    /**
+     * @notice Generates the key that identifies the run. Produced by the hash of the values used.
+     * @param _caller Address of the sender calling the enforcer.
+     * @param _token Token being compared in the beforeHook and afterHook.
+     * @param _delegationHash The hash of the delegation.
+     * @param _index The token configuration index.
+     * @return The hash to be used as key of the mapping.
+     */
+    function getHashKey(address _caller, address _token, bytes32 _delegationHash, uint256 _index) external pure returns (bytes32) {
+        return _getHashKey(_caller, _token, _delegationHash, _index);
+    }
+
     ////////////////////////////// Public Methods //////////////////////////////
 
     /**
@@ -102,14 +107,16 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         view
         returns (uint256 availableAmount_, bool isNewPeriod_, uint256 currentPeriod_)
     {
-        (address token_, uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) =
-            getTermsInfo(_terms, abi.decode(_args, (uint256)));
+        uint256 index_ = abi.decode(_args, (uint256));
+        (address token_,,,) = getTermsInfo(_terms, index_);
 
-        PeriodicAllowance memory storedAllowance_ = periodicAllowances[_delegationManager][_delegationHash][token_];
+        bytes32 hashKey_ = _getHashKey(_delegationManager, token_, _delegationHash, index_);
+        PeriodicAllowance memory storedAllowance_ = periodicAllowances[hashKey_];
         if (storedAllowance_.startDate != 0) {
             return _getAvailableAmount(storedAllowance_);
         }
 
+        (, uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) = getTermsInfo(_terms, index_);
         // Not yet initialized; simulate using provided terms.
         PeriodicAllowance memory allowance_ = PeriodicAllowance({
             periodAmount: periodAmount_,
@@ -269,15 +276,17 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
                 revert("MultiTokenPeriodEnforcer:invalid-call-data-length");
             }
         }
+        uint256 index_ = abi.decode(_args, (uint256));
         // Get the token configuration from the specified index
         (address configuredToken_, uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) =
-            getTermsInfo(_terms, abi.decode(_args, (uint256)));
+            getTermsInfo(_terms, index_);
 
         // Verify that the token in the execution matches the configured token
         require(token_ == configuredToken_, "MultiTokenPeriodEnforcer:token-mismatch");
 
-        // Use the multi-token mapping.
-        PeriodicAllowance storage allowance_ = periodicAllowances[msg.sender][_delegationHash][token_];
+        // Use the hash key for the mapping
+        bytes32 hashKey_ = _getHashKey(msg.sender, token_, _delegationHash, index_);
+        PeriodicAllowance storage allowance_ = periodicAllowances[hashKey_];
 
         // Initialize the allowance if not already set.
         if (allowance_.startDate == 0) {
@@ -336,5 +345,26 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         isNewPeriod_ = (_allowance.lastTransferPeriod != currentPeriod_);
         uint256 alreadyTransferred_ = isNewPeriod_ ? 0 : _allowance.transferredInCurrentPeriod;
         availableAmount_ = _allowance.periodAmount > alreadyTransferred_ ? _allowance.periodAmount - alreadyTransferred_ : 0;
+    }
+
+    /**
+     * @notice Generates the key that identifies the run. Produced by the hash of the values used.
+     * @param _delegationManager The delegation manager's address.
+     * @param _token The token address.
+     * @param _delegationHash The hash of the delegation.
+     * @param _index The token configuration index.
+     * @return The hash to be used as key of the mapping.
+     */
+    function _getHashKey(
+        address _delegationManager,
+        address _token,
+        bytes32 _delegationHash,
+        uint256 _index
+    )
+        private
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(_delegationManager, _token, _delegationHash, _index));
     }
 }
