@@ -17,14 +17,10 @@ import { ModeCode } from "../utils/Types.sol";
  *        - 32 bytes: periodDuration (in seconds).
  *        - 32 bytes: startDate for the first period.
  *
- *      For optimal gas usage, it is recommended that the configurations in _terms are sorted
- *      from the most frequently used token to the least frequently used token. Tokens placed
- *      earlier in the sequence will be processed first, reducing gas consumption.
- *
- *      The logic does not support duplicated token entries in the _terms. In the event that
- *      duplicate tokens are provided, the enforcer will only consider the configuration for the
- *      first occurrence and ignore subsequent configurations. This design choice is made to
- *      optimize gas efficiency and will not result in a revert.
+ *      Duplicate token entries in the terms are supported. Each configuration is identified
+ *      by its index, allowing the same token to have multiple distinct allowances.
+ *      The internal mapping includes the index in its hash key, enabling separate
+ *      tracking per configuration.
  *
  *      Additionally, the enforcer does not support restrictions on the recipient address or
  *      arbitrary calldata. For ERC20 transfers, the execution data is strictly required to
@@ -46,9 +42,8 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         uint256 transferredInCurrentPeriod; // Cumulative amount transferred in the current period.
     }
 
-    // Mapping from delegation manager => delegation hash => token address => PeriodicAllowance.
-    mapping(address delegationManager => mapping(bytes32 delegationHash => mapping(address token => PeriodicAllowance))) public
-        periodicAllowances;
+    // Mapping from hash key => PeriodicAllowance
+    mapping(bytes32 hashKey => PeriodicAllowance) public periodicAllowances;
 
     ////////////////////////////// Events //////////////////////////////
 
@@ -76,6 +71,20 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         uint256 transferTimestamp
     );
 
+    ////////////////////////////// External Methods //////////////////////////////
+
+    /**
+     * @notice Generates the key that identifies the run. Produced by the hash of the values used.
+     * @param _caller Address of the sender calling the enforcer.
+     * @param _token Token being compared in the beforeHook and afterHook.
+     * @param _delegationHash The hash of the delegation.
+     * @param _index The token configuration index.
+     * @return The hash to be used as key of the mapping.
+     */
+    function getHashKey(address _caller, address _token, bytes32 _delegationHash, uint256 _index) external pure returns (bytes32) {
+        return _getHashKey(_caller, _token, _delegationHash, _index);
+    }
+
     ////////////////////////////// Public Methods //////////////////////////////
 
     /**
@@ -83,7 +92,7 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
      * @param _delegationHash The delegation hash.
      * @param _delegationManager The delegation manager's address.
      * @param _terms A concatenation of one or more 116-byte configurations.
-     * @param _token The token for which the available amount is requested (address(0) for native).
+     * @param _args A single uint256 value representing the index of the token configuration to use.
      * @return availableAmount_ The remaining transferable amount in the current period.
      * @return isNewPeriod_ True if a new period has begun.
      * @return currentPeriod_ The current period index.
@@ -92,20 +101,23 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         bytes32 _delegationHash,
         address _delegationManager,
         bytes calldata _terms,
-        address _token
+        bytes calldata _args
     )
         external
         view
         returns (uint256 availableAmount_, bool isNewPeriod_, uint256 currentPeriod_)
     {
-        PeriodicAllowance memory storedAllowance_ = periodicAllowances[_delegationManager][_delegationHash][_token];
+        uint256 index_ = abi.decode(_args, (uint256));
+        (address token_,,,) = getTermsInfo(_terms, index_);
+
+        bytes32 hashKey_ = _getHashKey(_delegationManager, token_, _delegationHash, index_);
+        PeriodicAllowance memory storedAllowance_ = periodicAllowances[hashKey_];
         if (storedAllowance_.startDate != 0) {
             return _getAvailableAmount(storedAllowance_);
         }
 
+        (, uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) = getTermsInfo(_terms, index_);
         // Not yet initialized; simulate using provided terms.
-        (uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) = getTermsInfo(_terms, _token);
-
         PeriodicAllowance memory allowance_ = PeriodicAllowance({
             periodAmount: periodAmount_,
             periodDuration: periodDuration_,
@@ -114,76 +126,6 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
             transferredInCurrentPeriod: 0
         });
         return _getAvailableAmount(allowance_);
-    }
-
-    /**
-     * @notice Hook called before a transfer to enforce the periodic limit.
-     * @dev For ERC20 transfers, expects _executionCallData to decode to (target,, callData)
-     *      with callData length of 68, beginning with IERC20.transfer.selector and zero value.
-     *      For native transfers, expects _executionCallData to decode to (target, value, callData)
-     *      with an empty callData.
-     * @param _terms A concatenation of one or more 116-byte configurations.
-     * @param _mode The execution mode (must be single callType, default execType).
-     * @param _executionCallData The encoded execution data.
-     * @param _delegationHash The delegation hash.
-     * @param _redeemer The address intended to receive the tokens/ETH.
-     */
-    function beforeHook(
-        bytes calldata _terms,
-        bytes calldata,
-        ModeCode _mode,
-        bytes calldata _executionCallData,
-        bytes32 _delegationHash,
-        address,
-        address _redeemer
-    )
-        public
-        override
-        onlySingleCallTypeMode(_mode)
-        onlyDefaultExecutionMode(_mode)
-    {
-        _validateAndConsumeTransfer(_terms, _executionCallData, _delegationHash, _redeemer);
-    }
-
-    /**
-     * @notice Searches the provided _terms for a configuration matching _token.
-     * @dev Expects _terms length to be a multiple of 116.
-     * @param _terms A concatenation of 116-byte configurations.
-     * @param _token The token address to search for (address(0) for native transfers).
-     * @return periodAmount_ The maximum transferable amount for this token.
-     * @return periodDuration_ The period duration (in seconds) for this token.
-     * @return startDate_ The start date for the first period.
-     */
-    function getTermsInfo(
-        bytes calldata _terms,
-        address _token
-    )
-        public
-        pure
-        returns (uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_)
-    {
-        uint256 termsLength_ = _terms.length;
-        require(termsLength_ != 0 && termsLength_ % 116 == 0, "MultiTokenPeriodEnforcer:invalid-terms-length");
-
-        // Iterate over the byte offset directly in increments of 116 bytes.
-        for (uint256 offset_ = 0; offset_ < termsLength_;) {
-            // Extract token address from the first 20 bytes.
-            address token_ = address(bytes20(_terms[offset_:offset_ + 20]));
-            if (token_ == _token) {
-                // Get periodAmount from the next 32 bytes.
-                periodAmount_ = uint256(bytes32(_terms[offset_ + 20:offset_ + 52]));
-                // Get periodDuration from the subsequent 32 bytes.
-                periodDuration_ = uint256(bytes32(_terms[offset_ + 52:offset_ + 84]));
-                // Get startDate from the final 32 bytes.
-                startDate_ = uint256(bytes32(_terms[offset_ + 84:offset_ + 116]));
-                return (periodAmount_, periodDuration_, startDate_);
-            }
-
-            unchecked {
-                offset_ += 116;
-            }
-        }
-        revert("MultiTokenPeriodEnforcer:token-config-not-found");
     }
 
     /**
@@ -196,7 +138,7 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
      * @return startDates_ An array of start dates for the first period.
      */
     function getAllTermsInfo(bytes calldata _terms)
-        public
+        external
         pure
         returns (
             address[] memory tokens_,
@@ -228,6 +170,67 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         }
     }
 
+    /**
+     * @notice Hook called before a transfer to enforce the periodic limit.
+     * @dev For ERC20 transfers, expects _executionCallData to decode to (target,, callData)
+     *      with callData length of 68, beginning with IERC20.transfer.selector and zero value.
+     *      For native transfers, expects _executionCallData to decode to (target, value, callData)
+     *      with an empty callData.
+     * @param _terms A concatenation of one or more 116-byte configurations.
+     * @param _args A single uint256 value representing the index of the token configuration to use.
+     * @param _mode The execution mode (must be single callType, default execType).
+     * @param _executionCallData The encoded execution data.
+     * @param _delegationHash The delegation hash.
+     * @param _redeemer The address intended to receive the tokens/ETH.
+     */
+    function beforeHook(
+        bytes calldata _terms,
+        bytes calldata _args,
+        ModeCode _mode,
+        bytes calldata _executionCallData,
+        bytes32 _delegationHash,
+        address,
+        address _redeemer
+    )
+        public
+        override
+        onlySingleCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
+    {
+        _validateAndConsumeTransfer(_terms, _args, _executionCallData, _delegationHash, _redeemer);
+    }
+
+    /**
+     * @notice Retrieves the configuration for a specific token index from _terms.
+     * @dev Expects _terms length to be a multiple of 116.
+     * @param _terms A concatenation of 116-byte configurations.
+     * @param _tokenIndex The index of the token configuration to retrieve.
+     * @return token_ The token address at the specified index.
+     * @return periodAmount_ The maximum transferable amount for this token.
+     * @return periodDuration_ The period duration (in seconds) for this token.
+     * @return startDate_ The start date for the first period.
+     */
+    function getTermsInfo(
+        bytes calldata _terms,
+        uint256 _tokenIndex
+    )
+        public
+        pure
+        returns (address token_, uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_)
+    {
+        uint256 termsLength_ = _terms.length;
+        require(termsLength_ != 0 && termsLength_ % 116 == 0, "MultiTokenPeriodEnforcer:invalid-terms-length");
+
+        uint256 numConfigs_ = termsLength_ / 116;
+        require(_tokenIndex < numConfigs_, "MultiTokenPeriodEnforcer:invalid-token-index");
+
+        uint256 offset_ = _tokenIndex * 116;
+        token_ = address(bytes20(_terms[offset_:offset_ + 20]));
+        periodAmount_ = uint256(bytes32(_terms[offset_ + 20:offset_ + 52]));
+        periodDuration_ = uint256(bytes32(_terms[offset_ + 52:offset_ + 84]));
+        startDate_ = uint256(bytes32(_terms[offset_ + 84:offset_ + 116]));
+    }
+
     ////////////////////////////// Internal Methods //////////////////////////////
 
     /**
@@ -237,12 +240,14 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
      *      - For ERC20 transfers (_token != address(0)): requires callData length to be 68 with a
      *        valid IERC20.transfer selector, and zero value.
      * @param _terms The concatenated configurations.
+     * @param _args A single uint256 value representing the index of the token configuration to use.
      * @param _executionCallData The encoded execution data.
      * @param _delegationHash The delegation hash.
      * @param _redeemer The address intended to receive the tokens/ETH.
      */
     function _validateAndConsumeTransfer(
         bytes calldata _terms,
+        bytes calldata _args,
         bytes calldata _executionCallData,
         bytes32 _delegationHash,
         address _redeemer
@@ -251,31 +256,37 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
     {
         uint256 transferAmount_;
         address token_;
+        {
+            // Decode _executionCallData using decodeSingle.
+            (address target_, uint256 value_, bytes calldata callData_) = _executionCallData.decodeSingle();
 
-        // Decode _executionCallData using decodeSingle.
-        (address target_, uint256 value_, bytes calldata callData_) = _executionCallData.decodeSingle();
-
-        if (callData_.length == 68) {
-            // ERC20 transfer.
-            require(value_ == 0, "MultiTokenPeriodEnforcer:invalid-value-in-erc20-transfer");
-            require(bytes4(callData_[0:4]) == IERC20.transfer.selector, "MultiTokenPeriodEnforcer:invalid-method");
-            token_ = target_;
-            transferAmount_ = uint256(bytes32(callData_[36:68]));
-        } else if (callData_.length == 0) {
-            // Native transfer.
-            require(value_ > 0, "MultiTokenPeriodEnforcer:invalid-zero-value-in-native-transfer");
-            token_ = address(0);
-            transferAmount_ = value_;
-        } else {
-            // If callData length is neither 68 nor 0, revert.
-            revert("MultiTokenPeriodEnforcer:invalid-call-data-length");
+            if (callData_.length == 68) {
+                // ERC20 transfer.
+                require(value_ == 0, "MultiTokenPeriodEnforcer:invalid-value-in-erc20-transfer");
+                require(bytes4(callData_[0:4]) == IERC20.transfer.selector, "MultiTokenPeriodEnforcer:invalid-method");
+                token_ = target_;
+                transferAmount_ = uint256(bytes32(callData_[36:68]));
+            } else if (callData_.length == 0) {
+                // Native transfer.
+                require(value_ > 0, "MultiTokenPeriodEnforcer:invalid-zero-value-in-native-transfer");
+                token_ = address(0);
+                transferAmount_ = value_;
+            } else {
+                // If callData length is neither 68 nor 0, revert.
+                revert("MultiTokenPeriodEnforcer:invalid-call-data-length");
+            }
         }
+        uint256 index_ = abi.decode(_args, (uint256));
+        // Get the token configuration from the specified index
+        (address configuredToken_, uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) =
+            getTermsInfo(_terms, index_);
 
-        // Retrieve the configuration for the token from _terms.
-        (uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) = getTermsInfo(_terms, token_);
+        // Verify that the token in the execution matches the configured token
+        require(token_ == configuredToken_, "MultiTokenPeriodEnforcer:token-mismatch");
 
-        // Use the multi-token mapping.
-        PeriodicAllowance storage allowance_ = periodicAllowances[msg.sender][_delegationHash][token_];
+        // Use the hash key for the mapping
+        bytes32 hashKey_ = _getHashKey(msg.sender, token_, _delegationHash, index_);
+        PeriodicAllowance storage allowance_ = periodicAllowances[hashKey_];
 
         // Initialize the allowance if not already set.
         if (allowance_.startDate == 0) {
@@ -334,5 +345,26 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         isNewPeriod_ = (_allowance.lastTransferPeriod != currentPeriod_);
         uint256 alreadyTransferred_ = isNewPeriod_ ? 0 : _allowance.transferredInCurrentPeriod;
         availableAmount_ = _allowance.periodAmount > alreadyTransferred_ ? _allowance.periodAmount - alreadyTransferred_ : 0;
+    }
+
+    /**
+     * @notice Generates the key that identifies the run. Produced by the hash of the values used.
+     * @param _delegationManager The delegation manager's address.
+     * @param _token The token address.
+     * @param _delegationHash The hash of the delegation.
+     * @param _index The token configuration index.
+     * @return The hash to be used as key of the mapping.
+     */
+    function _getHashKey(
+        address _delegationManager,
+        address _token,
+        bytes32 _delegationHash,
+        uint256 _index
+    )
+        private
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(_delegationManager, _token, _delegationHash, _index));
     }
 }
