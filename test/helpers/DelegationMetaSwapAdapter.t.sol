@@ -301,6 +301,32 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
     }
 
     /**
+     * @notice Verifies that the contract reverts when the zero address is used as an input.
+     */
+    function test_revert_invalidZeroAddressInConstructor() public {
+        address owner_ = address(1);
+        address swapApiSigner_ = address(1);
+        IDelegationManager delegationManager_ = IDelegationManager(address(1));
+        IMetaSwap metaSwap_ = IMetaSwap(address(1));
+        address argsEqualityCheckEnforcer_ = address(1);
+
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableInvalidOwner.selector, address(0)));
+        new DelegationMetaSwapAdapter(address(0), swapApiSigner_, delegationManager_, metaSwap_, argsEqualityCheckEnforcer_);
+
+        vm.expectRevert(DelegationMetaSwapAdapter.InvalidZeroAddress.selector);
+        new DelegationMetaSwapAdapter(owner_, address(0), delegationManager_, metaSwap_, argsEqualityCheckEnforcer_);
+
+        vm.expectRevert(DelegationMetaSwapAdapter.InvalidZeroAddress.selector);
+        new DelegationMetaSwapAdapter(owner_, swapApiSigner_, IDelegationManager(address(0)), metaSwap_, argsEqualityCheckEnforcer_);
+
+        vm.expectRevert(DelegationMetaSwapAdapter.InvalidZeroAddress.selector);
+        new DelegationMetaSwapAdapter(owner_, swapApiSigner_, delegationManager_, IMetaSwap(address(0)), argsEqualityCheckEnforcer_);
+
+        vm.expectRevert(DelegationMetaSwapAdapter.InvalidZeroAddress.selector);
+        new DelegationMetaSwapAdapter(owner_, swapApiSigner_, delegationManager_, metaSwap_, address(0));
+    }
+
+    /**
      * @notice Verifies that tokens can be swapped by delegations in a purely local environment (using a MetaSwapMock).
      */
     function test_canSwapByDelegationsMockErc20TokenFrom() public {
@@ -1130,6 +1156,14 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         assertEq(delegationMetaSwapAdapter.swapApiSigner(), newSigner_, "Swap API signer was not updated");
     }
 
+    /// @notice Tests that the owner cannot set the swap API signer to the zero address.
+    function test_revert_setSwapApiSigner_ifZeroAddress() public {
+        _setUpMockContracts();
+        vm.prank(owner);
+        vm.expectRevert(DelegationMetaSwapAdapter.InvalidZeroAddress.selector);
+        delegationMetaSwapAdapter.setSwapApiSigner(address(0));
+    }
+
     /// @notice Tests that a non-owner calling setSwapApiSigner reverts.
     function test_revert_setSwapApiSigner_ifNotOwner() public {
         _setUpMockContracts();
@@ -1146,6 +1180,29 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         bytes memory apiData_ = _encodeApiData(aggregatorId, IERC20(tokenA), amountFrom, swapData_);
         // Set expiration in the past.
         uint256 expiredTime = block.timestamp - 1;
+        bytes memory signature = _getValidSignature(apiData_, expiredTime);
+        DelegationMetaSwapAdapter.SignatureData memory sigData_ =
+            DelegationMetaSwapAdapter.SignatureData({ apiData: apiData_, expiration: expiredTime, signature: signature });
+
+        Delegation[] memory delegations_ = new Delegation[](2);
+        Delegation memory vaultDelegation_ = _getVaultDelegation();
+        Delegation memory subVaultDelegation_ = _getSubVaultDelegation(EncoderLib._getDelegationHash(vaultDelegation_));
+        delegations_[1] = vaultDelegation_;
+        delegations_[0] = subVaultDelegation_;
+
+        vm.prank(address(subVault.deleGator));
+        vm.expectRevert(DelegationMetaSwapAdapter.SignatureExpired.selector);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
+    }
+
+    /// @notice Tests that swapByDelegation reverts with SignatureExpired when the signature expiration is equal to current
+    /// timestamp.
+    function test_revert_swapByDelegation_signatureExpired_equal() public {
+        _setUpMockContracts();
+        bytes memory swapData_ = _encodeSwapData(IERC20(tokenA), IERC20(tokenB), amountFrom, amountTo, hex"", 0, address(0), true);
+        bytes memory apiData_ = _encodeApiData(aggregatorId, IERC20(tokenA), amountFrom, swapData_);
+        // Set expiration in the current time.
+        uint256 expiredTime = block.timestamp;
         bytes memory signature = _getValidSignature(apiData_, expiredTime);
         DelegationMetaSwapAdapter.SignatureData memory sigData_ =
             DelegationMetaSwapAdapter.SignatureData({ apiData: apiData_, expiration: expiredTime, signature: signature });
