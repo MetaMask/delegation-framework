@@ -146,6 +146,9 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /// @dev Error thrown when the signature expiration has passed.
     error SignatureExpired();
 
+    /// @dev Error thrown when the address is zero.
+    error InvalidZeroAddress();
+
     ////////////////////////////// Modifiers //////////////////////////////
 
     /**
@@ -184,6 +187,11 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     )
         Ownable(_owner)
     {
+        if (
+            _swapApiSigner == address(0) || address(_delegationManager) == address(0) || address(_metaSwap) == address(0)
+                || _argsEqualityCheckEnforcer == address(0)
+        ) revert InvalidZeroAddress();
+
         swapApiSigner = _swapApiSigner;
         delegationManager = _delegationManager;
         metaSwap = _metaSwap;
@@ -323,6 +331,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
      * @param _newSigner The new authorized signer address.
      */
     function setSwapApiSigner(address _newSigner) external onlyOwner {
+        if (_newSigner == address(0)) revert InvalidZeroAddress();
         swapApiSigner = _newSigner;
         emit SwapApiSignerUpdated(_newSigner);
     }
@@ -526,7 +535,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
      * @param _signatureData Contains the apiData, the expiration and signature.
      */
     function _validateSignature(SignatureData memory _signatureData) private view {
-        if (block.timestamp > _signatureData.expiration) revert SignatureExpired();
+        if (block.timestamp >= _signatureData.expiration) revert SignatureExpired();
 
         bytes32 messageHash_ = keccak256(abi.encodePacked(_signatureData.apiData, _signatureData.expiration));
         bytes32 ethSignedMessageHash_ = MessageHashUtils.toEthSignedMessageHash(messageHash_);
