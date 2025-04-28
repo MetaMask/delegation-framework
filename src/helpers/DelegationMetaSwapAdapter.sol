@@ -242,15 +242,17 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         if (_delegations[0].delegator != msg.sender) revert NotLeafDelegator();
 
         // Prepare the call that will be executed internally via onlySelf
-        bytes memory encodedSwap_ = abi.encodeWithSelector(
-            this.swapTokens.selector,
-            aggregatorId_,
-            tokenFrom_,
-            tokenTo_,
-            _delegations[delegationsLength_ - 1].delegator,
-            amountFrom_,
-            _getSelfBalance(tokenFrom_),
-            swapData_
+        bytes memory encodedSwap_ = abi.encodeCall(
+            this.swapTokens,
+            (
+                aggregatorId_,
+                tokenFrom_,
+                tokenTo_,
+                _delegations[delegationsLength_ - 1].delegator,
+                amountFrom_,
+                _getSelfBalance(tokenFrom_),
+                swapData_
+            )
         );
 
         bytes[] memory permissionContexts_ = new bytes[](2);
@@ -266,7 +268,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         if (address(tokenFrom_) == address(0)) {
             executionCallDatas_[0] = ExecutionLib.encodeSingle(address(this), amountFrom_, hex"");
         } else {
-            bytes memory encodedTransfer_ = abi.encodeWithSelector(IERC20.transfer.selector, address(this), amountFrom_);
+            bytes memory encodedTransfer_ = abi.encodeCall(IERC20.transfer, (address(this), amountFrom_));
             executionCallDatas_[0] = ExecutionLib.encodeSingle(address(tokenFrom_), 0, encodedTransfer_);
         }
         executionCallDatas_[1] = ExecutionLib.encodeSingle(address(this), 0, encodedSwap_);
