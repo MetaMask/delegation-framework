@@ -6,6 +6,7 @@ import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 import { BasicERC20 } from "../utils/BasicERC20.t.sol";
 import { BaseTest } from "../utils/BaseTest.t.sol";
@@ -92,7 +93,7 @@ abstract contract DelegationMetaSwapAdapterBaseTest is BaseTest {
      * @dev Generates a valid signature for _apiData with a given _expiration.
      */
     function _getValidSignature(bytes memory _apiData, uint256 _expiration) internal returns (bytes memory) {
-        bytes32 messageHash = keccak256(abi.encodePacked(_apiData, _expiration));
+        bytes32 messageHash = keccak256(abi.encode(_apiData, _expiration));
         bytes32 ethSignedMessageHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(swapSignerPrivateKey, ethSignedMessageHash);
         return abi.encodePacked(r, s, v);
@@ -296,9 +297,113 @@ abstract contract DelegationMetaSwapAdapterBaseTest is BaseTest {
  * @notice These tests run in a purely local environment. No fork is created.
  */
 contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest {
+    DelegationMetaSwapAdapterSignatureTest public adapter;
+    address public swapApiSigner;
+    uint256 private _swapSignerPrivateKey = 12345;
+
     function setUp() public override {
         super.setUp();
+        swapApiSigner = vm.addr(_swapSignerPrivateKey);
+        adapter =
+            new DelegationMetaSwapAdapterSignatureTest(address(this), swapApiSigner, address(0x123), address(0x456), address(0x789));
     }
+
+    ////////////////////////////// Signature validation tests //////////////////////////////
+
+    /**
+     * @notice Verifies that a valid signature is accepted.
+     */
+    function test_validateSignature_valid() public view {
+        bytes memory apiData_ = hex"1234";
+        uint256 expiration_ = block.timestamp + 1 hours;
+        bytes32 messageHash_ = keccak256(abi.encode(apiData_, expiration_));
+        bytes32 ethSignedMessageHash_ = MessageHashUtils.toEthSignedMessageHash(messageHash_);
+        (uint8 v_, bytes32 r_, bytes32 s_) = vm.sign(_swapSignerPrivateKey, ethSignedMessageHash_);
+        bytes memory signature_ = abi.encodePacked(r_, s_, v_);
+
+        DelegationMetaSwapAdapter.SignatureData memory sigData_ =
+            DelegationMetaSwapAdapter.SignatureData({ apiData: apiData_, expiration: expiration_, signature: signature_ });
+
+        adapter.exposedValidateSignature(sigData_);
+    }
+
+    /**
+     * @notice Verifies that an expired signature is rejected.
+     */
+    function test_validateSignature_expired() public {
+        bytes memory apiData_ = hex"1234";
+        uint256 expiration_ = block.timestamp - 1;
+        bytes32 messageHash_ = keccak256(abi.encode(apiData_, expiration_));
+        bytes32 ethSignedMessageHash_ = MessageHashUtils.toEthSignedMessageHash(messageHash_);
+        (uint8 v_, bytes32 r_, bytes32 s_) = vm.sign(_swapSignerPrivateKey, ethSignedMessageHash_);
+        bytes memory signature_ = abi.encodePacked(r_, s_, v_);
+
+        DelegationMetaSwapAdapter.SignatureData memory sigData_ =
+            DelegationMetaSwapAdapter.SignatureData({ apiData: apiData_, expiration: expiration_, signature: signature_ });
+
+        vm.expectRevert(DelegationMetaSwapAdapter.SignatureExpired.selector);
+        adapter.exposedValidateSignature(sigData_);
+    }
+
+    /**
+     * @notice Verifies that an invalid signature is rejected.
+     */
+    function test_validateSignature_invalidSigner() public {
+        bytes memory apiData = hex"1234";
+        uint256 expiration = block.timestamp + 1 hours;
+        bytes32 messageHash = keccak256(abi.encode(apiData, expiration));
+        // Use a different private key to generate an invalid signature
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(_swapSignerPrivateKey + 1, messageHash);
+        bytes memory signature = abi.encodePacked(r, s, v);
+
+        DelegationMetaSwapAdapter.SignatureData memory sigData =
+            DelegationMetaSwapAdapter.SignatureData({ apiData: apiData, expiration: expiration, signature: signature });
+
+        vm.expectRevert(DelegationMetaSwapAdapter.InvalidApiSignature.selector);
+        adapter.exposedValidateSignature(sigData);
+    }
+
+    /**
+     * @notice Verifies that an empty signature is rejected.
+     */
+    function test_validateSignature_emptySignature() public {
+        bytes memory apiData = hex"1234";
+        uint256 expiration = block.timestamp + 1 hours;
+        bytes memory emptySignature = "";
+
+        DelegationMetaSwapAdapter.SignatureData memory sigData =
+            DelegationMetaSwapAdapter.SignatureData({ apiData: apiData, expiration: expiration, signature: emptySignature });
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSA.ECDSAInvalidSignatureLength.selector, 0));
+        adapter.exposedValidateSignature(sigData);
+    }
+
+    /**
+     * @notice Verifies that a hardcoded valid signature works
+     */
+    function test_validateSignature_hardcodedSignature() public {
+        // Taken from the swaps api
+        address swapApiSigner_ = 0x533FbF047Ed13C20e263e2576e41c747206d1348;
+
+        vm.prank(address(this));
+        adapter.setSwapApiSigner(swapApiSigner_);
+
+        bytes memory apiData_ =
+            hex"5f5755290000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000470de4df82000000000000000000000000000000000000000000000000000000000000000000c0000000000000000000000000000000000000000000000000000000000000001c616972737761704c696768743446656544796e616d696346697865640000000000000000000000000000000000000000000000000000000000000000000001a000000000000000000000000000000000000000000000000000000196652ed3350000000000000000000000000000000000000000000000000000000068098586000000000000000000000000111bb8c3542f2b92fb41b8d913c01d37884311110000000000000000000000006b175474e89094c44da98b954eedeac495271d0f000000000000000000000000000000000000000000000001eb87e2999f2f8380000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000466ebb82ac1000000000000000000000000000000000000000000000000000000000000000001c427cdd17278850f9344bb9b4940a6ce83afbb34b58410cdcdf1ff8b27ea8b7eb338693a44fa8d73a0878779e2f6b41c6af69f42510d98f1bfd19d7675e1b3a9d00000000000000000000000000000000000000000000000000009f295cd5f000000000000000000000000000f326e4de8f66a0bdc0970b79e0924e33c79f19150000000000000000000000000000000000000000000000000000000000000000007f";
+        uint256 expiration_ = 1745454591251;
+
+        // This signature was generated with the test private key for the above data and expiration
+        bytes memory signature =
+            hex"fccc4800a4a9d9aa6a8cf933ca759f3974d8eed02e47b12a739601ef1e83617a08c7597d0dd875f955511248da6cf4cfb92be67c0d7241104c061a3c4d45f3b51b";
+
+        DelegationMetaSwapAdapter.SignatureData memory sigData_ =
+            DelegationMetaSwapAdapter.SignatureData({ apiData: apiData_, expiration: expiration_, signature: signature });
+
+        // Should not revert since signature is valid
+        adapter.exposedValidateSignature(sigData_);
+    }
+
+    ////////////////////////////// Swap tests //////////////////////////////
 
     /**
      * @notice Verifies that the contract reverts when the zero address is used as an input.
@@ -1499,5 +1604,27 @@ contract MetaSwapMock {
         } else {
             tokenTo_.safeTransfer(msg.sender, _amount);
         }
+    }
+}
+
+contract DelegationMetaSwapAdapterSignatureTest is DelegationMetaSwapAdapter {
+    constructor(
+        address _owner,
+        address _swapApiSigner,
+        address _delegationManager,
+        address _metaSwap,
+        address _argsEqualityCheckEnforcer
+    )
+        DelegationMetaSwapAdapter(
+            _owner,
+            _swapApiSigner,
+            IDelegationManager(_delegationManager),
+            IMetaSwap(_metaSwap),
+            _argsEqualityCheckEnforcer
+        )
+    { }
+
+    function exposedValidateSignature(SignatureData memory _signatureData) public view {
+        _validateSignature(_signatureData);
     }
 }

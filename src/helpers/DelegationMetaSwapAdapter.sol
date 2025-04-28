@@ -423,6 +423,20 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     ////////////////////////////// Private/Internal Methods //////////////////////////////
 
     /**
+     * @dev Validates the expiration and signature of the provided apiData.
+     * @param _signatureData Contains the apiData, the expiration and signature.
+     */
+    function _validateSignature(SignatureData memory _signatureData) internal view {
+        if (block.timestamp >= _signatureData.expiration) revert SignatureExpired();
+
+        bytes32 messageHash_ = keccak256(abi.encode(_signatureData.apiData, _signatureData.expiration));
+        bytes32 ethSignedMessageHash_ = MessageHashUtils.toEthSignedMessageHash(messageHash_);
+
+        address recoveredSigner_ = ECDSA.recover(ethSignedMessageHash_, _signatureData.signature);
+        if (recoveredSigner_ != swapApiSigner) revert InvalidApiSignature();
+    }
+
+    /**
      * @notice Sends tokens or native token to a specified recipient.
      * @param _token ERC20 token to send or address(0) for native token.
      * @param _amount Amount of tokens or native token to send.
@@ -528,19 +542,5 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         if (address(_token) == address(0)) return address(this).balance;
 
         return _token.balanceOf(address(this));
-    }
-
-    /**
-     * @dev Validates the expiration and signature of the provided apiData.
-     * @param _signatureData Contains the apiData, the expiration and signature.
-     */
-    function _validateSignature(SignatureData memory _signatureData) private view {
-        if (block.timestamp >= _signatureData.expiration) revert SignatureExpired();
-
-        bytes32 messageHash_ = keccak256(abi.encodePacked(_signatureData.apiData, _signatureData.expiration));
-        bytes32 ethSignedMessageHash_ = MessageHashUtils.toEthSignedMessageHash(messageHash_);
-
-        address recoveredSigner_ = ECDSA.recover(ethSignedMessageHash_, _signatureData.signature);
-        if (recoveredSigner_ != swapApiSigner) revert InvalidApiSignature();
     }
 }
