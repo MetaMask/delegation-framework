@@ -132,10 +132,10 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     error InvalidSwapFunctionSelector();
 
     /// @dev Error when the tokenFrom in the api data and swap data do not match.
-    error TokenFromMismath();
+    error TokenFromMismatch();
 
     /// @dev Error when the amountFrom in the api data and swap data do not match.
-    error AmountFromMismath();
+    error AmountFromMismatch();
 
     /// @dev Error when the delegations do not include the ArgsEqualityCheckEnforcer
     error MissingArgsEqualityCheckEnforcer();
@@ -145,6 +145,9 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
 
     /// @dev Error thrown when the signature expiration has passed.
     error SignatureExpired();
+
+    /// @dev Error thrown when the address is zero.
+    error InvalidZeroAddress();
 
     ////////////////////////////// Modifiers //////////////////////////////
 
@@ -184,6 +187,11 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     )
         Ownable(_owner)
     {
+        if (
+            _swapApiSigner == address(0) || address(_delegationManager) == address(0) || address(_metaSwap) == address(0)
+                || _argsEqualityCheckEnforcer == address(0)
+        ) revert InvalidZeroAddress();
+
         swapApiSigner = _swapApiSigner;
         delegationManager = _delegationManager;
         metaSwap = _metaSwap;
@@ -234,15 +242,17 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         if (_delegations[0].delegator != msg.sender) revert NotLeafDelegator();
 
         // Prepare the call that will be executed internally via onlySelf
-        bytes memory encodedSwap_ = abi.encodeWithSelector(
-            this.swapTokens.selector,
-            aggregatorId_,
-            tokenFrom_,
-            tokenTo_,
-            _delegations[delegationsLength_ - 1].delegator,
-            amountFrom_,
-            _getSelfBalance(tokenFrom_),
-            swapData_
+        bytes memory encodedSwap_ = abi.encodeCall(
+            this.swapTokens,
+            (
+                aggregatorId_,
+                tokenFrom_,
+                tokenTo_,
+                _delegations[delegationsLength_ - 1].delegator,
+                amountFrom_,
+                _getSelfBalance(tokenFrom_),
+                swapData_
+            )
         );
 
         bytes[] memory permissionContexts_ = new bytes[](2);
@@ -258,7 +268,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         if (address(tokenFrom_) == address(0)) {
             executionCallDatas_[0] = ExecutionLib.encodeSingle(address(this), amountFrom_, hex"");
         } else {
-            bytes memory encodedTransfer_ = abi.encodeWithSelector(IERC20.transfer.selector, address(this), amountFrom_);
+            bytes memory encodedTransfer_ = abi.encodeCall(IERC20.transfer, (address(this), amountFrom_));
             executionCallDatas_[0] = ExecutionLib.encodeSingle(address(tokenFrom_), 0, encodedTransfer_);
         }
         executionCallDatas_[1] = ExecutionLib.encodeSingle(address(this), 0, encodedSwap_);
@@ -274,7 +284,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
      * @param _tokenTo The output token of the swap.
      * @param _recipient The address that will receive the swapped tokens.
      * @param _amountFrom The amount of tokens to be swapped.
-     * @param _balanceFromBefore The contract’s balance of _tokenFrom before the incoming token transfer is credited.
+     * @param _balanceFromBefore The contract's balance of _tokenFrom before the incoming token transfer is credited.
      * @param _swapData Arbitrary data required by the aggregator (e.g. encoded swap params).
      */
     function swapTokens(
@@ -321,6 +331,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
      * @param _newSigner The new authorized signer address.
      */
     function setSwapApiSigner(address _newSigner) external onlyOwner {
+        if (_newSigner == address(0)) revert InvalidZeroAddress();
         swapApiSigner = _newSigner;
         emit SwapApiSignerUpdated(_newSigner);
     }
@@ -498,11 +509,11 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
             (address, IERC20, IERC20, uint256, uint256, bytes, uint256, address, bool)
         );
 
-        if (swapTokenFrom_ != tokenFrom_) revert TokenFromMismath();
+        if (swapTokenFrom_ != tokenFrom_) revert TokenFromMismatch();
 
         // When the fee is deducted from the tokenFrom the (feeAmount) plus the amount actually swapped (swapAmountFrom)
         // must equal the total provided (amountFrom); otherwise, the input is inconsistent.
-        if (!feeTo_ && (feeAmount_ + swapAmountFrom_ != amountFrom_)) revert AmountFromMismath();
+        if (!feeTo_ && (feeAmount_ + swapAmountFrom_ != amountFrom_)) revert AmountFromMismatch();
 
         tokenTo_ = swapTokenTo_;
     }
@@ -524,7 +535,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
      * @param _signatureData Contains the apiData, the expiration and signature.
      */
     function _validateSignature(SignatureData memory _signatureData) private view {
-        if (block.timestamp > _signatureData.expiration) revert SignatureExpired();
+        if (block.timestamp >= _signatureData.expiration) revert SignatureExpired();
 
         bytes32 messageHash_ = keccak256(abi.encodePacked(_signatureData.apiData, _signatureData.expiration));
         bytes32 ethSignedMessageHash_ = MessageHashUtils.toEthSignedMessageHash(messageHash_);
