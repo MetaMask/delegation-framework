@@ -37,15 +37,15 @@ import { ModeCode, Caveat } from "../utils/Types.sol";
  *  - The length of `SelectedGroup.caveatArgs` must exactly match the number of caveats in the corresponding `CaveatGroup`.
  *    Empty bytes can be used for caveats that do not require arguments.
  *
- * @dev Security Notice: This enforcer allows delegates to choose which caveat group to use at
+ * @dev Security Notice: This enforcer allows the redeemer to choose which caveat group to use at
  * execution time, via the groupIndex parameter. If multiple caveat groups are defined with varying
- * levels of restrictions, delegates can select the least restrictive group, bypassing stricter
+ * levels of restrictions, the redeemer can select the least restrictive group, bypassing stricter
  * requirements in other groups.
  *
  * To maintain proper security:
  *  - Ensure each caveat group represents a complete and equally secure permission set.
- *  - Never assume delegates will select the most restrictive group.
- *  - Design caveat groups with the understanding that delegates will choose the path of least
+ *  - Never assume the redeemer will select the most restrictive group.
+ *  - Design caveat groups with the understanding that the redeemer will choose the path of least
  *    resistance.
  *
  * Use this enforcer at your own risk and ensure it aligns with your intended security model.
