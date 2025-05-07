@@ -18,7 +18,6 @@ import { AllowedMethodsEnforcer } from "../../src/enforcers/AllowedMethodsEnforc
 import { ERC20TransferAmountEnforcer } from "../../src/enforcers/ERC20TransferAmountEnforcer.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { BasicERC20 } from "../utils/BasicERC20.t.sol";
-import "forge-std/Test.sol";
 
 contract DelegationChainEnforcerTest is BaseTest {
     ////////////////////////////// Setup //////////////////////////////
@@ -68,6 +67,7 @@ contract DelegationChainEnforcerTest is BaseTest {
         allowedTargetsEnforcer = new AllowedTargetsEnforcer();
         valueLteEnforcer = new ValueLteEnforcer();
         allowedMethodsEnforcer = new AllowedMethodsEnforcer();
+        erc20TransferAmountEnforcer = new ERC20TransferAmountEnforcer();
         delegationChainEnforcer = new DelegationChainEnforcer(
             address(chainIntegrity.deleGator),
             IDelegationManager(address(delegationManager)),
@@ -141,9 +141,6 @@ contract DelegationChainEnforcerTest is BaseTest {
 
         uint256[] memory balancesBefore_ = _getBalances(delegators);
 
-        // console2.log("delegations_[1].caveat.args");
-        // console2.logBytes(delegations_[1].caveats[0].args);
-
         // Execute the delegation chain through ICA
         invokeDelegation_UserOp(ICA, delegations_, _getExecution());
 
@@ -173,14 +170,15 @@ contract DelegationChainEnforcerTest is BaseTest {
             caveats_[1] = Caveat({
                 args: hex"",
                 enforcer: address(erc20TransferAmountEnforcer),
-                terms: abi.encode(token, prizeLevels[i]) // Use prize level for this delegator
-             });
+                terms: abi.encodePacked(address(token), prizeLevels[i])
+            });
+
             delegations_[i][0] = Delegation({
                 delegate: address(delegationChainEnforcer),
                 delegator: address(treasury.deleGator),
                 authority: ROOT_AUTHORITY,
                 caveats: caveats_,
-                salt: 0,
+                salt: i,
                 signature: hex""
             });
 

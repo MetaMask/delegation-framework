@@ -219,6 +219,7 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
                     Caveat[] memory caveats_ = batchDelegations_[batchIndex_][delegationsIndex_].caveats;
                     for (uint256 caveatsIndex_; caveatsIndex_ < caveats_.length; ++caveatsIndex_) {
                         ICaveatEnforcer enforcer_ = ICaveatEnforcer(caveats_[caveatsIndex_].enforcer);
+                        console2.log("Calling beforeAllHook", address(enforcer_));
                         enforcer_.beforeAllHook(
                             caveats_[caveatsIndex_].terms,
                             caveats_[caveatsIndex_].args,

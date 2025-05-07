@@ -15,6 +15,8 @@ import "forge-std/Test.sol";
  * @title DelegationChainEnforcer
  * @dev This contract enforces the allowed methods a delegate may call.
  * @dev This enforcer operates only in single execution call type and with default execution mode.
+ * @dev Combine with other enforcers to validate the target, method, value, etc, in the root delegation, this avoids
+ *  a redundant validation in this enforcer on each level.
  */
 contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
     using ExecutionLib for bytes;
@@ -69,23 +71,16 @@ contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
         // multiple times to get paid multiple times, or an address they control?
 
         bytes32 referralChainHash_ = keccak256(abi.encode(_delegators));
-        console2.log("1referralChainHash_:");
-        console2.logBytes32(referralChainHash_);
-        console2.log("msg.sender:", msg.sender);
 
-        // TODO: msg.sender here might be dangerous, the owner could do something unwanted, centralization risk
-        // what can someone with a delegation do?
+        // TODO: centralization risk what can someone with a delegation do, we need to trust
         address[] storage referrals_ = referrals[address(delegationManager)][referralChainHash_];
         require(referrals_.length == 0, "DelegationChainEnforcer:referral-chain-already-posted");
 
         // Push up to the last 5 delegators in reverse order
         uint256 startIndex_ = delegatorsLength_ < 5 ? 0 : delegatorsLength_ - 5;
         for (uint256 i = delegatorsLength_; i > startIndex_; i--) {
-            console2.log("it is pushing", _delegators[i - 1]);
             referrals_.push(_delegators[i - 1]);
         }
-
-        console2.log("Here referrals_.length:", referrals_.length);
 
         emit ReferralChainPosted(msg.sender, referralChainHash_);
     }
@@ -98,7 +93,6 @@ contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
     // Upon successful validation of the entire delegation chain, the transaction executes the attestation call on the
     // DelegationChainEnforcer contract. This call formally posts the entire delegation chain addresses on-chain, creating a
     // permanent record of the referral event.
-
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
@@ -120,12 +114,7 @@ contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
     function _validatePosition(bytes calldata _executionCallData, bytes calldata _terms, address _delegator) internal pure {
         (,, bytes calldata callData_) = _executionCallData.decodeSingle();
 
-        // TODO: this is better in separate enforcers, so it doesn't repeat on each level
-        // (address target_, uint256 value_, bytes calldata callData_) = _executionCallData.decodeSingle();
-        // require(bytes4(callData_[0:4]) == this.post.selector, "DelegationChainEnforcer:invalid-method");
-        // require(value_ == 0, "DelegationChainEnforcer:invalid-value");
-        // require(target_ == address(this), "DelegationChainEnforcer:invalid-target");
-
+        // Target, value, method, must be validated by other enforcers, on root the delegation.
         (address[] memory delegators_) = abi.decode(callData_[4:], (address[]));
 
         // Restriction for gas costs.
@@ -152,19 +141,18 @@ contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
         public
         override
     {
-        // console log the args
-        console2.log("args:");
-        console2.logBytes(_args);
-
         console2.log("Checkpoint after hook");
         console2.log("_delegator:", _delegator);
         console2.log("_redeemer:", _redeemer);
 
-        //TODO: Could i use the post params hash instead and a new mapping?
-        bytes32 referralChainHash_ = keccak256(abi.encode(_executionCallData));
+        bytes32 referralChainHash_ = _getReferralChainHash(_executionCallData);
+        // Stops afterHook execution if the referral hash has already been redeemed
+        // TODO: add a test to check this mapping
         if (redeemed[msg.sender][referralChainHash_]) return;
 
-        (address[] memory referrals_, uint256 referralLength_) = _getReferrals(_executionCallData);
+        address[] memory referrals_ = referrals[msg.sender][referralChainHash_];
+
+        // (address[] memory referrals_, uint256 referralLength_) = _getReferralsAndValidateRedemption(referralChainHash_);
         // require(referralLength_ > 2, "DelegationChainEnforcer:invalid-referrals-length");
 
         // TODO: make the token constant if possible
@@ -176,21 +164,24 @@ contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
         ModeCode[] memory encodedModes_ = new ModeCode[](allowanceLength_);
 
         console2.log("allowanceDelegations_.length:", allowanceDelegations_.length);
-        console2.log("referralLength_:", referralLength_);
+        // console2.log("referralLength_:", referralLength_);
 
-        require(referralLength_ == allowanceDelegations_.length, "DelegationChainEnforcer:invalid-delegations-length");
+        require(referrals_.length == allowanceDelegations_.length, "DelegationChainEnforcer:invalid-delegations-length");
 
         for (uint256 i = 0; i < allowanceLength_; ++i) {
             permissionContexts_[i] = abi.encode(allowanceDelegations_[i]);
             executionCallDatas_[i] =
                 ExecutionLib.encodeSingle(token_, 0, abi.encodeCall(IERC20.transfer, (referrals_[i], prizeAmounts[i])));
             encodedModes_[i] = ModeLib.encodeSimpleSingle();
+            console2.log("prizeAmounts[i]:", prizeAmounts[i]);
         }
 
         uint256[] memory balanceBefore_ = _getBalances(referrals_, token_);
 
+        console2.log("ABOUT TO REDEEM INSIDE AFTERHOOK");
         // Attempt to redeem the delegation and make the payment
         delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
+        console2.log("AFTER REDEMPTION INSIDE AFTERHOOK");
 
         //TODO: If this fails, for memory, then try to pass the redeemDelegations() as callback below.
         _validateTransfer(referrals_, token_, balanceBefore_);
@@ -241,24 +232,21 @@ contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
         }
     }
 
-    function _getReferrals(bytes calldata _executionCallData)
+    function _getReferrals(bytes32 _referralChainHash)
         internal
         view
         returns (address[] memory referrals_, uint256 referralLength_)
     {
-        (,, bytes calldata callData_) = _executionCallData.decodeSingle();
-
-        (address[] memory delegators_) = abi.decode(callData_[4:], (address[]));
-        console2.log("delegators_.length:", delegators_.length);
-
-        bytes32 referralChainHash_ = keccak256(abi.encode(delegators_));
-        console2.log("2referralChainHash_:");
-        console2.logBytes32(referralChainHash_);
-
-        referrals_ = referrals[msg.sender][referralChainHash_];
+        referrals_ = referrals[msg.sender][_referralChainHash];
         referralLength_ = referrals_.length;
         console2.log("msg.sender:", msg.sender);
         console2.log("referralLength_:", referralLength_);
+    }
+
+    function _getReferralChainHash(bytes calldata _executionCallData) internal view returns (bytes32 referralChainHash_) {
+        (,, bytes calldata callData_) = _executionCallData.decodeSingle();
+        (address[] memory delegators_) = abi.decode(callData_[4:], (address[]));
+        referralChainHash_ = keccak256(abi.encode(delegators_));
     }
 
     function _validateAndDecodeArgs(
