@@ -243,7 +243,7 @@ contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
         console2.log("referralLength_:", referralLength_);
     }
 
-    function _getReferralChainHash(bytes calldata _executionCallData) internal view returns (bytes32 referralChainHash_) {
+    function _getReferralChainHash(bytes calldata _executionCallData) internal pure returns (bytes32 referralChainHash_) {
         (,, bytes calldata callData_) = _executionCallData.decodeSingle();
         (address[] memory delegators_) = abi.decode(callData_[4:], (address[]));
         referralChainHash_ = keccak256(abi.encode(delegators_));
@@ -259,7 +259,7 @@ contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
         returns (Delegation[][] memory allowanceDelegations_, uint256 allowanceLength_, address token_)
     {
         // TODO: make the token constant if possible
-        // TODO: we could assume a single direct delegation, instead of an array of delegations
+        // TODO: we could assume a single direct delegation with the total amount, instead of an array of delegations
         (allowanceDelegations_, token_) = abi.decode(_args, (Delegation[][], address));
         allowanceLength_ = allowanceDelegations_.length;
         require(allowanceLength_ > 0, "DelegationChainEnforcer:invalid-allowance-delegations-length");
