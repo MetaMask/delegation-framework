@@ -16,6 +16,7 @@ import { AllowedTargetsEnforcer } from "../../src/enforcers/AllowedTargetsEnforc
 import { ValueLteEnforcer } from "../../src/enforcers/ValueLteEnforcer.sol";
 import { AllowedMethodsEnforcer } from "../../src/enforcers/AllowedMethodsEnforcer.sol";
 import { ERC20TransferAmountEnforcer } from "../../src/enforcers/ERC20TransferAmountEnforcer.sol";
+import { RedeemerEnforcer } from "../../src/enforcers/RedeemerEnforcer.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { BasicERC20 } from "../utils/BasicERC20.t.sol";
 
@@ -35,6 +36,7 @@ contract DelegationChainEnforcerTest is BaseTest {
     ValueLteEnforcer public valueLteEnforcer;
     AllowedMethodsEnforcer public allowedMethodsEnforcer;
     ERC20TransferAmountEnforcer public erc20TransferAmountEnforcer;
+    RedeemerEnforcer public redeemerEnforcer;
     address[] public delegators;
 
     // Prize levels for the delegation chain rewards
@@ -68,6 +70,7 @@ contract DelegationChainEnforcerTest is BaseTest {
         valueLteEnforcer = new ValueLteEnforcer();
         allowedMethodsEnforcer = new AllowedMethodsEnforcer();
         erc20TransferAmountEnforcer = new ERC20TransferAmountEnforcer();
+        redeemerEnforcer = new RedeemerEnforcer();
         delegationChainEnforcer = new DelegationChainEnforcer(
             address(chainIntegrity.deleGator),
             IDelegationManager(address(delegationManager)),
@@ -217,7 +220,7 @@ contract DelegationChainEnforcerTest is BaseTest {
     }
 
     function _getChainIntegrityCaveats() internal view returns (Caveat[] memory caveats_) {
-        caveats_ = new Caveat[](3);
+        caveats_ = new Caveat[](4);
         // Check target is the enforcer
         caveats_[0] = Caveat({
             args: hex"",
@@ -232,5 +235,7 @@ contract DelegationChainEnforcerTest is BaseTest {
             enforcer: address(allowedMethodsEnforcer),
             terms: abi.encodePacked(DelegationChainEnforcer.post.selector)
         });
+        // Check redeemer is ICA
+        caveats_[3] = Caveat({ args: hex"", enforcer: address(redeemerEnforcer), terms: abi.encodePacked(address(ICA.deleGator)) });
     }
 }
