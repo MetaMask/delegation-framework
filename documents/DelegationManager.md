@@ -55,6 +55,10 @@ Our `DelegationManager` implementation:
 > NOTE: Some actions can invalidate a delegation, for example: A delegation can be revoked by the delegator, the delegator code might change, or the delegation signature can become invalid at any time.
 > Validate a delegation redemption by either simulating the transaction or by reading the storage on our implementation `disabledDelegations(delegationHash)`.
 
+## Token Payment Validation
+
+When using delegations for token transfers, it's recommended to implement a CaveatEnforcer that validates the balance difference of the recipient before and after execution, as some token implementations may not revert on failed transfers and the DelegationManager doesn't validate execution outputs.
+
 ## Re-delegating
 
 Example: Alice delegates to Bob the ability to transfer USDC, giving Bob the ability to act on her behalf. Bob then "re-delegates" the ability to act on his behalf to Carol and includes the `authority`, a hash of the delegation, given to him from Alice. This enables Carol to act on behalf of Alice. Bob can add extra restrictions when he re-delegates to Carol in addition to what the initial delegation had, to understand what the delegation can do, it is necessary to analyze all the enforcers being used in the entire delegation chain.

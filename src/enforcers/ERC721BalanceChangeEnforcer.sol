@@ -7,12 +7,20 @@ import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";
 
 /**
- * @title ERC721BalanceGteEnforcer
- * @dev This contract enforces that the ERC721 token balance of a recipient has increased by at least the specified amount
- * after the execution, measured between the `beforeHook` and `afterHook` calls, regardless of what the execution is.
+ * @title ERC721BalanceChangeEnforcer
+ * @dev This contract allows setting up some guardrails around balance changes. By specifying an amount and a direction
+ * (decrease/increase), one can enforce a maximum decrease or minimum increase in after-execution balance.
+ * The change can be either a decrease or increase based on the `enforceDecrease` flag.
+ * @dev This contract has no enforcement of how the balance changes. It's meant to be used alongside additional enforcers to
+ * create granular permissions.
  * @dev This enforcer operates only in default execution mode.
+ * @dev Security Notice: This enforcer tracks balance changes by comparing the recipient's balance before and after execution. Since
+ * enforcers watching the same recipient share state, a single balance modification may satisfy multiple enforcers simultaneously.
+ * Users should avoid tracking the same recipient's balance on multiple enforcers in a single delegation chain to prevent unintended
+ * behavior. Given its potential for concurrent condition fulfillment, use this enforcer at your own risk and ensure it aligns with
+ * your intended security model.
  */
-contract ERC721BalanceGteEnforcer is CaveatEnforcer {
+contract ERC721BalanceChangeEnforcer is CaveatEnforcer {
     ////////////////////////////// State //////////////////////////////
 
     mapping(bytes32 hashKey => uint256 balance) public balanceCache;
@@ -45,10 +53,12 @@ contract ERC721BalanceGteEnforcer is CaveatEnforcer {
 
     /**
      * @notice This function caches the delegator's ERC721 token balance before the delegation is executed.
-     * @param _terms 72 bytes where:
-     * - first 20 bytes: address of the ERC721 token,
-     * - next 20 bytes: address of the recipient,
-     * - next 32 bytes: amount the balance should increase by.
+     * @param _terms 73 bytes where:
+     * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
+     * - next 20 bytes: address of the ERC721 token
+     * - next 20 bytes: address of the recipient
+     * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
+     * enforceDecrease)
      * @param _mode The execution mode. (Must be Default execType)
      * @param _delegationHash The hash of the delegation.
      */
@@ -65,20 +75,23 @@ contract ERC721BalanceGteEnforcer is CaveatEnforcer {
         override
         onlyDefaultExecutionMode(_mode)
     {
-        (address token_, address recipient_,) = getTermsInfo(_terms);
+        (, address token_, address recipient_,) = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, token_, recipient_, _delegationHash);
-        require(!isLocked[hashKey_], "ERC721BalanceGteEnforcer:enforcer-is-locked");
+        require(!isLocked[hashKey_], "ERC721BalanceChangeEnforcer:enforcer-is-locked");
         isLocked[hashKey_] = true;
         uint256 balance_ = IERC721(token_).balanceOf(recipient_);
         balanceCache[hashKey_] = balance_;
     }
 
     /**
-     * @notice This function enforces that the delegator's ERC721 token balance has increased by at least the amount provided.
-     * @param _terms 72 bytes where:
-     * - first 20 bytes: address of the ERC721 token,
-     * - next 20 bytes: address of the recipient,
-     * - next 32 bytes: amount the balance should increase by.
+     * @notice This function enforces that the delegator's ERC721 token balance has changed by the expected amount.
+     * @param _terms 73 bytes where:
+     * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
+     * - next 20 bytes: address of the ERC721 token
+     * - next 20 bytes: address of the recipient
+     * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
+     * enforceDecrease)
+     * @param _delegationHash The hash of the delegation.
      */
     function afterHook(
         bytes calldata _terms,
@@ -92,25 +105,36 @@ contract ERC721BalanceGteEnforcer is CaveatEnforcer {
         public
         override
     {
-        (address token_, address recipient_, uint256 amount_) = getTermsInfo(_terms);
+        (bool enforceDecrease_, address token_, address recipient_, uint256 amount_) = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, token_, recipient_, _delegationHash);
         delete isLocked[hashKey_];
         uint256 balance_ = IERC721(token_).balanceOf(recipient_);
-        require(balance_ >= balanceCache[hashKey_] + amount_, "ERC721BalanceGteEnforcer:balance-not-gt");
+        if (enforceDecrease_) {
+            require(balance_ >= balanceCache[hashKey_] - amount_, "ERC721BalanceChangeEnforcer:exceeded-balance-decrease");
+        } else {
+            require(balance_ >= balanceCache[hashKey_] + amount_, "ERC721BalanceChangeEnforcer:insufficient-balance-increase");
+        }
     }
 
     /**
      * @notice Decodes the terms used in this CaveatEnforcer.
      * @param _terms Encoded data that is used during the execution hooks.
+     * @return enforceDecrease_ Boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00).
      * @return token_ The address of the ERC721 token.
      * @return recipient_ The address of the recipient of the token.
-     * @return amount_ The amount the balance should increase by.
+     * @return amount_ Balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
+     * enforceDecrease)
      */
-    function getTermsInfo(bytes calldata _terms) public pure returns (address token_, address recipient_, uint256 amount_) {
-        require(_terms.length == 72, "ERC721BalanceGteEnforcer:invalid-terms-length");
-        token_ = address(bytes20(_terms[:20]));
-        recipient_ = address(bytes20(_terms[20:40]));
-        amount_ = uint256(bytes32(_terms[40:]));
+    function getTermsInfo(bytes calldata _terms)
+        public
+        pure
+        returns (bool enforceDecrease_, address token_, address recipient_, uint256 amount_)
+    {
+        require(_terms.length == 73, "ERC721BalanceChangeEnforcer:invalid-terms-length");
+        enforceDecrease_ = _terms[0] != 0;
+        token_ = address(bytes20(_terms[1:21]));
+        recipient_ = address(bytes20(_terms[21:41]));
+        amount_ = uint256(bytes32(_terms[41:]));
     }
 
     ////////////////////////////// Internal Methods //////////////////////////////

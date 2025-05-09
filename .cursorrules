@@ -45,7 +45,7 @@ Caveat enforcers allow you to add specific conditions or restrictions to delegat
 - `BlockNumberEnforcer.sol`
 - `DeployedEnforcer.sol`
 - `ERC20TransferAmountEnforcer.sol`
-- `ERC20BalanceGteEnforcer.sol`
+- `ERC20BalanceChangeEnforcer.sol`
 - `NonceEnforcer.sol`
 - `LimitedCallsEnforcer.sol`
 - `IdEnforcer.sol`
