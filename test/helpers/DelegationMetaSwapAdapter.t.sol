@@ -92,7 +92,7 @@ abstract contract DelegationMetaSwapAdapterBaseTest is BaseTest {
     /**
      * @dev Generates a valid signature for _apiData with a given _expiration.
      */
-    function _getValidSignature(bytes memory _apiData, uint256 _expiration) internal returns (bytes memory) {
+    function _getValidSignature(bytes memory _apiData, uint256 _expiration) internal view returns (bytes memory) {
         bytes32 messageHash = keccak256(abi.encode(_apiData, _expiration));
         bytes32 ethSignedMessageHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(swapSignerPrivateKey, ethSignedMessageHash);
@@ -102,7 +102,7 @@ abstract contract DelegationMetaSwapAdapterBaseTest is BaseTest {
     /**
      * @dev Builds and returns a SignatureData struct from the given apiData.
      */
-    function _buildSigData(bytes memory apiData) internal returns (DelegationMetaSwapAdapter.SignatureData memory) {
+    function _buildSigData(bytes memory apiData) internal view returns (DelegationMetaSwapAdapter.SignatureData memory) {
         uint256 expiration = block.timestamp + 1000;
         bytes memory signature = _getValidSignature(apiData, expiration);
         return DelegationMetaSwapAdapter.SignatureData({ apiData: apiData, expiration: expiration, signature: signature });
