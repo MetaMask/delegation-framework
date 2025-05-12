@@ -3,6 +3,17 @@
 > [!WARNING]
 > We use tags for audited versions of code releases and the `main` branch is the working development branch. All PRs should be based against `main` branch.
 
+### Custom HybridDeleGator
+
+1. modify DeleGatorCore or HybridDeleGator
+2. `forge build`
+3. 
+```sh
+forge script script/Deploy.s.sol \       
+  --rpc-url  https://sepolia.infura.io/v3/X \
+  --broadcast
+```
+
 ### Getting Started
 
 1. **Fork the repository**:

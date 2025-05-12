@@ -54,6 +54,8 @@ abstract contract DeleGatorCore is
         "PackedUserOperation(address sender,uint256 nonce,bytes initCode,bytes callData,bytes32 accountGasLimits,uint256 preVerificationGas,bytes32 gasFees,bytes paymasterAndData,address entryPoint)"
     );
 
+    mapping(bytes => address) public handleToAddress;
+
     ////////////////////////////// Events //////////////////////////////
 
     /// @dev Emitted when the Delegation manager is set
@@ -67,6 +69,8 @@ abstract contract DeleGatorCore is
 
     /// @dev Event emitted when prefunding is sent.
     event SentPrefund(address indexed sender, uint256 amount, bool success);
+
+    event HandleDelegatorAddressSet(bytes handle, address indexed delegatorAddress);
 
     ////////////////////////////// Errors //////////////////////////////
 
@@ -166,6 +170,11 @@ abstract contract DeleGatorCore is
         onlyEntryPointOrSelf
     {
         delegationManager.redeemDelegations(_permissionContexts, _modes, _executionCallDatas);
+    }
+
+    function setHandleDelegatorAddress(bytes calldata handle, address delegatorAddress) external {
+        handleToAddress[handle] = delegatorAddress;
+        emit HandleDelegatorAddressSet(handle, delegatorAddress);
     }
 
     /**
