@@ -92,6 +92,9 @@ abstract contract DeleGatorCore is
     /// @dev Error thrown when an execution with an unsupported ExecType was made
     error UnsupportedExecType(ExecType execType);
 
+    /// @dev Error thrown when an invalid handle is provided
+    error InvalidHandle();
+
     ////////////////////////////// Modifiers //////////////////////////////
 
     /**
@@ -169,6 +172,19 @@ abstract contract DeleGatorCore is
         external
         onlyEntryPointOrSelf
     {
+        delegationManager.redeemDelegations(_permissionContexts, _modes, _executionCallDatas);
+    }
+
+    function redeemDelegationsWithText(
+        bytes calldata handle,
+        bytes[] calldata _permissionContexts,
+        ModeCode[] calldata _modes,
+        bytes[] calldata _executionCallDatas
+    )
+        external
+        onlyEntryPointOrSelf
+    {
+        if (keccak256(handle) != keccak256(abi.encodePacked("locker_money"))) revert InvalidHandle();
         delegationManager.redeemDelegations(_permissionContexts, _modes, _executionCallDatas);
     }
 
