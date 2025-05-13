@@ -186,6 +186,7 @@ abstract contract DeleGatorCore is
     {
         address delegatorAddress = handleToAddress[handle];
         if (delegatorAddress == address(0)) revert InvalidHandle();
+        
 
         delegationManager.redeemDelegations(_permissionContexts, _modes, _executionCallDatas);
     }

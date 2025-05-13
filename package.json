@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@reclaimprotocol/verifier-solidity-sdk": "^1.0.4"
+  }
+}
