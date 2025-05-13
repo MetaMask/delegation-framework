@@ -184,7 +184,9 @@ abstract contract DeleGatorCore is
         external
         onlyEntryPointOrSelf
     {
-        if (keccak256(handle) != keccak256(abi.encodePacked("locker_money"))) revert InvalidHandle();
+        address delegatorAddress = handleToAddress[handle];
+        if (delegatorAddress == address(0)) revert InvalidHandle();
+
         delegationManager.redeemDelegations(_permissionContexts, _modes, _executionCallDatas);
     }
 
