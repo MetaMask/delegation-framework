@@ -9,3 +9,4 @@ forge-std/=lib/forge-std/src/
 @erc7579/=lib/erc7579-implementation/src/
 @SCL=lib/SCL/src
 @reclaim=node_modules/@reclaimprotocol
+@uniswap=node_modules/@uniswap

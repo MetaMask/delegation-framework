@@ -29,5 +29,5 @@ optimizer = true
   sepolia = "${SEPOLIA_RPC_URL}"
   aztec = "${AZTEC_RPC_URL}"
 
-[libraries]
+[profile.libraries]
 "lib/SCL/src/lib/libSCL_RIP7212.sol:SCL_RIP7212" = "0x37E9E2CF367f06095B5fa31803Df7C2067f93aD2"
