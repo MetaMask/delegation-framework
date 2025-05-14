@@ -108,6 +108,14 @@ add_contract \
         "0x44B8C6ae3C304213c3e298495e12497Ed3E56E41")" \
     ""
 
+# SimpleFactory
+add_contract \
+    "SimpleFactory" \
+    "src/utils/SimpleFactory.sol" \
+    "0x69Aa2f9fe1572F1B640E1bbc512f5c3a734fc77c" \
+    "" \
+    ""
+
 # Add more contracts here:
 # add_contract "ContractName" "path/to/contract.sol" "0xAddress" "$(encode_args "constructor(type)" "value")" ""
 
