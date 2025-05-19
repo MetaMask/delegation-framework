@@ -14,7 +14,6 @@ import { IDeleGatorCore } from "./interfaces/IDeleGatorCore.sol";
 import { Delegation, Caveat, ModeCode } from "./utils/Types.sol";
 import { EncoderLib } from "./libraries/EncoderLib.sol";
 import { ERC1271Lib } from "./libraries/ERC1271Lib.sol";
-import "forge-std/Test.sol";
 
 /**
  * @title DelegationManager
@@ -155,9 +154,6 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
 
                 // Validate caller
                 if (delegations_[0].delegate != msg.sender && delegations_[0].delegate != ANY_DELEGATE) {
-                    console2.log("Invalid delegate1");
-                    console2.log("delegations_[0].delegate:", delegations_[0].delegate);
-                    console2.log("msg.sender:", msg.sender);
                     revert InvalidDelegate();
                 }
 
@@ -199,9 +195,6 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
                         // Validate delegate
                         address nextDelegate_ = delegations_[delegationsIndex_ + 1].delegate;
                         if (nextDelegate_ != ANY_DELEGATE && delegations_[delegationsIndex_].delegator != nextDelegate_) {
-                            console2.log("Invalid delegate2");
-                            console2.log("nextDelegate_:", nextDelegate_);
-                            console2.log("delegations_[delegationsIndex_].delegator:", delegations_[delegationsIndex_].delegator);
                             revert InvalidDelegate();
                         }
                     } else if (delegations_[delegationsIndex_].authority != ROOT_AUTHORITY) {
@@ -219,7 +212,6 @@ contract DelegationManager is IDelegationManager, Ownable2Step, Pausable, EIP712
                     Caveat[] memory caveats_ = batchDelegations_[batchIndex_][delegationsIndex_].caveats;
                     for (uint256 caveatsIndex_; caveatsIndex_ < caveats_.length; ++caveatsIndex_) {
                         ICaveatEnforcer enforcer_ = ICaveatEnforcer(caveats_[caveatsIndex_].enforcer);
-                        console2.log("Calling beforeAllHook", address(enforcer_));
                         enforcer_.beforeAllHook(
                             caveats_[caveatsIndex_].terms,
                             caveats_[caveatsIndex_].args,

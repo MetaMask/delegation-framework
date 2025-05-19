@@ -9,7 +9,6 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IDelegationManager } from "../interfaces/IDelegationManager.sol";
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode, Delegation } from "../utils/Types.sol";
-import "forge-std/Test.sol";
 
 /**
  * @title DelegationChainEnforcer
@@ -28,7 +27,7 @@ import "forge-std/Test.sol";
  *      avoiding redundant checks on each chain level. Prize amounts are fixed to exactly maxPrizePayments levels and
  *      must be set via the owner. Cannot post the same chain twice or redeem more than once per chain hash.
  */
-contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
+contract DelegationChainEnforcer is CaveatEnforcer, Ownable2Step {
     using ExecutionLib for bytes;
 
     /// @dev Maximum number of referrers in the referral chain
@@ -47,13 +46,13 @@ contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
     address public immutable prizeToken;
 
     /// @dev Maps delegation manager addresses to referral array hashes to recipient addresses
-    mapping(address delegationManager => mapping(bytes32 referralChainHash => address[] recipients)) public referrals;
+    mapping(address delegationManager => mapping(bytes32 referralChainHash => address[] recipients)) private referrals;
 
     /// @dev Maps delegation manager addresses to referral array hashes to redemption status
-    mapping(address delegationManager => mapping(bytes32 referralChainHash => bool redeemed)) public redeemed;
+    mapping(address delegationManager => mapping(bytes32 referralChainHash => bool redeemed)) private redeemed;
 
     /// @dev Array of prize amounts for each position in the referral array
-    uint256[] public prizeAmounts;
+    uint256[] private prizeAmounts;
 
     ////////////////////////////// Events //////////////////////////////
 
@@ -70,6 +69,20 @@ contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
      * @param prizeLevels The array of prize amounts
      */
     event PrizesSet(address indexed sender, uint256[] prizeLevels);
+
+    /**
+     * @dev Emitted when a payment is completed
+     * @param sender The address of the delegation manager on which the payment was completed
+     * @param referralChainHash The hash of the referral array
+     */
+    event PaymentCompleted(address indexed sender, bytes32 indexed referralChainHash);
+
+    /**
+     * @dev Emitted when a payment has been already made for a referral chain
+     * @param sender The address of the delegation manager on which the payment was made
+     * @param referralChainHash The hash of the referral array
+     */
+    event ReferralChainAlreadyPaid(address indexed sender, bytes32 indexed referralChainHash);
 
     ////////////////////////////// Constructor //////////////////////////////
 
@@ -127,20 +140,10 @@ contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
             delegatorsLength_ > 1 && delegatorsLength_ <= MAX_REFERRAL_DEPTH, "DelegationChainEnforcer:invalid-delegators-length"
         );
 
-        // TODO: make sure someonen can't add himself twice in the same delegation chain
-        // TODO: make sure the intermediary chain is involved otherwise fail, pleople would add themselves to the chain at the end
-        // multiple times to get paid multiple times, or an address they control?
-
         bytes32 referralChainHash_ = keccak256(abi.encode(_delegators));
 
         address[] storage referrals_ = referrals[address(delegationManager)][referralChainHash_];
         require(referrals_.length == 0, "DelegationChainEnforcer:referral-chain-already-posted");
-
-        // // Push up to the last maxPrizePayments delegators in reverse order
-        // uint256 startIndex_ = delegatorsLength_ < maxPrizePayments ? 0 : delegatorsLength_ - maxPrizePayments;
-        // for (uint256 i = delegatorsLength_; i > startIndex_; i--) {
-        //     referrals_.push(_delegators[i - 1]);
-        // }
 
         // Push up to the last delegators according to the amount of prizes.
         uint256 startIndex_ = delegatorsLength_ > maxPrizePayments ? delegatorsLength_ - maxPrizePayments : 0;
@@ -153,11 +156,27 @@ contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
 
     /**
      * @notice Get the referrals for a given referral chain hash
+     * @param _delegationManager The address of the delegation manager
      * @param _referralChainHash The hash of the referral chain
      * @return referrals_ The array of referrals
      */
-    function getReferrals(bytes32 _referralChainHash) external view returns (address[] memory referrals_) {
-        return referrals[address(delegationManager)][_referralChainHash];
+    function getReferrals(
+        address _delegationManager,
+        bytes32 _referralChainHash
+    )
+        external
+        view
+        returns (address[] memory referrals_)
+    {
+        return referrals[_delegationManager][_referralChainHash];
+    }
+
+    /**
+     * @notice Get all the prize amounts for the referrers
+     * @return prizeAmounts_ The array of prize amounts
+     */
+    function getPrizeAmounts() external view returns (uint256[] memory) {
+        return prizeAmounts;
     }
 
     ////////////////////////////// Public Methods //////////////////////////////
@@ -196,7 +215,6 @@ contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
      * @param _args ABI-encoded (Delegation[][] allowanceDelegations)
      * @param _executionCallData Calldata containing encoded referral array
      * @param _delegationHash The hash of the delegation
-     * @param _delegator The address of the delegator
      * @param _redeemer The address of the redeemer
      */
     function afterHook(
@@ -205,53 +223,51 @@ contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
         ModeCode,
         bytes calldata _executionCallData,
         bytes32 _delegationHash,
-        address _delegator,
+        address,
         address _redeemer
     )
         public
         override
     {
-        console2.log("Checkpoint after hook");
-        console2.log("_delegator:", _delegator);
-        console2.log("_redeemer:", _redeemer);
-
         bytes32 referralChainHash_ = _getReferralChainHash(_executionCallData);
 
-        // Stops afterHook execution if the referral hash has already been redeemed
-        // TODO: add a test to check this mapping
-        if (redeemed[msg.sender][referralChainHash_]) return;
+        // Stops afterHook execution if the referral hash has already been paid
+        if (redeemed[msg.sender][referralChainHash_]) {
+            emit ReferralChainAlreadyPaid(msg.sender, referralChainHash_);
+            return;
+        }
+        redeemed[msg.sender][referralChainHash_] = true;
 
         address[] memory referrals_ = referrals[msg.sender][referralChainHash_];
 
         (Delegation[][] memory allowanceDelegations_, uint256 allowanceLength_) =
             _validateAndDecodeArgs(_args, _delegationHash, _redeemer);
 
+        require(referrals_.length == allowanceLength_, "DelegationChainEnforcer:invalid-delegations-length");
+
         bytes[] memory permissionContexts_ = new bytes[](allowanceLength_);
         bytes[] memory executionCallDatas_ = new bytes[](allowanceLength_);
         ModeCode[] memory encodedModes_ = new ModeCode[](allowanceLength_);
-
-        require(referrals_.length == allowanceDelegations_.length, "DelegationChainEnforcer:invalid-delegations-length");
+        uint256[] memory balancesBefore_ = new uint256[](allowanceLength_);
 
         address token_ = prizeToken;
-        for (uint256 i = 0; i < allowanceLength_; ++i) {
+        for (uint256 i = 0; i < allowanceLength_;) {
+            balancesBefore_[i] = IERC20(token_).balanceOf(referrals_[i]);
             permissionContexts_[i] = abi.encode(allowanceDelegations_[i]);
             executionCallDatas_[i] =
                 ExecutionLib.encodeSingle(token_, 0, abi.encodeCall(IERC20.transfer, (referrals_[i], prizeAmounts[i])));
             encodedModes_[i] = ModeLib.encodeSimpleSingle();
-            console2.log("prizeAmounts[i]:", prizeAmounts[i]);
+            unchecked {
+                ++i;
+            }
         }
 
-        uint256[] memory balanceBefore_ = _getBalances(referrals_, token_);
-
-        console2.log("ABOUT TO REDEEM INSIDE AFTERHOOK");
         // Attempt to redeem the delegation and make the payment
         delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
-        console2.log("AFTER REDEMPTION INSIDE AFTERHOOK");
 
-        //TODO: If this fails, for memory, then try to pass the redeemDelegations() as callback below.
-        _validateTransfer(referrals_, token_, balanceBefore_);
+        _validateTransfer(referrals_, IERC20(token_), balancesBefore_);
 
-        redeemed[msg.sender][referralChainHash_] = true;
+        emit PaymentCompleted(msg.sender, referralChainHash_);
     }
 
     /**
@@ -286,30 +302,17 @@ contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
     }
 
     /**
-     * @dev Gets the balances of recipients for a specific token
-     * @param _recipients Array of recipient addresses
-     * @param _token The token address
-     * @return balances_ Array of balances for each recipient
-     */
-    function _getBalances(address[] memory _recipients, address _token) internal view returns (uint256[] memory balances_) {
-        uint256 recipientsLength_ = _recipients.length;
-        balances_ = new uint256[](recipientsLength_);
-        for (uint256 i = 0; i < recipientsLength_; ++i) {
-            balances_[i] = IERC20(_token).balanceOf(_recipients[i]);
-        }
-    }
-
-    /**
      * @dev Validates that transfers were successful by checking recipient balances
      * @param _recipients Array of recipient addresses
      * @param _token The token address
      * @param balanceBefore_ Array of balances before the transfer
      */
-    function _validateTransfer(address[] memory _recipients, address _token, uint256[] memory balanceBefore_) internal view {
-        // TODO: prizeAmounts read twice from storage
-        uint256[] memory balances_ = _getBalances(_recipients, _token);
-        for (uint256 i = 0; i < _recipients.length; ++i) {
-            require(balances_[i] >= balanceBefore_[i] + prizeAmounts[i], "DelegationChainEnforcer:payment-not-received");
+    function _validateTransfer(address[] memory _recipients, IERC20 _token, uint256[] memory balanceBefore_) internal view {
+        uint256[] memory prizes_ = prizeAmounts;
+        uint256 recipientsLength_ = _recipients.length;
+        for (uint256 i = 0; i < recipientsLength_; ++i) {
+            uint256 newBalance_ = _token.balanceOf(_recipients[i]);
+            require(newBalance_ >= balanceBefore_[i] + prizes_[i], "DelegationChainEnforcer:payment-not-received");
         }
     }
 
@@ -330,11 +333,10 @@ contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
         view
         returns (Delegation[][] memory allowanceDelegations_, uint256 allowanceLength_)
     {
-        // TODO: we could assume a single direct delegation with the total amount, instead of an array of delegations
         (allowanceDelegations_) = abi.decode(_args, (Delegation[][]));
         allowanceLength_ = allowanceDelegations_.length;
         require(allowanceLength_ > 0, "DelegationChainEnforcer:invalid-allowance-delegations-length");
-
+        bytes memory packedArgs = abi.encodePacked(_delegationHash, _redeemer);
         for (uint256 i = 0; i < allowanceLength_; ++i) {
             require(
                 allowanceDelegations_[i][0].caveats.length > 0
@@ -342,7 +344,7 @@ contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
                 "DelegationChainEnforcer:missing-argsEqualityCheckEnforcer"
             );
             // The Args Enforcer with this data (hash & redeemer) must be the first Enforcer in the payment delegations caveats
-            allowanceDelegations_[i][0].caveats[0].args = abi.encodePacked(_delegationHash, _redeemer);
+            allowanceDelegations_[i][0].caveats[0].args = packedArgs;
         }
     }
 
@@ -353,12 +355,12 @@ contract DelegationChainEnforcer is CaveatEnforcer, Ownable {
      */
     function _getReferralChainHash(bytes calldata _executionCallData) internal pure returns (bytes32 referralChainHash_) {
         (,, bytes calldata callData_) = _executionCallData.decodeSingle();
-        (address[] memory delegators_) = abi.decode(callData_[4:], (address[]));
-        referralChainHash_ = keccak256(abi.encode(delegators_));
+        // Passing the addresses of the post() function. It is already the exact ABI encoding of the address[]
+        referralChainHash_ = keccak256(callData_[4:]);
     }
 
     /**
-     * @dev Validates the position of a delegator in the referral array
+     * @dev Validates the position of a delegator in the referral array during the beforeHook
      * @param _executionCallData Calldata containing encoded referral array
      * @param _terms 32 bytes encoded with the delegator's expected position in the referral array
      * @param _delegator The address of the delegator

@@ -22,9 +22,6 @@ import { RedeemerEnforcer } from "../../src/enforcers/RedeemerEnforcer.sol";
 import { BasicERC20 } from "../utils/BasicERC20.t.sol";
 import "forge-std/Test.sol";
 
-// Import the event
-import { DelegationChainEnforcer as DelegationChainEnforcerEvents } from "../../src/enforcers/DelegationChainEnforcer.sol";
-
 contract DelegationChainEnforcerTest is BaseTest {
     ////////////////////////////// Setup //////////////////////////////
 
@@ -48,6 +45,8 @@ contract DelegationChainEnforcerTest is BaseTest {
     uint256[] public prizeLevels;
     BasicERC20 public token;
     bytes32 public firstReferralDelegationHash;
+
+    uint256 public maxPrizePayments;
 
     constructor() {
         IMPLEMENTATION = Implementation.MultiSig;
@@ -87,6 +86,7 @@ contract DelegationChainEnforcerTest is BaseTest {
             address(token),
             prizeLevels
         );
+        maxPrizePayments = delegationChainEnforcer.maxPrizePayments();
     }
 
     ////////////////////////////// Constructor Tests //////////////////////////////
@@ -161,7 +161,7 @@ contract DelegationChainEnforcerTest is BaseTest {
     ////////////////////////////// setPrizes Tests //////////////////////////////
 
     /// @notice Tests that owner can successfully set new prize amounts
-    function test_setPrizes() public {
+    function test_setPrizes1() public {
         uint256[] memory newPrizes = new uint256[](5);
         newPrizes[0] = 20 ether;
         newPrizes[1] = 15 ether;
@@ -173,8 +173,9 @@ contract DelegationChainEnforcerTest is BaseTest {
         delegationChainEnforcer.setPrizes(newPrizes);
 
         // Verify each prize amount was set correctly
+        uint256[] memory prizeAmounts = delegationChainEnforcer.getPrizeAmounts();
         for (uint256 i = 0; i < newPrizes.length; i++) {
-            assertEq(delegationChainEnforcer.prizeAmounts(i), newPrizes[i]);
+            assertEq(prizeAmounts[i], newPrizes[i]);
         }
     }
 
@@ -229,7 +230,7 @@ contract DelegationChainEnforcerTest is BaseTest {
 
         vm.prank(address(chainIntegrity.deleGator));
         vm.expectEmit(true, false, false, true);
-        emit DelegationChainEnforcerEvents.PrizesSet(address(chainIntegrity.deleGator), newPrizes);
+        emit DelegationChainEnforcer.PrizesSet(address(chainIntegrity.deleGator), newPrizes);
         delegationChainEnforcer.setPrizes(newPrizes);
     }
 
@@ -311,13 +312,12 @@ contract DelegationChainEnforcerTest is BaseTest {
 
         vm.prank(address(chainIntegrity.deleGator));
         vm.expectEmit(true, true, false, true);
-        emit DelegationChainEnforcerEvents.ReferralArrayPosted(
-            address(chainIntegrity.deleGator), keccak256(abi.encode(delegators_))
-        );
+        emit DelegationChainEnforcer.ReferralArrayPosted(address(chainIntegrity.deleGator), keccak256(abi.encode(delegators_)));
         delegationChainEnforcer.post(delegators_);
 
         // Verify the referrals were stored correctly
-        address[] memory storedReferrals = delegationChainEnforcer.getReferrals(keccak256(abi.encode(delegators_)));
+        address[] memory storedReferrals =
+            delegationChainEnforcer.getReferrals(address(delegationManager), keccak256(abi.encode(delegators_)));
         assertEq(storedReferrals.length, 2, "referrals length should be 2");
         assertEq(storedReferrals[0], delegators_[0], "referral[0] should be alice");
         assertEq(storedReferrals[1], delegators_[1], "referral[1] should be bob");
@@ -332,13 +332,12 @@ contract DelegationChainEnforcerTest is BaseTest {
 
         vm.prank(address(chainIntegrity.deleGator));
         vm.expectEmit(true, true, false, true);
-        emit DelegationChainEnforcerEvents.ReferralArrayPosted(
-            address(chainIntegrity.deleGator), keccak256(abi.encode(delegators_))
-        );
+        emit DelegationChainEnforcer.ReferralArrayPosted(address(chainIntegrity.deleGator), keccak256(abi.encode(delegators_)));
         delegationChainEnforcer.post(delegators_);
 
         // Verify the referrals were stored correctly (only last maxPrizePayments)
-        address[] memory storedReferrals = delegationChainEnforcer.getReferrals(keccak256(abi.encode(delegators_)));
+        address[] memory storedReferrals =
+            delegationChainEnforcer.getReferrals(address(delegationManager), keccak256(abi.encode(delegators_)));
         assertEq(storedReferrals.length, 5, "referrals length should be 5"); // maxPrizePayments
         uint256 count = 0;
         for (uint256 i = delegators_.length - 5; i < delegators_.length; ++i) {
@@ -406,7 +405,8 @@ contract DelegationChainEnforcerTest is BaseTest {
         delegationChainEnforcer.post(delegators_);
 
         // Verify the referrals were stored in correct order
-        address[] memory storedReferrals = delegationChainEnforcer.getReferrals(keccak256(abi.encode(delegators_)));
+        address[] memory storedReferrals =
+            delegationChainEnforcer.getReferrals(address(delegationManager), keccak256(abi.encode(delegators_)));
         assertEq(storedReferrals.length, 3, "referrals length should be 3");
         assertEq(storedReferrals[0], delegators_[0], "referral[0] should be alice");
         assertEq(storedReferrals[1], delegators_[1], "referral[1] should be bob");
@@ -424,7 +424,8 @@ contract DelegationChainEnforcerTest is BaseTest {
         delegationChainEnforcer.post(delegators_);
 
         // Verify all delegators were stored since length < maxPrizePayments
-        address[] memory storedReferrals = delegationChainEnforcer.getReferrals(keccak256(abi.encode(delegators_)));
+        address[] memory storedReferrals =
+            delegationChainEnforcer.getReferrals(address(delegationManager), keccak256(abi.encode(delegators_)));
         assertEq(storedReferrals.length, 3, "referrals length should be 3");
         assertEq(storedReferrals[0], delegators_[0], "referral[0] should be alice");
         assertEq(storedReferrals[1], delegators_[1], "referral[1] should be bob");
@@ -609,7 +610,6 @@ contract DelegationChainEnforcerTest is BaseTest {
 
         vm.prank(address(chainIntegrity.deleGator));
         delegationChainEnforcer.post(delegators_);
-        bytes32 referralChainHash_ = keccak256(abi.encode(delegators_));
 
         // Create execution data for the post function
         Execution memory execution_ = Execution({
@@ -692,6 +692,92 @@ contract DelegationChainEnforcerTest is BaseTest {
         // Try to execute afterHook with empty delegations array
         vm.prank(address(delegationManager));
         vm.expectRevert("DelegationChainEnforcer:invalid-allowance-delegations-length");
+        delegationChainEnforcer.afterHook(
+            hex"",
+            abi.encode(delegations_),
+            singleDefaultMode,
+            ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData),
+            firstReferralDelegationHash,
+            address(users.alice.deleGator),
+            address(ICA.deleGator)
+        );
+    }
+
+    /// @notice Tests the afterHook events are emitted
+    function test_referralChainAfterHookEvents() public {
+        // First post a valid referral chain
+        address[] memory delegators_ = new address[](2);
+        delegators_[0] = address(users.alice.deleGator);
+        delegators_[1] = address(users.bob.deleGator);
+
+        vm.prank(address(chainIntegrity.deleGator));
+        delegationChainEnforcer.post(delegators_);
+
+        // Create execution data for the post function
+        Execution memory execution_ = Execution({
+            target: address(delegationChainEnforcer),
+            value: 0,
+            callData: abi.encodeCall(DelegationChainEnforcer.post, (delegators_))
+        });
+
+        // Create delegations with valid structure
+        Delegation[][] memory delegations_ = new Delegation[][](2);
+        delegations_[0] = new Delegation[](1);
+        delegations_[1] = new Delegation[](1);
+
+        Caveat[] memory caveats_ = new Caveat[](2);
+        caveats_[0] = Caveat({
+            args: hex"",
+            enforcer: address(argsEqualityCheckEnforcer),
+            terms: abi.encodePacked(firstReferralDelegationHash, address(ICA.deleGator))
+        });
+        caveats_[1] = Caveat({
+            args: hex"",
+            enforcer: address(erc20TransferAmountEnforcer),
+            terms: abi.encodePacked(address(token), prizeLevels[0])
+        });
+
+        delegations_[0][0] = Delegation({
+            delegate: address(delegationChainEnforcer),
+            delegator: address(treasury.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: caveats_,
+            salt: 0,
+            signature: hex""
+        });
+        delegations_[1][0] = Delegation({
+            delegate: address(delegationChainEnforcer),
+            delegator: address(treasury.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: caveats_,
+            salt: 1,
+            signature: hex""
+        });
+
+        delegations_[0][0] = signDelegation(treasury, delegations_[0][0]);
+        delegations_[1][0] = signDelegation(treasury, delegations_[1][0]);
+
+        bytes32 referralChainHash_ = keccak256(abi.encode(delegators_));
+
+        // First execution to mark the chain as paid
+        // Emits the event PaymentCompleted
+        vm.prank(address(delegationManager));
+        vm.expectEmit(true, true, true, true);
+        emit DelegationChainEnforcer.PaymentCompleted(address(delegationManager), referralChainHash_);
+        delegationChainEnforcer.afterHook(
+            hex"",
+            abi.encode(delegations_),
+            singleDefaultMode,
+            ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData),
+            firstReferralDelegationHash,
+            address(users.alice.deleGator),
+            address(ICA.deleGator)
+        );
+
+        // Second execution should emit ReferralChainAlreadyPaid event
+        vm.prank(address(delegationManager));
+        vm.expectEmit(true, true, true, true);
+        emit DelegationChainEnforcer.ReferralChainAlreadyPaid(address(delegationManager), referralChainHash_);
         delegationChainEnforcer.afterHook(
             hex"",
             abi.encode(delegations_),
@@ -821,7 +907,267 @@ contract DelegationChainEnforcerTest is BaseTest {
         );
     }
 
+    ////////////////////////////// Helper Functions //////////////////////////////
+
+    function _createDelegation(
+        address _delegate,
+        TestUser memory _delegatorTestUser,
+        bytes32 _authority,
+        Caveat[] memory _caveats
+    )
+        internal
+        view
+        returns (Delegation memory)
+    {
+        Delegation memory delegation_ = Delegation({
+            delegate: _delegate,
+            delegator: address(_delegatorTestUser.deleGator),
+            authority: _authority,
+            caveats: _caveats,
+            salt: 0,
+            signature: hex""
+        });
+        return signDelegation(_delegatorTestUser, delegation_);
+    }
+
+    function _createPositionCaveat(uint256 _position) internal view returns (Caveat[] memory) {
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] =
+            Caveat({ args: hex"", enforcer: address(delegationChainEnforcer), terms: abi.encodePacked(uint256(_position)) });
+        return caveats_;
+    }
+
+    function _createDelegationChain(TestUser[] memory _testUsers) internal returns (Delegation[] memory) {
+        Delegation[] memory delegations_ = new Delegation[](_testUsers.length * 2 + 1);
+        bytes32 lastDelegationHash;
+
+        // The delegations are stored from leaf to root.
+        // First delegation from chainIntegrity to ICA
+        delegations_[delegations_.length - 1] =
+            _createDelegation(address(ICA.deleGator), chainIntegrity, ROOT_AUTHORITY, _getChainIntegrityCaveats());
+        lastDelegationHash = EncoderLib._getDelegationHash(delegations_[delegations_.length - 1]);
+
+        // Create delegations in pairs (from ICA to user, then user back to ICA)
+        uint256 userCount = 0;
+        bool firstReferralSet = false;
+        for (uint256 i = delegations_.length - 2; i > 0; i -= 2) {
+            // From ICA to user
+            delegations_[i] = _createDelegation(address(_testUsers[userCount].deleGator), ICA, lastDelegationHash, new Caveat[](0));
+            lastDelegationHash = EncoderLib._getDelegationHash(delegations_[i]);
+
+            // From user to ICA
+            delegations_[i - 1] = _createDelegation(
+                address(ICA.deleGator), _testUsers[userCount], lastDelegationHash, _createPositionCaveat(userCount)
+            );
+            lastDelegationHash = EncoderLib._getDelegationHash(delegations_[i - 1]);
+
+            // If this is the first referral delegation, set the first referral delegation hash
+            // This is used in the args enforcer later
+            if (!firstReferralSet) {
+                firstReferralDelegationHash = lastDelegationHash;
+                firstReferralSet = true;
+            }
+            userCount++;
+            if (i == 1) break;
+        }
+
+        return delegations_;
+    }
+
+    // This test creates a delegation chain with 2 referrals with is less the amount of prize levels.
+    function test_twoReferralDelegationChain() public {
+        TestUser[] memory testUsers_ = new TestUser[](2);
+        testUsers_[0] = users.alice;
+        testUsers_[1] = users.bob;
+
+        address[] memory delegators_ = _getAddressFromUsers(testUsers_);
+
+        // Create delegation chain
+        (Delegation[] memory delegations_) = _createDelegationChain(testUsers_);
+
+        // Store delegators for payment validation
+        delegators = delegators_;
+
+        // Add redemption args to the first delegation that uses the DelegationChainEnforcer
+        // This is Alice to ICA
+        delegations_[delegations_.length - 3].caveats[0].args = _getRedemptionArgs();
+
+        uint256[] memory balancesBefore_ = _getBalances(delegators);
+
+        // Execute the delegation chain through ICA
+        invokeDelegation_UserOp(ICA, delegations_, _getExecution());
+
+        _validatePayments(balancesBefore_);
+    }
+
+    // This test creates a delegation chain with 5 referrals with is exactly the amount of prize levels.
+    function test_fiveReferralDelegationChain() public {
+        TestUser[] memory testUsers_ = new TestUser[](5);
+        testUsers_[0] = users.alice;
+        testUsers_[1] = users.bob;
+        testUsers_[2] = users.carol;
+        testUsers_[3] = users.dave;
+        testUsers_[4] = users.eve;
+
+        address[] memory delegators_ = _getAddressFromUsers(testUsers_);
+
+        // Create delegation chain
+        (Delegation[] memory delegations_) = _createDelegationChain(testUsers_);
+
+        // Store delegators for payment validation
+        delegators = delegators_;
+
+        // Add redemption args to the first delegation that uses the DelegationChainEnforcer
+        // This is Alice to ICA
+        delegations_[delegations_.length - 3].caveats[0].args = _getRedemptionArgs();
+
+        uint256[] memory balancesBefore_ = _getBalances(delegators);
+
+        // Execute the delegation chain through ICA
+        invokeDelegation_UserOp(ICA, delegations_, _getExecution());
+
+        _validatePayments(balancesBefore_);
+    }
+
+    // This test creates a delegation chain with 7 referrals with is more than the amount of prize levels.
+    // Meaning that only the first 5 payments will be paid out.
+    function test_sevenReferralDelegationChain() public {
+        TestUser[] memory testUsers_ = new TestUser[](7);
+        testUsers_[0] = users.alice;
+        testUsers_[1] = users.bob;
+        testUsers_[2] = users.carol;
+        testUsers_[3] = users.dave;
+        testUsers_[4] = users.eve;
+        testUsers_[5] = users.frank;
+        testUsers_[6] = users.grace;
+
+        address[] memory delegators_ = _getAddressFromUsers(testUsers_);
+
+        // Create delegation chain
+        (Delegation[] memory delegations_) = _createDelegationChain(testUsers_);
+
+        // Store delegators for payment validation
+        delegators = delegators_;
+
+        // Add redemption args to the first delegation that uses the DelegationChainEnforcer
+        // This is Alice to ICA
+        // _getRedemptionArgs();
+        delegations_[delegations_.length - 3].caveats[0].args = _getRedemptionArgs();
+
+        uint256[] memory balancesBefore_ = _getBalances(delegators);
+
+        // Execute the delegation chain through ICA
+        invokeDelegation_UserOp(ICA, delegations_, _getExecution());
+
+        _validatePayments(balancesBefore_);
+    }
+
+    // This test creates a delegation chain with 3 referrals with exactly 3 prize levels
+    function test_threePrizeLevelsDelegationChain() public {
+        // Clear prizeLevels
+        delete prizeLevels;
+        // Set up new prize levels with 3 amounts
+        prizeLevels.push(15 ether);
+        prizeLevels.push(10 ether);
+        prizeLevels.push(5 ether);
+
+        // Create new enforcer with 3 prize levels
+        delegationChainEnforcer = new DelegationChainEnforcer(
+            address(chainIntegrity.deleGator),
+            IDelegationManager(address(delegationManager)),
+            address(argsEqualityCheckEnforcer),
+            address(token),
+            prizeLevels
+        );
+        maxPrizePayments = delegationChainEnforcer.maxPrizePayments();
+
+        // Create test users array with 3 users
+        TestUser[] memory testUsers_ = new TestUser[](3);
+        testUsers_[0] = users.alice;
+        testUsers_[1] = users.bob;
+        testUsers_[2] = users.carol;
+
+        address[] memory delegators_ = _getAddressFromUsers(testUsers_);
+
+        // Create delegation chain
+        (Delegation[] memory delegations_) = _createDelegationChain(testUsers_);
+
+        // Store delegators for payment validation
+        delegators = delegators_;
+
+        // Add redemption args to the first delegation that uses the DelegationChainEnforcer
+        delegations_[delegations_.length - 3].caveats[0].args = _getRedemptionArgs();
+
+        uint256[] memory balancesBefore_ = _getBalances(delegators);
+
+        // Execute the delegation chain through ICA
+        invokeDelegation_UserOp(ICA, delegations_, _getExecution());
+
+        _validatePayments(balancesBefore_);
+    }
+
+    // This test creates a delegation chain with 7 referrals with 7 prize levels
+    function test_sevenPrizeLevelsDelegationChain() public {
+        // Set up new prize levels with 7 amounts
+
+        // Clear prizeLevels
+        delete prizeLevels;
+        // Set up new prize levels with 3 amounts
+        prizeLevels.push(20 ether);
+        prizeLevels.push(15 ether);
+        prizeLevels.push(10 ether);
+        prizeLevels.push(8 ether);
+        prizeLevels.push(6 ether);
+        prizeLevels.push(4 ether);
+        prizeLevels.push(2 ether);
+
+        // Create new enforcer with 7 prize levels
+        delegationChainEnforcer = new DelegationChainEnforcer(
+            address(chainIntegrity.deleGator),
+            IDelegationManager(address(delegationManager)),
+            address(argsEqualityCheckEnforcer),
+            address(token),
+            prizeLevels
+        );
+        maxPrizePayments = delegationChainEnforcer.maxPrizePayments();
+
+        // Create test users array with 7 users
+        TestUser[] memory testUsers_ = new TestUser[](7);
+        testUsers_[0] = users.alice;
+        testUsers_[1] = users.bob;
+        testUsers_[2] = users.carol;
+        testUsers_[3] = users.dave;
+        testUsers_[4] = users.eve;
+        testUsers_[5] = users.frank;
+        testUsers_[6] = users.grace;
+
+        address[] memory delegators_ = _getAddressFromUsers(testUsers_);
+
+        // Create delegation chain
+        (Delegation[] memory delegations_) = _createDelegationChain(testUsers_);
+
+        // Store delegators for payment validation
+        delegators = delegators_;
+
+        // Add redemption args to the first delegation that uses the DelegationChainEnforcer
+        delegations_[delegations_.length - 3].caveats[0].args = _getRedemptionArgs();
+
+        uint256[] memory balancesBefore_ = _getBalances(delegators);
+
+        // Execute the delegation chain through ICA
+        invokeDelegation_UserOp(ICA, delegations_, _getExecution());
+
+        _validatePayments(balancesBefore_);
+    }
+
     ////////////////////////////// Internal Utils //////////////////////////////
+    function _getAddressFromUsers(TestUser[] memory _testUsers) internal pure returns (address[] memory addresses_) {
+        uint256 length_ = _testUsers.length;
+        addresses_ = new address[](length_);
+        for (uint256 i = 0; i < length_; i++) {
+            addresses_[i] = address(_testUsers[i].deleGator);
+        }
+    }
 
     // The args contain a delegation chain for each of the delegators/prize levels, and the token to redeem the payments.
     function _getRedemptionArgs() internal view returns (bytes memory encoded_) {
@@ -831,8 +1177,15 @@ contract DelegationChainEnforcerTest is BaseTest {
         // enforcer is the one that redeems the payments after that the others skip it.
         // The args enforcer needs the redeemer, the delegation hash alone is not enough.
 
-        Delegation[][] memory delegations_ = new Delegation[][](delegators.length);
-        for (uint256 i = 0; i < delegators.length; i++) {
+        // For delegators longer than maxPrizePayments, we still create an array of length maxPrizePayments since that's the max
+        // prize level
+        require(prizeLevels.length == maxPrizePayments, "prizeLevels length must be equal to maxPrizePayments");
+
+        uint256 iterations_ = delegators.length > maxPrizePayments ? maxPrizePayments : delegators.length;
+        Delegation[][] memory delegations_ = new Delegation[][](iterations_);
+
+        // Calculate starting index to get last 5 delegators if more than 5
+        for (uint256 i = 0; i < iterations_; i++) {
             delegations_[i] = new Delegation[](1);
 
             Caveat[] memory caveats_ = new Caveat[](2);
@@ -864,17 +1217,23 @@ contract DelegationChainEnforcerTest is BaseTest {
     }
 
     function _getBalances(address[] memory _recipients) internal view returns (uint256[] memory balances_) {
-        uint256 recipientsLength_ = _recipients.length;
-        balances_ = new uint256[](recipientsLength_);
-        for (uint256 i = 0; i < recipientsLength_; ++i) {
+        uint256 maxPrizeLevel = _recipients.length > maxPrizePayments ? maxPrizePayments : _recipients.length;
+        uint256 startIndex = _recipients.length > maxPrizePayments ? _recipients.length - maxPrizePayments : 0;
+
+        balances_ = new uint256[](maxPrizeLevel);
+        for (uint256 i = startIndex; i < maxPrizeLevel; ++i) {
             balances_[i] = IERC20(token).balanceOf(_recipients[i]);
         }
     }
 
     function _validatePayments(uint256[] memory balanceBefore_) internal {
         uint256[] memory balances_ = _getBalances(delegators);
-        for (uint256 i = 0; i < delegators.length; i++) {
-            assertEq(balances_[i], balanceBefore_[i] + prizeLevels[i], "The balance after is insufficient");
+        uint256 maxPrizeLevel = delegators.length > maxPrizePayments ? maxPrizePayments : delegators.length;
+        uint256 startIndex = delegators.length > maxPrizePayments ? delegators.length - maxPrizePayments : 0;
+        uint256 prizeLevelCount = 0;
+        for (uint256 i = startIndex; i < maxPrizeLevel; i++) {
+            assertEq(balances_[i], balanceBefore_[i] + prizeLevels[prizeLevelCount], "The balance after is insufficient");
+            prizeLevelCount++;
         }
     }
 
