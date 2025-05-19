@@ -34,6 +34,10 @@ contract DeployDelegationMetaSwapAdapter is Script {
         argsEqualityCheckEnforcer = vm.envAddress("ARGS_EQUALITY_CHECK_ENFORCER_ADDRESS");
         deployer = msg.sender;
         console2.log("~~~");
+        console2.log("MetaSwap: %s", address(metaSwap));
+        console2.log("SwapApiSignerEnforcer: %s", address(swapApiSignerEnforcer));
+        console2.log("ArgsEqualityCheckEnforcer: %s", address(argsEqualityCheckEnforcer));
+        console2.log("DelegationManager: %s", address(delegationManager));
         console2.log("Deployer: %s", address(deployer));
         console2.log("DelegationMetaSwapAdapter Owner %s", address(metaSwapAdapterOwner));
         console2.log("Salt:");

@@ -107,16 +107,14 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         view
         returns (uint256 availableAmount_, bool isNewPeriod_, uint256 currentPeriod_)
     {
-        uint256 index_ = abi.decode(_args, (uint256));
-        (address token_,,,) = getTermsInfo(_terms, index_);
+        (bytes32 hashKey_, uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) =
+            _getValues(_delegationHash, _delegationManager, _terms, _args);
 
-        bytes32 hashKey_ = _getHashKey(_delegationManager, token_, _delegationHash, index_);
         PeriodicAllowance memory storedAllowance_ = periodicAllowances[hashKey_];
         if (storedAllowance_.startDate != 0) {
             return _getAvailableAmount(storedAllowance_);
         }
 
-        (, uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) = getTermsInfo(_terms, index_);
         // Not yet initialized; simulate using provided terms.
         PeriodicAllowance memory allowance_ = PeriodicAllowance({
             periodAmount: periodAmount_,
@@ -366,5 +364,34 @@ contract MultiTokenPeriodEnforcer is CaveatEnforcer {
         returns (bytes32)
     {
         return keccak256(abi.encode(_delegationManager, _token, _delegationHash, _index));
+    }
+
+    /**
+     * @notice Extracts and processes values from delegation terms and arguments
+     * @dev Decodes the index from args, gets token info from terms, and generates a unique hash key
+     * @param _delegationHash The hash of the delegation
+     * @param _delegationManager The address of the delegation manager contract
+     * @param _terms The encoded terms containing token configurations
+     * @param _args The encoded arguments containing the token configuration index
+     * @return hashKey_ A unique hash key for identifying this specific delegation/token combination
+     * @return periodAmount_ The maximum amount that can be transferred per period
+     * @return periodDuration_ The duration of each period in seconds
+     * @return startDate_ The timestamp when the periodic allowance begins
+     */
+    function _getValues(
+        bytes32 _delegationHash,
+        address _delegationManager,
+        bytes calldata _terms,
+        bytes calldata _args
+    )
+        internal
+        pure
+        returns (bytes32 hashKey_, uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_)
+    {
+        uint256 index_ = abi.decode(_args, (uint256));
+        address token_;
+        (token_, periodAmount_, periodDuration_, startDate_) = getTermsInfo(_terms, index_);
+
+        hashKey_ = _getHashKey(_delegationManager, token_, _delegationHash, index_);
     }
 }
