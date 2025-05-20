@@ -5,6 +5,7 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";
+import "forge-std/Test.sol";
 
 /**
  * @title NativeTokenPeriodTransferEnforcer
@@ -169,6 +170,10 @@ contract NativeTokenPeriodTransferEnforcer is CaveatEnforcer {
         (, uint256 value_,) = _executionCallData.decodeSingle();
 
         (uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) = getTermsInfo(_terms);
+        console2.log("periodAmount_", periodAmount_);
+        console2.log("periodDuration_", periodDuration_);
+        console2.log("startDate_", startDate_);
+        console2.log("block.timestamp", block.timestamp);
 
         PeriodicAllowance storage allowance_ = periodicAllowances[msg.sender][_delegationHash];
 
@@ -189,6 +194,9 @@ contract NativeTokenPeriodTransferEnforcer is CaveatEnforcer {
 
         // Calculate available ETH using the current allowance state.
         (uint256 available_, bool isNewPeriod_, uint256 currentPeriod_) = _getAvailableAmount(allowance_);
+        console2.log("available_", available_);
+        console2.log("isNewPeriod_", isNewPeriod_);
+        console2.log("currentPeriod_", currentPeriod_);
 
         require(value_ <= available_, "NativeTokenPeriodTransferEnforcer:transfer-amount-exceeded");
 
