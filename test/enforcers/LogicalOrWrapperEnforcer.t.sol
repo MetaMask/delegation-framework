@@ -61,35 +61,6 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
         vm.label(address(limitedCallsEnforcer), "Limited Calls Enforcer");
     }
 
-    ////////////////////// Helper Functions //////////////////////
-
-    function _createCaveatGroup(
-        address[] memory _enforcers,
-        bytes[] memory _terms
-    )
-        internal
-        pure
-        returns (LogicalOrWrapperEnforcer.CaveatGroup memory)
-    {
-        require(_enforcers.length == _terms.length, "LogicalOrWrapperEnforcerTest:invalid-input-length");
-        Caveat[] memory caveats = new Caveat[](_enforcers.length);
-        for (uint256 i = 0; i < _enforcers.length; ++i) {
-            caveats[i] = Caveat({ enforcer: _enforcers[i], terms: _terms[i], args: hex"" });
-        }
-        return LogicalOrWrapperEnforcer.CaveatGroup({ caveats: caveats });
-    }
-
-    function _createSelectedGroup(
-        uint256 _groupIndex,
-        bytes[] memory _caveatArgs
-    )
-        internal
-        pure
-        returns (LogicalOrWrapperEnforcer.SelectedGroup memory)
-    {
-        return LogicalOrWrapperEnforcer.SelectedGroup({ groupIndex: _groupIndex, caveatArgs: _caveatArgs });
-    }
-
     ////////////////////// Valid cases //////////////////////
 
     /// @notice Tests that a single caveat group with one caveat works correctly by verifying that a group with a single allowed
@@ -811,6 +782,35 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(
             address(users.carol.deleGator).balance, initialCarolBalance_ + 0.5 ether, "Carol's balance should increase by 0.5 ether"
         );
+    }
+
+    ////////////////////// Helper Functions //////////////////////
+
+    function _createCaveatGroup(
+        address[] memory _enforcers,
+        bytes[] memory _terms
+    )
+        internal
+        pure
+        returns (LogicalOrWrapperEnforcer.CaveatGroup memory)
+    {
+        require(_enforcers.length == _terms.length, "LogicalOrWrapperEnforcerTest:invalid-input-length");
+        Caveat[] memory caveats = new Caveat[](_enforcers.length);
+        for (uint256 i = 0; i < _enforcers.length; ++i) {
+            caveats[i] = Caveat({ enforcer: _enforcers[i], terms: _terms[i], args: hex"" });
+        }
+        return LogicalOrWrapperEnforcer.CaveatGroup({ caveats: caveats });
+    }
+
+    function _createSelectedGroup(
+        uint256 _groupIndex,
+        bytes[] memory _caveatArgs
+    )
+        internal
+        pure
+        returns (LogicalOrWrapperEnforcer.SelectedGroup memory)
+    {
+        return LogicalOrWrapperEnforcer.SelectedGroup({ groupIndex: _groupIndex, caveatArgs: _caveatArgs });
     }
 
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {

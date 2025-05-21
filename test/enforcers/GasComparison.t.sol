@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import "forge-std/Test.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
@@ -15,6 +14,7 @@ import { NativeTokenPeriodTransferEnforcer } from "../../src/enforcers/NativeTok
 import { ERC20PeriodTransferEnforcer } from "../../src/enforcers/ERC20PeriodTransferEnforcer.sol";
 import { ExactCalldataEnforcer } from "../../src/enforcers/ExactCalldataEnforcer.sol";
 import { ValueLteEnforcer } from "../../src/enforcers/ValueLteEnforcer.sol";
+import "forge-std/Test.sol";
 
 contract GasComparisonTest is CaveatEnforcerBaseTest {
     ////////////////////////////// State //////////////////////////////
@@ -28,8 +28,9 @@ contract GasComparisonTest is CaveatEnforcerBaseTest {
     address[] public tokens;
 
     // Constants for test configuration
-    uint256 constant NUM_NATIVE = 5;
-    uint256 constant NUM_ERC20 = 5;
+    uint256 constant AMOUNT_PER_TOKEN = 5;
+    uint256 constant NUM_NATIVE = AMOUNT_PER_TOKEN;
+    uint256 constant NUM_ERC20 = AMOUNT_PER_TOKEN;
     uint256 constant PERIOD_AMOUNT = 1 ether;
     uint256 constant PERIOD_DURATION = 1 days;
     uint256 startDate;
@@ -54,7 +55,12 @@ contract GasComparisonTest is CaveatEnforcerBaseTest {
         // Fills the first 5 elements with erc20, the rest with native
         for (uint256 i = 0; i < NUM_ERC20; i++) {
             tokens[i] = address(
-                new BasicERC20(address(this), string(abi.encodePacked("Token", i)), string(abi.encodePacked("TK", i)), 100 ether)
+                new BasicERC20(
+                    address(users.alice.deleGator),
+                    string(abi.encodePacked("Token", i)),
+                    string(abi.encodePacked("TK", i)),
+                    100 ether
+                )
             );
         }
 
@@ -68,7 +74,7 @@ contract GasComparisonTest is CaveatEnforcerBaseTest {
         vm.deal(address(this), 100 ether);
 
         // Set block timestamp to start date
-        // vm.warp(START_DATE);
+        vm.warp(block.timestamp + 1 days);
         startDate = block.timestamp;
     }
 
@@ -115,9 +121,9 @@ contract GasComparisonTest is CaveatEnforcerBaseTest {
     ////////////////////// Test Cases //////////////////////
 
     /// @notice Tests gas usage for LogicalOrWrapperEnforcer with 10 token configurations
-    function test_GasUsageLogicalOrWrapper() public {
+    function test_gasUsageLogicalOrWrapper() public {
         // Create caveat groups
-        LogicalOrWrapperEnforcer.CaveatGroup[] memory groups = new LogicalOrWrapperEnforcer.CaveatGroup[](NUM_NATIVE + NUM_ERC20);
+        LogicalOrWrapperEnforcer.CaveatGroup[] memory groups = new LogicalOrWrapperEnforcer.CaveatGroup[](tokens.length);
 
         address[] memory erc20Enforcers = new address[](2);
         erc20Enforcers[0] = address(erc20TokenEnforcer);
@@ -159,6 +165,8 @@ contract GasComparisonTest is CaveatEnforcerBaseTest {
         // Sign the delegation with Alice's key
         delegation_ = signDelegation(users.alice, delegation_);
 
+        uint256 totalGasUsed = 0;
+
         for (uint256 i = 0; i < tokens.length; i++) {
             LogicalOrWrapperEnforcer.SelectedGroup memory selectedGroup_ = _createSelectedGroup(i, new bytes[](2));
 
@@ -168,15 +176,84 @@ contract GasComparisonTest is CaveatEnforcerBaseTest {
             Delegation[] memory delegations_ = new Delegation[](1);
             delegations_[0] = delegation_;
 
-            // uint256 balanceBefore = _getBalance(tokens[i], RECIPIENT);
+            uint256 balanceBefore = _getBalance(tokens[i], RECIPIENT);
 
+            // Measure gas usage
+            uint256 gasStart = gasleft();
             // Have Bob redeem the delegation
             invokeDelegation_UserOp(users.bob, delegations_, _getExecution(tokens[i], RECIPIENT, PERIOD_AMOUNT / 2));
+            uint256 gasUsed = gasStart - gasleft();
+            totalGasUsed += gasUsed;
 
-            // uint256 balanceAfter = _getBalance(tokens[i], RECIPIENT);
+            uint256 balanceAfter = _getBalance(tokens[i], RECIPIENT);
 
-            // assertEq(balanceAfter, balanceBefore + PERIOD_AMOUNT / 2, "Balance not transferred");
+            assertEq(balanceAfter, balanceBefore + PERIOD_AMOUNT / 2, "Balance not transferred");
         }
+
+        console2.log("LogicalOrWrapper Total Gas Used:", totalGasUsed, " Amount of tokens: ", tokens.length);
+    }
+
+    /// @notice Tests gas usage for MultiTokenPeriodEnforcer with 10 token configurations
+    function test_gasUsageMultiTokenPeriod() public {
+        // Create terms for all tokens (5 ERC20 + 5 native)
+        bytes memory terms;
+        for (uint256 i = 0; i < tokens.length; i++) {
+            // For each token, append a 116-byte configuration
+            // TODO: IF THIS DOESN'T WORK, TRY TO USE THE blob_ = abi.encodePacked(blob_,
+            terms = bytes.concat(
+                terms,
+                abi.encodePacked(
+                    tokens[i], // token address (address(0) for native)
+                    PERIOD_AMOUNT, // period amount
+                    PERIOD_DURATION, // period duration
+                    startDate // start date
+                )
+            );
+        }
+
+        // Create a single caveat with the MultiTokenPeriodEnforcer
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] = Caveat({ enforcer: address(multiTokenEnforcer), terms: terms, args: hex"" });
+
+        // Create the delegation
+        Delegation memory delegation_ = Delegation({
+            delegator: address(users.alice.deleGator),
+            delegate: address(users.bob.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: caveats_,
+            salt: 0,
+            signature: hex""
+        });
+
+        // Sign the delegation with Alice's key
+        delegation_ = signDelegation(users.alice, delegation_);
+
+        uint256 totalGasUsed = 0;
+
+        // Test redeeming the delegation for each token
+        for (uint256 i = 0; i < tokens.length; i++) {
+            // Update args with the current token index
+            delegation_.caveats[0].args = abi.encode(i);
+
+            // Pack delegations into array
+            Delegation[] memory delegations_ = new Delegation[](1);
+            delegations_[0] = delegation_;
+
+            uint256 balanceBefore = _getBalance(tokens[i], RECIPIENT);
+
+            // Measure gas usage
+            uint256 gasStart = gasleft();
+            // Have Bob redeem the delegation
+            invokeDelegation_UserOp(users.bob, delegations_, _getExecution(tokens[i], RECIPIENT, PERIOD_AMOUNT / 2));
+            uint256 gasUsed = gasStart - gasleft();
+            totalGasUsed += gasUsed;
+
+            uint256 balanceAfter = _getBalance(tokens[i], RECIPIENT);
+
+            assertEq(balanceAfter, balanceBefore + PERIOD_AMOUNT / 2, "Balance not transferred");
+        }
+
+        console2.log("MultiTokenPeriod Total Gas Used:", totalGasUsed, " Amount of tokens: ", tokens.length);
     }
 
     function _getBalance(address token_, address recipient_) internal view returns (uint256) {
@@ -194,73 +271,6 @@ contract GasComparisonTest is CaveatEnforcerBaseTest {
             return Execution({ target: token_, value: 0, callData: _encodeERC20Transfer(recipient_, amount_) });
         }
     }
-
-    function createAndRedeemDelegation() internal {
-        // Create a simple delegation from Alice to Bob
-        Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({
-            enforcer: address(logicalOrWrapperEnforcer),
-            terms: abi.encodePacked(address(0), PERIOD_AMOUNT, PERIOD_DURATION, startDate),
-            args: hex""
-        });
-
-        Delegation memory delegation_ = Delegation({
-            delegator: address(users.alice.deleGator),
-            delegate: address(users.bob.deleGator),
-            authority: ROOT_AUTHORITY,
-            caveats: caveats_,
-            salt: 0,
-            signature: hex""
-        });
-
-        // Sign the delegation with Alice's key
-        delegation_ = signDelegation(users.alice, delegation_);
-
-        // Create execution for Bob to redeem
-        Execution memory execution_ = Execution({ target: RECIPIENT, value: PERIOD_AMOUNT / 2, callData: hex"" });
-
-        // Pack delegations into array
-        Delegation[] memory delegations_ = new Delegation[](1);
-        delegations_[0] = delegation_;
-
-        // Have Bob redeem the delegation
-        invokeDelegation_UserOp(users.bob, delegations_, execution_);
-    }
-
-    // /// @notice Tests gas usage for MultiTokenPeriodEnforcer with 10 token configurations
-    // function test_GasUsageMultiTokenPeriod() public {
-    //     // Create terms for all tokens (5 native + 5 ERC20)
-    //     bytes memory terms;
-    //     for (uint256 i = 0; i < NUM_NATIVE; i++) {
-    //         terms = bytes.concat(terms, abi.encodePacked(address(0), PERIOD_AMOUNT, PERIOD_DURATION, START_DATE));
-    //     }
-    //     for (uint256 i = 0; i < NUM_ERC20; i++) {
-    //         terms = bytes.concat(terms, abi.encodePacked(address(erc20Tokens[i]), PERIOD_AMOUNT, PERIOD_DURATION, START_DATE));
-    //     }
-
-    //     uint256 gasUsed = 0;
-
-    //     // Test native token transfers
-    //     for (uint256 i = 0; i < NUM_NATIVE; i++) {
-    //         bytes memory args = abi.encode(i);
-    //         bytes memory execData = _encodeNativeTransfer(address(0x123), PERIOD_AMOUNT / 2);
-    //         uint256 startGas = gasleft();
-    //         multiTokenEnforcer.beforeHook(terms, args, singleDefaultMode, execData, _dummyDelegationHash, address(0), _redeemer);
-    //         gasUsed += startGas - gasleft();
-    //     }
-
-    //     // Test ERC20 token transfers
-    //     for (uint256 i = 0; i < NUM_ERC20; i++) {
-    //         bytes memory args = abi.encode(NUM_NATIVE + i);
-    //         bytes memory callData = _encodeERC20Transfer(address(0x123), PERIOD_AMOUNT / 2);
-    //         bytes memory execData = _encodeSingleExecution(address(erc20Tokens[i]), 0, callData);
-    //         uint256 startGas = gasleft();
-    //         multiTokenEnforcer.beforeHook(terms, args, singleDefaultMode, execData, _dummyDelegationHash, address(0), _redeemer);
-    //         gasUsed += startGas - gasleft();
-    //     }
-
-    //     console2.log("Total gas used for MultiTokenPeriodEnforcer:", gasUsed);
-    // }
 
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {
         return ICaveatEnforcer(address(multiTokenEnforcer));
