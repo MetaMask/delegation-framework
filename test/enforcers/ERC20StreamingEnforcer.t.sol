@@ -10,16 +10,18 @@ import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { ERC20StreamingEnforcer } from "../../src/enforcers/ERC20StreamingEnforcer.sol";
 import { AllowedTargetsEnforcer } from "../../src/enforcers/AllowedTargetsEnforcer.sol";
 import { AllowedMethodsEnforcer } from "../../src/enforcers/AllowedMethodsEnforcer.sol";
+import { ValueLteEnforcer } from "../../src/enforcers/ValueLteEnforcer.sol";
 import { BasicERC20, IERC20 } from "../utils/BasicERC20.t.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
+import { console2 } from "forge-std/console2.sol";
 
 contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
     ////////////////////////////// State //////////////////////////////
     ERC20StreamingEnforcer public erc20StreamingEnforcer;
     AllowedTargetsEnforcer public allowedTargetsEnforcer;
     AllowedMethodsEnforcer public allowedMethodsEnforcer;
-
+    ValueLteEnforcer public valueLteEnforcer;
     BasicERC20 public basicERC20;
     // --- Added state variable for the mock token ---
     MockERC20 public mockToken;
@@ -40,7 +42,7 @@ contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
         vm.label(address(erc20StreamingEnforcer), "Streaming ERC20 Enforcer");
         allowedTargetsEnforcer = new AllowedTargetsEnforcer();
         allowedMethodsEnforcer = new AllowedMethodsEnforcer();
-
+        valueLteEnforcer = new ValueLteEnforcer();
         alice = address(users.alice.deleGator);
         bob = address(users.bob.deleGator);
         carol = address(users.carol.deleGator);
@@ -58,6 +60,7 @@ contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
         vm.label(address(erc20StreamingEnforcer), "ERC20StreamingEnforcer");
         vm.label(address(allowedTargetsEnforcer), "AllowedTargetsEnforcer");
         vm.label(address(allowedMethodsEnforcer), "AllowedMethodsEnforcer");
+        vm.label(address(valueLteEnforcer), "ValueLteEnforcer");
         vm.label(address(basicERC20), "BasicERC20");
         vm.label(address(mockToken), "MockToken");
     }
@@ -418,7 +421,7 @@ contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
     /**
      * @notice Integration test: Successful native token streaming via delegation.
      * A delegation is created that uses the erc20StreamingEnforcer. Two native token transfers
-     * (user ops) are executed sequentially. The test verifies that the enforcer’s state is updated
+     * (user ops) are executed sequentially. The test verifies that the enforcer's state is updated
      * correctly and that the available amount decreases as expected.
      */
     function test_nativeTokenStreamingIntegration_Success() public {
@@ -678,6 +681,112 @@ contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
         }
     }
 
+    uint256 startTime;
+    bytes terms;
+    // Delegation delegation;
+    uint256 balanceCarol;
+    bytes callData;
+    uint256 gasStart;
+    uint256 gasUsed;
+
+    uint256 storedInitial;
+    uint256 storedMax;
+    uint256 storedRate;
+    uint256 storedStart;
+    uint256 storedSpent;
+    uint256 availableAfter1;
+    uint256 availableAfter2;
+
+    // function test_erc20StreamingGasConsumption(uint256 iterations) public {
+    function test_erc20StreamingGasConsumption() public {
+        // Set a reasonable default if iterations is too high
+        // if (iterations > 10) iterations = 10;
+        // if (iterations == 0) iterations = 5;
+        uint256 iterations = 5;
+        // Setup simple streaming terms
+        startTime = block.timestamp;
+        terms = _encodeTerms(address(basicERC20), 100 ether, 100 ether, 1 ether, startTime);
+
+        // Create caveat with streaming enforcer
+        Caveat[] memory caveats = new Caveat[](2);
+        caveats[0] = Caveat({ args: hex"", enforcer: address(erc20StreamingEnforcer), terms: terms });
+        caveats[1] = Caveat({ args: hex"", enforcer: address(valueLteEnforcer), terms: abi.encodePacked(uint256(0)) });
+
+        // Create delegation
+        Delegation memory delegation = Delegation({
+            delegate: users.bob.addr,
+            delegator: alice,
+            authority: ROOT_AUTHORITY,
+            caveats: caveats,
+            salt: 0,
+            signature: hex""
+        });
+        delegation = signDelegation(users.alice, delegation);
+        delegationHash = EncoderLib._getDelegationHash(delegation);
+
+        // Prepare arrays for redemption
+        Delegation[] memory delegations = new Delegation[](1);
+        delegations[0] = delegation;
+
+        bytes[] memory permissionContexts = new bytes[](1);
+        permissionContexts[0] = abi.encode(delegations);
+
+        ModeCode[] memory modes = new ModeCode[](1);
+        modes[0] = singleDefaultMode;
+
+        // Prepare execution data for 1 ether transfer
+        callData = _encodeERC20Transfer(carol, 1 ether);
+        Execution memory execution = Execution({ target: address(basicERC20), value: 0, callData: callData });
+        bytes[] memory executionCallDatas = new bytes[](1);
+        executionCallDatas[0] = ExecutionLib.encodeSingle(execution.target, execution.value, execution.callData);
+
+        // Execute multiple redemptions and measure gas
+        vm.startPrank(users.bob.addr);
+        for (uint256 i = 0; i < iterations; i++) {
+            gasStart = gasleft();
+            delegationManager.redeemDelegations(permissionContexts, modes, executionCallDatas);
+            gasUsed = gasStart - gasleft();
+
+            // Get spent amount after this iteration
+            (,,,, uint256 spentAfter) = erc20StreamingEnforcer.streamingAllowances(address(delegationManager), delegationHash);
+
+            console2.log("Iteration %d - Gas used: %d", i + 1, gasUsed);
+
+            // Verify spent amount matches expected amount
+            assertEq(spentAfter, (i + 1) * 1 ether, "Spent amount should match number of iterations");
+        }
+        vm.stopPrank();
+
+        // Verify final balances
+        assertEq(basicERC20.balanceOf(carol), iterations * 1 ether, "Carol should have received correct amount");
+
+        // Final verification of spent amount
+        (,,,, uint256 finalSpent) = erc20StreamingEnforcer.streamingAllowances(address(delegationManager), delegationHash);
+        assertEq(finalSpent, iterations * 1 ether, "Final spent amount should match total iterations");
+    }
+
+    function test_logTransferSelector() public {
+        // Get the function selector for ERC20 transfer
+        bytes4 transferSelector = IERC20.transfer.selector;
+
+        // Log it
+        console2.log("ERC20 transfer selector");
+        console2.logBytes4(transferSelector);
+
+        // Verify it matches expected value
+        assertEq(transferSelector, bytes4(keccak256("transfer(address,uint256)")));
+
+        // Get the function selector for ERC20 transfer
+        bytes4 IERC20TestTransferSelector = IERC20Test.transfer.selector;
+
+        // Log it
+        console2.log("ERC20 transfer selector");
+        console2.logBytes4(IERC20TestTransferSelector);
+
+        // Verify it matches expected value
+        assertEq(IERC20TestTransferSelector, transferSelector);
+    }
+
     ////////////////////// Helper functions //////////////////////
     /**
      * @notice Builds a 148-byte `_terms` data for the new streaming logic:
@@ -767,4 +876,8 @@ contract MockERC20 is ERC20 {
 
         return super.transfer(to, amount);
     }
+}
+
+interface IERC20Test {
+    function transfer(address to, uint256 amount) external payable returns (bool);
 }
