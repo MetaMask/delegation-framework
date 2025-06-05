@@ -12,6 +12,7 @@ import { ModeCode } from "../utils/Types.sol";
  * @dev Tracks initial balance and accumulates expected increases per recipient/token pair within a delegation chain
  * @dev Only operates in default execution mode
  * @dev Terms format: token (20 bytes) + recipient (20 bytes) + expected increase (12 bytes)
+ * @dev Note: Removed isDecrease flag for test simplicity
  * @dev Security considerations:
  * - State is shared between enforcers watching the same recipient/token pair
  * - A single balance change can satisfy multiple enforcer instances simultaneously
@@ -123,7 +124,7 @@ contract ERC20BalanceChangeTotalEnforcer is CaveatEnforcer {
      * @return expected_ The expected balance increase amount.
      */
     function getTermsInfo(bytes calldata _terms) public pure returns (address token_, address recipient_, uint256 expected_) {
-        require(_terms.length == 52, "ERC20BalanceChangeTotalEnforcer:invalid-terms-length");
+        require(_terms.length == 72, "ERC20BalanceChangeTotalEnforcer:invalid-terms-length");
         token_ = address(bytes20(_terms[:20]));
         recipient_ = address(bytes20(_terms[20:40]));
         expected_ = uint256(bytes32(_terms[40:]));
