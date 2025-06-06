@@ -40,6 +40,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Linea
 - Base
 - Gnosis Chain
+- Berachain
 
 ### Testnets
 
