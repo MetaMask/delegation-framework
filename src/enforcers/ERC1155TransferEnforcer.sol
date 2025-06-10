@@ -53,14 +53,15 @@ contract ERC1155TransferEnforcer is CaveatEnforcer {
         pure
         returns (bool _isBatch, address _permittedContract, uint256[] memory _ids, uint256[] memory _values)
     {
+        _isBatch = abi.decode(_terms[:32], (bool));
         if (_isBatch) {
-            (_isBatch, _permittedContract, _ids, _values) = abi.decode(_terms, (bool, address, uint256[], uint256[]));
+            (, _permittedContract, _ids, _values) = abi.decode(_terms, (bool, address, uint256[], uint256[]));
         } else {
             uint256 id_;
             uint256 value_;
             _ids = new uint256[](1);
             _values = new uint256[](1);
-            (_isBatch, _permittedContract, id_, value_) = abi.decode(_terms, (bool, address, uint256, uint256));
+            (, _permittedContract, id_, value_) = abi.decode(_terms, (bool, address, uint256, uint256));
             _ids[0] = id_;
             _values[0] = value_;
         }
