@@ -11,23 +11,38 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
  * @notice This enforcer restricts the execution to the transfer of specific ERC1155 tokens.
  * @dev This enforcer operates only in single execution call type and with default execution mode.
  * Supports both single and batch transfers. The terms include a boolean flag indicating the transfer type.
+ * @dev The enforcer tracks spent amounts per token ID to enforce transfer limits.
  */
 contract ERC1155TransferEnforcer is CaveatEnforcer {
-    bytes4 private constant SAFE_BATCH_TRANSFER_FROM_SELECTOR =
-        bytes4(keccak256("safeBatchTransferFrom(address,address,uint256[],uint256[],bytes)"));
+    ////////////////////////////// State //////////////////////////////
+
+    /// @notice Maps delegation manager address => delegation hash => token ID => spent amount
+    mapping(address delegationManager => mapping(bytes32 delegationHash => mapping(uint256 tokenId => uint256 amount))) public
+        spentMap;
+
+    ////////////////////////////// Events //////////////////////////////
+    /// @notice Emitted when the spent amount for a token ID is increased
+    /// @param sender The address of the delegation manager
+    /// @param delegationHash The hash of the delegation
+    /// @param tokenId The ID of the token being transferred
+    /// @param limit The maximum amount allowed for this token ID
+    /// @param spent The new total amount spent for this token ID
+    event IncreasedSpentMap(address indexed sender, bytes32 indexed delegationHash, uint256 tokenId, uint256 limit, uint256 spent);
 
     /**
      * @notice Enforces that the contract and tokenIds are permitted for transfer
-     * @param _terms abi encoded (bool isBatch, address contract, uint256[] tokenIds)
+     * @dev Validates that the transfer execution matches the permitted terms and updates spent amounts
+     * @param _terms encoded terms containing transfer type, contract address, token IDs and amounts
      * @param _mode The execution mode. (Must be Single callType, Default execType)
      * @param _executionCallData the call data of the transferFrom call
+     * @param _delegationHash the hash of the delegation being operated on
      */
     function beforeHook(
         bytes calldata _terms,
         bytes calldata,
         ModeCode _mode,
         bytes calldata _executionCallData,
-        bytes32,
+        bytes32 _delegationHash,
         address,
         address
     )
@@ -37,117 +52,145 @@ contract ERC1155TransferEnforcer is CaveatEnforcer {
         onlySingleCallTypeMode(_mode)
         onlyDefaultExecutionMode(_mode)
     {
-        _validateTransfer(_terms, _executionCallData);
+        _validateTransfer(_terms, _delegationHash, _executionCallData);
     }
 
     /**
      * @notice Decodes the terms to get the transfer type, permitted contract and token IDs
+     * @dev Validates the terms length and structure
      * @param _terms The encoded terms containing transfer type, contract address and token IDs
      * @return _isBatch The transfer type flag
      * @return _permittedContract The address of the permitted ERC1155 contract
-     * @return _ids Array of token IDs
-     * @return _values Array of token amounts
+     * @return _permittedIds Array of token IDs
+     * @return _permittedAmounts Array of token amounts
      */
     function getTermsInfo(bytes calldata _terms)
         public
         pure
-        returns (bool _isBatch, address _permittedContract, uint256[] memory _ids, uint256[] memory _values)
+        returns (bool _isBatch, address _permittedContract, uint256[] memory _permittedIds, uint256[] memory _permittedAmounts)
     {
-        _isBatch = abi.decode(_terms[:32], (bool));
-        if (_isBatch) {
-            (, _permittedContract, _ids, _values) = abi.decode(_terms, (bool, address, uint256[], uint256[]));
+        if (_terms.length == 96) {
+            _permittedIds = new uint256[](1);
+            _permittedAmounts = new uint256[](1);
+            (_permittedContract, _permittedIds[0], _permittedAmounts[0]) = abi.decode(_terms, (address, uint256, uint256));
+        } else if (_terms.length >= 224) {
+            _isBatch = true;
+            (_permittedContract, _permittedIds, _permittedAmounts) = abi.decode(_terms, (address, uint256[], uint256[]));
         } else {
-            uint256 id_;
-            uint256 value_;
-            _ids = new uint256[](1);
-            _values = new uint256[](1);
-            (, _permittedContract, id_, value_) = abi.decode(_terms, (bool, address, uint256, uint256));
-            _ids[0] = id_;
-            _values[0] = value_;
+            revert("ERC1155TransferEnforcer:invalid-terms-length");
         }
 
-        if (_ids.length != _values.length) revert("ERC1155TransferEnforcer:invalid-ids-values-length");
+        if (_permittedContract == address(0)) revert("ERC1155TransferEnforcer:invalid-contract-address");
+        if (_permittedIds.length != _permittedAmounts.length) revert("ERC1155TransferEnforcer:invalid-ids-values-length");
     }
 
     /**
      * @notice Validates that the transfer execution matches the permitted terms
      * @dev Checks that the contract, token IDs and amounts match what is permitted in the terms
      * @param _terms The encoded terms containing transfer type, contract address, token IDs and amounts
+     * @param _delegationHash The hash of the delegation being operated on
      * @param _executionCallData The encoded execution data containing the transfer details
      */
-    function _validateTransfer(bytes calldata _terms, bytes calldata _executionCallData) internal pure {
-        (bool isBatch_, address permittedContract_, uint256[] memory permittedTokenIds_, uint256[] memory permittedValues_) =
+    function _validateTransfer(bytes calldata _terms, bytes32 _delegationHash, bytes calldata _executionCallData) internal {
+        (bool isBatch_, address permittedContract_, uint256[] memory permittedTokenIds_, uint256[] memory permittedAmounts_) =
             getTermsInfo(_terms);
         (address target_, uint256 value_, bytes calldata callData_) = ExecutionLib.decodeSingle(_executionCallData);
 
         if (value_ != 0) revert("ERC1155TransferEnforcer:invalid-value");
-
-        if (callData_.length < 4) revert("ERC1155TransferEnforcer:invalid-calldata-length");
-
-        if (target_ != permittedContract_) {
-            revert("ERC1155TransferEnforcer:unauthorized-contract-target");
-        }
+        if (callData_.length != 196 && callData_.length < 324) revert("ERC1155TransferEnforcer:invalid-calldata-length");
+        if (target_ != permittedContract_) revert("ERC1155TransferEnforcer:unauthorized-contract-target");
 
         bytes4 selector_ = bytes4(callData_[0:4]);
-        if (isBatch_ && selector_ != SAFE_BATCH_TRANSFER_FROM_SELECTOR) {
+        if (isBatch_ && selector_ != IERC1155.safeBatchTransferFrom.selector) {
             revert("ERC1155TransferEnforcer:unauthorized-selector-batch");
-        } else if (!isBatch_ && selector_ != IERC1155.safeTransferFrom.selector) {
+        }
+        if (!isBatch_ && selector_ != IERC1155.safeTransferFrom.selector) {
             revert("ERC1155TransferEnforcer:unauthorized-selector-single");
         }
 
         if (isBatch_) {
-            // Batch transfer
-            (address from_, address to_, uint256[] memory ids_, uint256[] memory amounts_,) =
-                abi.decode(callData_[4:], (address, address, uint256[], uint256[], bytes));
-
-            if (from_ == address(0) || to_ == address(0)) {
-                revert("ERC1155TransferEnforcer:invalid-address");
-            }
-
-            _validateBatchTransfer(ids_, amounts_, permittedTokenIds_, permittedValues_);
+            _validateBatchTransfer(_delegationHash, callData_, permittedTokenIds_, permittedAmounts_);
         } else {
-            // Single transfer
-            (address from_, address to_, uint256 id_, uint256 amount_,) =
-                abi.decode(callData_[4:], (address, address, uint256, uint256, bytes));
-
-            if (from_ == address(0) || to_ == address(0)) {
-                revert("ERC1155TransferEnforcer:invalid-address");
-            }
-            if (permittedTokenIds_[0] != id_) {
-                revert("ERC1155TransferEnforcer:unauthorized-token-id");
-            }
-            if (permittedValues_[0] != amount_) {
-                revert("ERC1155TransferEnforcer:unauthorized-amount");
-            }
+            _validateSingleTransfer(_delegationHash, callData_, permittedTokenIds_[0], permittedAmounts_[0]);
         }
     }
 
     /**
-     * @notice Validates that all token IDs and amounts in a batch transfer are permitted
-     * @dev Checks each token ID in the transfer against the permitted token IDs and their corresponding amounts
-     * @param _ids Array of token IDs being transferred
-     * @param _values Array of amounts being transferred for each token ID
-     * @param _permittedTokenIds Array of permitted token IDs
-     * @param _permittedValues Array of permitted amounts for each token ID
+     * @notice Validates a single ERC1155 token transfer against permitted parameters
+     * @dev Checks that the transfer addresses are valid and matches token ID and amount against permitted values
+     * @param _delegationHash The hash of the delegation being operated on
+     * @param _callData The encoded transfer function call data
+     * @param _permittedTokenId The token ID that is permitted to be transferred
+     * @param _permittedAmount The amount that is permitted to be transferred
      */
-    function _validateBatchTransfer(
-        uint256[] memory _ids,
-        uint256[] memory _values,
-        uint256[] memory _permittedTokenIds,
-        uint256[] memory _permittedValues
+    function _validateSingleTransfer(
+        bytes32 _delegationHash,
+        bytes calldata _callData,
+        uint256 _permittedTokenId,
+        uint256 _permittedAmount
     )
         internal
-        pure
     {
-        uint256 idsLength_ = _ids.length;
+        (address from_, address to_, uint256 id_, uint256 amount_,) =
+            abi.decode(_callData[4:], (address, address, uint256, uint256, bytes));
+
+        if (from_ == address(0) || to_ == address(0)) {
+            revert("ERC1155TransferEnforcer:invalid-address");
+        }
+        if (_permittedTokenId != id_) {
+            revert("ERC1155TransferEnforcer:unauthorized-token-id");
+        }
+        _increaseSpentMap(_delegationHash, id_, amount_, _permittedAmount);
+    }
+
+    /**
+     * @notice Updates and validates the spent amount for a token ID
+     * @dev Increments the spent amount and checks against permitted limit
+     * @param _delegationHash The hash of the delegation being operated on
+     * @param _id The token ID being tracked
+     * @param _amount The amount to increase the spent tracker by
+     * @param _permittedAmount The maximum amount allowed for this token ID
+     */
+    function _increaseSpentMap(bytes32 _delegationHash, uint256 _id, uint256 _amount, uint256 _permittedAmount) internal {
+        uint256 spent_ = spentMap[msg.sender][_delegationHash][_id] += _amount;
+        if (spent_ > _permittedAmount) {
+            revert("ERC1155TransferEnforcer:unauthorized-amount");
+        }
+        emit IncreasedSpentMap(msg.sender, _delegationHash, _id, _permittedAmount, spent_);
+    }
+
+    /**
+     * @notice Validates a batch ERC1155 token transfer against permitted parameters
+     * @dev Checks that all token IDs in the batch are permitted and their amounts don't exceed limits
+     * @param _delegationHash The hash of the delegation being operated on
+     * @param _callData The encoded batch transfer function call data
+     * @param _permittedTokenIds Array of permitted token IDs
+     * @param _permittedAmounts Array of permitted amounts for each token ID
+     */
+    function _validateBatchTransfer(
+        bytes32 _delegationHash,
+        bytes calldata _callData,
+        uint256[] memory _permittedTokenIds,
+        uint256[] memory _permittedAmounts
+    )
+        internal
+    {
+        (address from_, address to_, uint256[] memory ids_, uint256[] memory amounts_,) =
+            abi.decode(_callData[4:], (address, address, uint256[], uint256[], bytes));
+
+        if (from_ == address(0) || to_ == address(0)) {
+            revert("ERC1155TransferEnforcer:invalid-address");
+        }
+
+        uint256 idsLength_ = ids_.length;
         uint256 permittedTokenIdsLength_ = _permittedTokenIds.length;
 
         // Check if all token IDs in the batch are permitted
         for (uint256 i = 0; i < idsLength_; i++) {
             bool isPermitted_ = false;
             for (uint256 j = 0; j < permittedTokenIdsLength_; j++) {
-                if (_permittedTokenIds[j] == _ids[i]) {
-                    if (_permittedValues[j] != _values[i]) revert("ERC1155TransferEnforcer:unauthorized-amount");
+                if (ids_[i] == _permittedTokenIds[j]) {
+                    _increaseSpentMap(_delegationHash, ids_[i], amounts_[i], _permittedAmounts[j]);
                     isPermitted_ = true;
                     break;
                 }
