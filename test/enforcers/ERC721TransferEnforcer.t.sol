@@ -209,6 +209,15 @@ contract ERC721TransferEnforcerTest is CaveatEnforcerBaseTest {
         erc721TransferEnforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
     }
 
+    /// @notice Reverts if the execution value is not zero.
+    function test_invalidValue() public {
+        bytes memory terms_ = abi.encodePacked(address(token), TOKEN_ID);
+        bytes memory callData_ = abi.encodeWithSelector(IERC721.transferFrom.selector, address(this), address(0xBEEF), TOKEN_ID);
+        bytes memory execData_ = ExecutionLib.encodeSingle(address(token), 1 ether, callData_);
+        vm.expectRevert("ERC721TransferEnforcer:invalid-value");
+        erc721TransferEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, keccak256(""), address(0), address(0));
+    }
+
     ////////////////////// Integration //////////////////////
 
     /// @notice Integration test for valid transfer using transferFrom selector.
