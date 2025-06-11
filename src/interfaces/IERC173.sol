@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
-pragma solidity 0.8.23;
+pragma solidity ^0.8.23;
 
 /// @title ERC-173 Contract Ownership Standard
 /// NOTE: the ERC-165 identifier for this interface is 0x7f5828d0
