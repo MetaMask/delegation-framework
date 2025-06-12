@@ -22,6 +22,7 @@ CHAIN_IDS=(
   10200      # gnosis-chiado
   56         # binance
   97         # binance-testnet
+  80094      # berachain
   80069      # berachain-testnet
 )
 
@@ -52,6 +53,7 @@ get_chain_config() {
         10200)    config=("$GNOSISSCAN_API_KEY" "blockscout" "$GNOSIS_CHIADO_RPC_URL" "https://gnosis-chiado.blockscout.com/api") ;; # gnosis-chiado
         56)       config=("$BINANCESCAN_API_KEY" "etherscan" "$BINANCE_RPC_URL" "https://bscscan.com/") ;; # binance
         97)       config=("$BINANCESCAN_API_KEY" "etherscan" "$BINANCE_TESTNET_RPC_URL" "https://testnet.bscscan.com/") ;; # binance-testnet
+        80094)    config=("$BERACHAIN_API_KEY" "custom" "$BERACHAIN_RPC_URL" "https://api.berascan.com/api") ;; # berachain
         80069)    config=("$BERACHAIN_API_KEY" "custom" "$BERACHAIN_TESTNET_RPC_URL" "https://api-testnet.berascan.com/api") ;; # berachain-testnet
         *)
             echo "Unknown chain ID: $chain_id" >&2
