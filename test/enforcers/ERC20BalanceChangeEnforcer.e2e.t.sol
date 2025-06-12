@@ -18,8 +18,6 @@ import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol"
 import { ExactCalldataEnforcer } from "../../src/enforcers/ExactCalldataEnforcer.sol";
 import { AllowedTargetsEnforcer } from "../../src/enforcers/AllowedTargetsEnforcer.sol";
 import { ValueLteEnforcer } from "../../src/enforcers/ValueLteEnforcer.sol";
-import { ERC20BalanceChangeTotalEnforcer } from "../../src/enforcers/ERC20BalanceChangeTotalEnforcer.sol";
-import { ERC20BalanceChangeAllHookEnforcer } from "../../src/enforcers/ERC20BalanceChangeAllHookEnforcer.sol";
 import { CALLTYPE_SINGLE, EXECTYPE_DEFAULT } from "../../src/utils/Constants.sol";
 import { console2 } from "forge-std/console2.sol";
 
@@ -27,8 +25,6 @@ contract BalancePaymentTest is CaveatEnforcerBaseTest {
     ////////////////////////////// State //////////////////////////////
     ERC20TransferAmountEnforcer public transferAmountEnforcer;
     ERC20BalanceChangeEnforcer public balanceChangeEnforcer;
-    ERC20BalanceChangeTotalEnforcer public balanceChangeTotalEnforcer;
-    ERC20BalanceChangeAllHookEnforcer public balanceChangeAllHookEnforcer;
     ExactCalldataEnforcer public exactCalldataEnforcer;
     AllowedTargetsEnforcer public allowedTargetsEnforcer;
     ValueLteEnforcer public valueLteEnforcer;
@@ -64,15 +60,14 @@ contract BalancePaymentTest is CaveatEnforcerBaseTest {
         // Deploy enforcers
         transferAmountEnforcer = new ERC20TransferAmountEnforcer();
         balanceChangeEnforcer = new ERC20BalanceChangeEnforcer();
-        balanceChangeTotalEnforcer = new ERC20BalanceChangeTotalEnforcer();
-        balanceChangeAllHookEnforcer = new ERC20BalanceChangeAllHookEnforcer();
+        //balanceChangeTotalEnforcer = new ERC20BalanceChangeTotalEnforcer();
+        // balanceChangeAllHookEnforcer = new ERC20BalanceChangeAllHookEnforcer();
         exactCalldataEnforcer = new ExactCalldataEnforcer();
         allowedTargetsEnforcer = new AllowedTargetsEnforcer();
         valueLteEnforcer = new ValueLteEnforcer();
         vm.label(address(transferAmountEnforcer), "ERC20 Transfer Amount Enforcer");
         vm.label(address(balanceChangeEnforcer), "ERC20 Balance Change Enforcer");
-        vm.label(address(balanceChangeTotalEnforcer), "ERC20 Balance Change Total Enforcer");
-        vm.label(address(balanceChangeAllHookEnforcer), "ERC20 Balance Change All Hook Enforcer");
+        // vm.label(address(balanceChangeTotalEnforcer), "ERC20 Balance Change Total Enforcer");
         vm.label(address(exactCalldataEnforcer), "Exact Calldata Enforcer");
         vm.label(address(allowedTargetsEnforcer), "Allowed Targets Enforcer");
         vm.label(address(valueLteEnforcer), "Value Lte Enforcer");
@@ -206,67 +201,7 @@ contract BalancePaymentTest is CaveatEnforcerBaseTest {
     }
 
     /**
-     * @notice Tests state sharing vulnerability in ERC20BalanceChangeAllHookEnforcer when batching delegations
-     * @dev This test demonstrates an issue where multiple delegations checking the same token
-     *      balance on the same recipient can lead to unintended behavior. Specifically:
-     *      1. Two delegations each require a balance increase of 1 tokenB
-     *      2. Each delegation transfers 1 tokenA
-     *      3. Only 1 tokenB is received in return (instead of expected 2)
-     *      4. Test passes incorrectly because both delegations reference the same balance state
-     */
-    function test_ERC20BalanceChangeAllHookEnforcer_batchingRedemptionsShareState() public {
-        // Create delegation from Alice to SwapMock allowing transfer of 1 ETH worth of TokenA
-        bytes memory transferTerms_ = abi.encodePacked(address(tokenA), uint256(1 ether));
-        bytes memory balanceTerms_ = abi.encodePacked(false, address(tokenB), address(delegator), uint256(1 ether));
-
-        Caveat[] memory caveats_ = new Caveat[](2);
-        // Allows to transfer 1 ETH worth of TokenA
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(transferAmountEnforcer), terms: transferTerms_ });
-        // Requires the balance of the recipient to increase by 2 ETH worth of TokenB
-        caveats_[1] = Caveat({ args: hex"", enforcer: address(balanceChangeAllHookEnforcer), terms: balanceTerms_ });
-
-        Delegation memory delegation1 = Delegation({
-            delegate: delegate,
-            delegator: delegator,
-            authority: ROOT_AUTHORITY,
-            caveats: caveats_,
-            salt: 0,
-            signature: hex""
-        });
-
-        Delegation memory delegation2 = Delegation({
-            delegate: delegate,
-            delegator: delegator,
-            authority: ROOT_AUTHORITY,
-            caveats: caveats_,
-            salt: 1,
-            signature: hex""
-        });
-
-        delegation1 = signDelegation(users.alice, delegation1);
-        delegation2 = signDelegation(users.alice, delegation2);
-
-        // Creating two redemption flows
-        Delegation[][] memory delegations_ = new Delegation[][](2);
-        delegations_[0] = new Delegation[](1);
-        delegations_[0][0] = delegation1;
-        delegations_[1] = new Delegation[](1);
-        delegations_[1][0] = delegation2;
-        uint256 tokenABalanceBefore = tokenA.balanceOf(address(delegator));
-        uint256 tokenBBalanceBefore = tokenB.balanceOf(address(delegator));
-        uint256 tokenASwapBefore = tokenA.balanceOf(address(swapMock));
-        uint256 tokenBSwapBefore = tokenB.balanceOf(address(swapMock));
-
-        swapMock.swapDoubleSpend(delegations_, 1 ether, false);
-
-        assertEq(tokenA.balanceOf(address(delegator)), tokenABalanceBefore - 2 ether);
-        assertEq(tokenB.balanceOf(address(delegator)), tokenBBalanceBefore + 1 ether);
-        assertEq(tokenA.balanceOf(address(swapMock)), tokenASwapBefore + 2 ether);
-        assertEq(tokenB.balanceOf(address(swapMock)), tokenBSwapBefore - 1 ether);
-    }
-
-    /**
-     * @notice Tests insufficient balance increase reverts in ERC20BalanceChangeTotalEnforcer
+     * @notice Tests insufficient balance increase reverts in ERC20BalanceChangeEnforcer
      * @dev This test verifies that the enforcer properly reverts when total balance increase requirements
      *      are not met across batched delegations. Specifically:
      *      1. Two delegations each require a 1 ETH tokenB balance increase (2 ETH total required)
@@ -275,16 +210,16 @@ contract BalancePaymentTest is CaveatEnforcerBaseTest {
      *      4. Transaction reverts due to insufficient balance increase
      *      5. Demonstrates enforcer properly validates cumulative balance changes
      */
-    function test_ERC20BalanceChangeTotalEnforcer_revertOnInsufficientBalanceIncrease() public {
+    function test_ERC20BalanceChangeEnforcer_revertOnInsufficientBalanceIncrease() public {
         // Create delegation from Alice to SwapMock allowing transfer of 1 ETH worth of TokenA
         bytes memory transferTerms_ = abi.encodePacked(address(tokenA), uint256(1 ether));
-        bytes memory balanceTerms_ = abi.encodePacked(address(tokenB), address(delegator), uint256(1 ether));
+        bytes memory balanceTerms_ = abi.encodePacked(bool(false), address(tokenB), address(delegator), uint256(1 ether));
 
         Caveat[] memory caveats_ = new Caveat[](2);
         // Allows to transfer 1 ETH worth of TokenA
         caveats_[0] = Caveat({ args: hex"", enforcer: address(transferAmountEnforcer), terms: transferTerms_ });
         // Requires the total balance increase of 2 ETH worth of TokenB across all delegations
-        caveats_[1] = Caveat({ args: hex"", enforcer: address(balanceChangeTotalEnforcer), terms: balanceTerms_ });
+        caveats_[1] = Caveat({ args: hex"", enforcer: address(balanceChangeEnforcer), terms: balanceTerms_ });
 
         Delegation memory delegation1 = Delegation({
             delegate: delegate,
@@ -314,7 +249,7 @@ contract BalancePaymentTest is CaveatEnforcerBaseTest {
         delegations_[1] = new Delegation[](1);
         delegations_[1][0] = delegation2;
 
-        vm.expectRevert("ERC20BalanceChangeTotalEnforcer:insufficient-balance-increase");
+        vm.expectRevert("ERC20BalanceChangeEnforcer:insufficient-balance-increase");
         swapMock.swapDoubleSpend(delegations_, 1 ether, false);
     }
 
@@ -329,13 +264,13 @@ contract BalancePaymentTest is CaveatEnforcerBaseTest {
     function test_ERC20BalanceChangeTotalEnforcer_successfulBatchRedemption() public {
         // Create delegation from Alice to SwapMock allowing transfer of 1 ETH worth of TokenA
         bytes memory transferTerms_ = abi.encodePacked(address(tokenA), uint256(1 ether));
-        bytes memory balanceTerms_ = abi.encodePacked(address(tokenB), address(delegator), uint256(1 ether));
+        bytes memory balanceTerms_ = abi.encodePacked(bool(false), address(tokenB), address(delegator), uint256(1 ether));
 
         Caveat[] memory caveats_ = new Caveat[](2);
         // Allows to transfer 1 ETH worth of TokenA
         caveats_[0] = Caveat({ args: hex"", enforcer: address(transferAmountEnforcer), terms: transferTerms_ });
         // Requires the total balance increase of 2 ETH worth of TokenB across all delegations
-        caveats_[1] = Caveat({ args: hex"", enforcer: address(balanceChangeTotalEnforcer), terms: balanceTerms_ });
+        caveats_[1] = Caveat({ args: hex"", enforcer: address(balanceChangeEnforcer), terms: balanceTerms_ });
 
         Delegation memory delegation1 = Delegation({
             delegate: delegate,
