@@ -369,6 +369,91 @@ contract ERC20BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
+    ////////////////////////////// Check events //////////////////////////////
+
+    // Dedicated test to verify all three events are emitted correctly
+    function test_events_emitted_correctly() public {
+        bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(100));
+
+        // Test BalanceTracked and ExpectedBalanceUpdated events from beforeAllHook
+        vm.expectEmit(true, true, true, true);
+        emit ERC20BalanceChangeEnforcer.BalanceTracked(dm, recipient, address(token), 0);
+        vm.expectEmit(true, true, true, true);
+        emit ERC20BalanceChangeEnforcer.ExpectedBalanceUpdated(false, dm, address(token), recipient, 100);
+
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Perform the balance change
+        vm.prank(delegator);
+        token.mint(recipient, 100);
+
+        // Test BalanceValidated event from afterAllHook
+        vm.expectEmit(true, true, true, true);
+        emit ERC20BalanceChangeEnforcer.BalanceValidated(dm, recipient, address(token), 100);
+
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+    }
+
+    function test_events_emitted_correctly_multiple_enforcers() public {
+        bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(100));
+
+        // First beforeAllHook - should emit both BalanceTracked and ExpectedBalanceUpdated
+        vm.expectEmit(true, true, true, true);
+        emit ERC20BalanceChangeEnforcer.BalanceTracked(dm, recipient, address(token), 0);
+        vm.expectEmit(true, true, true, true);
+        emit ERC20BalanceChangeEnforcer.ExpectedBalanceUpdated(false, dm, address(token), recipient, 100);
+
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Second beforeAllHook - should ONLY emit ExpectedBalanceUpdated, NOT BalanceTracked
+        vm.recordLogs();
+
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Check the logs to ensure only ExpectedBalanceUpdated was emitted
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(logs.length, 1, "Should only emit one event");
+
+        // Verify it's the ExpectedBalanceUpdated event
+        assertEq(logs[0].topics[0], keccak256("ExpectedBalanceUpdated(bool,address,address,address,uint256)"));
+        assertEq(logs[0].topics[1], bytes32(uint256(uint160(dm)))); // delegationManager
+        assertEq(logs[0].topics[2], bytes32(uint256(uint160(address(token))))); // token
+        assertEq(logs[0].topics[3], bytes32(uint256(uint160(address(recipient))))); // recipint
+    }
+
+    // Test events for decrease scenario
+    function test_events_emitted_correctly_decrease() public {
+        uint256 initialBalance_ = 100;
+        vm.prank(delegator);
+        token.mint(recipient, initialBalance_);
+
+        bytes memory terms_ = abi.encodePacked(true, address(token), address(recipient), uint256(50));
+
+        // Test BalanceTracked and ExpectedBalanceUpdated events for decrease
+        vm.expectEmit(true, true, true, true);
+        emit ERC20BalanceChangeEnforcer.BalanceTracked(dm, recipient, address(token), 100);
+        vm.expectEmit(true, true, true, true);
+        emit ERC20BalanceChangeEnforcer.ExpectedBalanceUpdated(true, dm, address(token), recipient, 50);
+
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Perform allowed decrease
+        vm.prank(recipient);
+        token.transfer(delegator, 30);
+
+        // Test BalanceValidated event for decrease
+        vm.expectEmit(true, true, true, true);
+        emit ERC20BalanceChangeEnforcer.BalanceValidated(dm, recipient, address(token), 50);
+
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+    }
+
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {
         return ICaveatEnforcer(address(enforcer));
     }

@@ -15,8 +15,7 @@ import { ModeCode } from "../utils/Types.sol";
  * @dev Terms format: enforceDecrease (1 byte) + token (20 bytes) + recipient (20 bytes) + expected increase/decrease (32 bytes)
  * @dev Security considerations:
  * - State is shared between enforcers watching the same recipient/token pair
- * - A single balance change can satisfy multiple enforcer instances simultaneously
- * - Balance changes are tracked by comparing before/after balances
+ * - Balance changes are tracked by comparing beforeAll/afterAll balances
  */
 contract ERC20BalanceChangeEnforcer is CaveatEnforcer {
     ////////////////////////////// Events //////////////////////////////
@@ -41,7 +40,7 @@ contract ERC20BalanceChangeEnforcer is CaveatEnforcer {
     /**
      * @notice Generates the key that identifies the run. Produced by the hash of the values used.
      * @param _caller Address of the sender calling the enforcer.
-     * @param _token Token being compared in the beforeHook and afterHook.
+     * @param _token Token being compared in the beforeAllHook and afterAllHook.
      * @param _recipient Address of the recipient whose balance is being tracked.
      * @return The hash to be used as key of the mapping.
      */
