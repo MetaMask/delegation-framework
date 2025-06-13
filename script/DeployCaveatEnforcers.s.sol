@@ -19,6 +19,7 @@ import { ERC20PeriodTransferEnforcer } from "../src/enforcers/ERC20PeriodTransfe
 import { ERC721BalanceChangeEnforcer } from "../src/enforcers/ERC721BalanceChangeEnforcer.sol";
 import { ERC721TransferEnforcer } from "../src/enforcers/ERC721TransferEnforcer.sol";
 import { ERC1155BalanceChangeEnforcer } from "../src/enforcers/ERC1155BalanceChangeEnforcer.sol";
+import { ERC1155TransferEnforcer } from "../src/enforcers/ERC1155TransferEnforcer.sol";
 import { ExactCalldataBatchEnforcer } from "../src/enforcers/ExactCalldataBatchEnforcer.sol";
 import { ExactCalldataEnforcer } from "../src/enforcers/ExactCalldataEnforcer.sol";
 import { ExactExecutionBatchEnforcer } from "../src/enforcers/ExactExecutionBatchEnforcer.sol";
@@ -104,6 +105,9 @@ contract DeployCaveatEnforcers is Script {
 
         deployedAddress = address(new ERC1155BalanceChangeEnforcer{ salt: salt }());
         console2.log("ERC1155BalanceChangeEnforcer: %s", deployedAddress);
+
+        deployedAddress = address(new ERC1155TransferEnforcer{ salt: salt }());
+        console2.log("ERC1155TransferEnforcer: %s", deployedAddress);
 
         deployedAddress = address(new ExactCalldataBatchEnforcer{ salt: salt }());
         console2.log("ExactCalldataBatchEnforcer: %s", deployedAddress);
