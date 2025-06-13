@@ -375,11 +375,11 @@ contract ERC20BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     function test_events_emitted_correctly() public {
         bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(100));
 
-        // Test BalanceTracked and ExpectedBalanceUpdated events from beforeAllHook
+        // Test TrackedBalance and UpdatedExpectedBalance events from beforeAllHook
         vm.expectEmit(true, true, true, true);
-        emit ERC20BalanceChangeEnforcer.BalanceTracked(dm, recipient, address(token), 0);
+        emit ERC20BalanceChangeEnforcer.TrackedBalance(dm, recipient, address(token), 0);
         vm.expectEmit(true, true, true, true);
-        emit ERC20BalanceChangeEnforcer.ExpectedBalanceUpdated(false, dm, address(token), recipient, 100);
+        emit ERC20BalanceChangeEnforcer.UpdatedExpectedBalance(dm, address(token), recipient, false, 100);
 
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
@@ -388,9 +388,9 @@ contract ERC20BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(delegator);
         token.mint(recipient, 100);
 
-        // Test BalanceValidated event from afterAllHook
+        // Test ValidatedBalance event from afterAllHook
         vm.expectEmit(true, true, true, true);
-        emit ERC20BalanceChangeEnforcer.BalanceValidated(dm, recipient, address(token), 100);
+        emit ERC20BalanceChangeEnforcer.ValidatedBalance(dm, recipient, address(token), 100);
 
         vm.prank(dm);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
@@ -399,27 +399,27 @@ contract ERC20BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     function test_events_emitted_correctly_multiple_enforcers() public {
         bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(100));
 
-        // First beforeAllHook - should emit both BalanceTracked and ExpectedBalanceUpdated
+        // First beforeAllHook - should emit both TrackedBalance and UpdatedExpectedBalance
         vm.expectEmit(true, true, true, true);
-        emit ERC20BalanceChangeEnforcer.BalanceTracked(dm, recipient, address(token), 0);
+        emit ERC20BalanceChangeEnforcer.TrackedBalance(dm, recipient, address(token), 0);
         vm.expectEmit(true, true, true, true);
-        emit ERC20BalanceChangeEnforcer.ExpectedBalanceUpdated(false, dm, address(token), recipient, 100);
+        emit ERC20BalanceChangeEnforcer.UpdatedExpectedBalance(dm, address(token), recipient, false, 100);
 
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
-        // Second beforeAllHook - should ONLY emit ExpectedBalanceUpdated, NOT BalanceTracked
+        // Second beforeAllHook - should ONLY emit UpdatedExpectedBalance, NOT TrackedBalance
         vm.recordLogs();
 
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
-        // Check the logs to ensure only ExpectedBalanceUpdated was emitted
+        // Check the logs to ensure only UpdatedExpectedBalance was emitted
         Vm.Log[] memory logs = vm.getRecordedLogs();
         assertEq(logs.length, 1, "Should only emit one event");
 
-        // Verify it's the ExpectedBalanceUpdated event
-        assertEq(logs[0].topics[0], keccak256("ExpectedBalanceUpdated(bool,address,address,address,uint256)"));
+        // Verify it's the UpdatedExpectedBalance event
+        assertEq(logs[0].topics[0], keccak256("UpdatedExpectedBalance(address,address,address,bool,uint256)"));
         assertEq(logs[0].topics[1], bytes32(uint256(uint160(dm)))); // delegationManager
         assertEq(logs[0].topics[2], bytes32(uint256(uint160(address(token))))); // token
         assertEq(logs[0].topics[3], bytes32(uint256(uint160(address(recipient))))); // recipint
@@ -433,11 +433,11 @@ contract ERC20BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         bytes memory terms_ = abi.encodePacked(true, address(token), address(recipient), uint256(50));
 
-        // Test BalanceTracked and ExpectedBalanceUpdated events for decrease
+        // Test TrackedBalance and UpdatedExpectedBalance events for decrease
         vm.expectEmit(true, true, true, true);
-        emit ERC20BalanceChangeEnforcer.BalanceTracked(dm, recipient, address(token), 100);
+        emit ERC20BalanceChangeEnforcer.TrackedBalance(dm, recipient, address(token), 100);
         vm.expectEmit(true, true, true, true);
-        emit ERC20BalanceChangeEnforcer.ExpectedBalanceUpdated(true, dm, address(token), recipient, 50);
+        emit ERC20BalanceChangeEnforcer.UpdatedExpectedBalance(dm, address(token), recipient, true, 50);
 
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
@@ -446,9 +446,9 @@ contract ERC20BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(recipient);
         token.transfer(delegator, 30);
 
-        // Test BalanceValidated event for decrease
+        // Test ValidatedBalance event for decrease
         vm.expectEmit(true, true, true, true);
-        emit ERC20BalanceChangeEnforcer.BalanceValidated(dm, recipient, address(token), 50);
+        emit ERC20BalanceChangeEnforcer.ValidatedBalance(dm, recipient, address(token), 50);
 
         vm.prank(dm);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);

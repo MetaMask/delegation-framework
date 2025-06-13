@@ -19,11 +19,11 @@ import { ModeCode } from "../utils/Types.sol";
  */
 contract ERC20BalanceChangeEnforcer is CaveatEnforcer {
     ////////////////////////////// Events //////////////////////////////
-    event BalanceTracked(address indexed delegationManager, address indexed recipient, address indexed token, uint256 balance);
-    event ExpectedBalanceUpdated(
-        bool enforceDecrease, address indexed delegationManager, address indexed token, address indexed recipient, uint256 expected
+    event TrackedBalance(address indexed delegationManager, address indexed recipient, address indexed token, uint256 balance);
+    event UpdatedExpectedBalance(
+        address indexed delegationManager, address indexed token, address indexed recipient, bool enforceDecrease, uint256 expected
     );
-    event BalanceValidated(address indexed delegationManager, address indexed recipient, address indexed token, uint256 expected);
+    event ValidatedBalance(address indexed delegationManager, address indexed recipient, address indexed token, uint256 expected);
 
     ////////////////////////////// State //////////////////////////////
 
@@ -79,7 +79,7 @@ contract ERC20BalanceChangeEnforcer is CaveatEnforcer {
         uint256 currentBalance_ = IERC20(token_).balanceOf(recipient_);
         if (balanceTracker_.expectedDecrease == 0 && balanceTracker_.expectedIncrease == 0) {
             balanceTracker_.balanceBefore = currentBalance_;
-            emit BalanceTracked(msg.sender, recipient_, token_, currentBalance_);
+            emit TrackedBalance(msg.sender, recipient_, token_, currentBalance_);
         } else {
             require(balanceTracker_.balanceBefore == currentBalance_, "ERC20BalanceChangeEnforcer:balance-before-differs");
         }
@@ -92,7 +92,7 @@ contract ERC20BalanceChangeEnforcer is CaveatEnforcer {
 
         balanceTracker[hashKey_] = balanceTracker_;
 
-        emit ExpectedBalanceUpdated(enforceDecrease_, msg.sender, token_, recipient_, expected_);
+        emit UpdatedExpectedBalance(msg.sender, token_, recipient_, enforceDecrease_, expected_);
     }
 
     /**
@@ -140,7 +140,7 @@ contract ERC20BalanceChangeEnforcer is CaveatEnforcer {
             );
         }
 
-        emit BalanceValidated(msg.sender, recipient_, token_, expected_);
+        emit ValidatedBalance(msg.sender, recipient_, token_, expected_);
     }
 
     /**
