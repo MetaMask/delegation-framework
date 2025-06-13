@@ -144,22 +144,6 @@ contract ERC1155TransferEnforcer is CaveatEnforcer {
     }
 
     /**
-     * @notice Updates and validates the spent amount for a token ID
-     * @dev Increments the spent amount and checks against permitted limit
-     * @param _delegationHash The hash of the delegation being operated on
-     * @param _id The token ID being tracked
-     * @param _amount The amount to increase the spent tracker by
-     * @param _permittedAmount The maximum amount allowed for this token ID
-     */
-    function _increaseSpentMap(bytes32 _delegationHash, uint256 _id, uint256 _amount, uint256 _permittedAmount) internal {
-        uint256 spent_ = spentMap[msg.sender][_delegationHash][_id] += _amount;
-        if (spent_ > _permittedAmount) {
-            revert("ERC1155TransferEnforcer:unauthorized-amount");
-        }
-        emit IncreasedSpentMap(msg.sender, _delegationHash, _id, _permittedAmount, spent_);
-    }
-
-    /**
      * @notice Validates a batch ERC1155 token transfer against permitted parameters
      * @dev Checks that all token IDs in the batch are permitted and their amounts don't exceed limits
      * @param _delegationHash The hash of the delegation being operated on
@@ -199,5 +183,21 @@ contract ERC1155TransferEnforcer is CaveatEnforcer {
                 revert("ERC1155TransferEnforcer:unauthorized-token-id");
             }
         }
+    }
+
+    /**
+     * @notice Updates and validates the spent amount for a token ID
+     * @dev Increments the spent amount and checks against permitted limit
+     * @param _delegationHash The hash of the delegation being operated on
+     * @param _id The token ID being tracked
+     * @param _amount The amount to increase the spent tracker by
+     * @param _permittedAmount The maximum amount allowed for this token ID
+     */
+    function _increaseSpentMap(bytes32 _delegationHash, uint256 _id, uint256 _amount, uint256 _permittedAmount) private {
+        uint256 spent_ = spentMap[msg.sender][_delegationHash][_id] += _amount;
+        if (spent_ > _permittedAmount) {
+            revert("ERC1155TransferEnforcer:unauthorized-amount");
+        }
+        emit IncreasedSpentMap(msg.sender, _delegationHash, _id, _permittedAmount, spent_);
     }
 }
