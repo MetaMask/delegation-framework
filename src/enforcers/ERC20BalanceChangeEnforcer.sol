@@ -10,7 +10,7 @@ import { ModeCode } from "../utils/Types.sol";
  * @notice Enforces that a recipient's token balance increases by at least the expected total amount across multiple delegations
  * or decreases by at most the expected total amount across multiple delegations. In a delegation chain there can be a combination
  * of both increases and decreases and the enforcer will track the total expected change.
- * @dev Tracks initial balance and accumulates expected increases and decreases per recipient/token pair within a delegation chain
+ * @dev Tracks initial balance and accumulates expected increases and decreases per recipient/token pair within a redemption
  * @dev Only operates in default execution mode
  * @dev Terms format: enforceDecrease (1 byte) + token (20 bytes) + recipient (20 bytes) + expected increase/decrease (32 bytes)
  * @dev Security considerations:
@@ -49,7 +49,7 @@ contract ERC20BalanceChangeEnforcer is CaveatEnforcer {
     }
 
     /**
-     * @notice This function caches the recipient's initial token balance and accumulates the expected increase.
+     * @notice This function caches the recipient's initial token balance and accumulates the expected increase and decrease.
      * @param _terms 73 packed bytes where:
      * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
      * - next 20 bytes: address of the token
@@ -96,7 +96,7 @@ contract ERC20BalanceChangeEnforcer is CaveatEnforcer {
     }
 
     /**
-     * @notice This function validates that the recipient's token balance has increased by at least the total expected amount.
+     * @notice This function validates that the recipient's token balance has changed by at least the total expected amount.
      * @param _terms 73 packed bytes where:
      * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
      * - next 20 bytes: address of the token
