@@ -19,6 +19,7 @@ import { ModeCode } from "../utils/Types.sol";
  */
 contract ERC20BalanceChangeEnforcer is CaveatEnforcer {
     ////////////////////////////// Events //////////////////////////////
+
     event TrackedBalance(address indexed delegationManager, address indexed recipient, address indexed token, uint256 balance);
     event UpdatedExpectedBalance(
         address indexed delegationManager, address indexed token, address indexed recipient, bool enforceDecrease, uint256 expected
@@ -121,9 +122,8 @@ contract ERC20BalanceChangeEnforcer is CaveatEnforcer {
 
         BalanceTracker memory balanceTracker_ = balanceTracker[hashKey_];
 
-        if (balanceTracker_.expectedDecrease == 0 && balanceTracker_.expectedIncrease == 0) return; // validation has already been
-            // made
-        delete balanceTracker[hashKey_];
+        // validation has already been  made
+        if (balanceTracker_.expectedDecrease == 0 && balanceTracker_.expectedIncrease == 0) return;
 
         uint256 currentBalance_ = IERC20(token_).balanceOf(recipient_);
         uint256 expected_;
@@ -140,6 +140,7 @@ contract ERC20BalanceChangeEnforcer is CaveatEnforcer {
             );
         }
 
+        delete balanceTracker[hashKey_];
         emit ValidatedBalance(msg.sender, recipient_, token_, expected_);
     }
 

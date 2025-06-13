@@ -423,6 +423,22 @@ contract ERC20BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(logs[0].topics[1], bytes32(uint256(uint160(dm)))); // delegationManager
         assertEq(logs[0].topics[2], bytes32(uint256(uint160(address(token))))); // token
         assertEq(logs[0].topics[3], bytes32(uint256(uint160(address(recipient))))); // recipint
+
+        // Perform the balance change
+        vm.prank(delegator);
+        token.mint(recipient, 200);
+
+        vm.expectEmit(true, true, true, true);
+        emit ERC20BalanceChangeEnforcer.ValidatedBalance(dm, recipient, address(token), 200);
+
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        vm.recordLogs();
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        Vm.Log[] memory afterAllLogs = vm.getRecordedLogs();
+        assertEq(afterAllLogs.length, 0, "Should not emit any events");
     }
 
     // Test events for decrease scenario
