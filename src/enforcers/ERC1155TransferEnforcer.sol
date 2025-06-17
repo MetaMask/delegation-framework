@@ -8,10 +8,19 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 /**
  * @title ERC1155TransferEnforcer
- * @notice This enforcer restricts the execution to the transfer of specific ERC1155 tokens.
- * @dev This enforcer operates only in single execution call type and with default execution mode.
- * Supports both single and batch transfers. The terms include a boolean flag indicating the transfer type.
- * @dev The enforcer tracks spent amounts per token ID to enforce transfer limits.
+ * @notice Enforces transfer restrictions for ERC1155 tokens within delegation contexts
+ * @dev This enforcer:
+ *      - Operates exclusively in single execution call type with default execution mode
+ *      - Supports both single and batch transfer operations (safeTransferFrom and safeBatchTransferFrom)
+ *      - Automatically selects transfer function based on terms length
+ *      - Maintains per-token ID transfer limits through spent amount tracking
+ *      - Implements cumulative spending limits per delegation hash
+ *      - Validates that only permitted contracts and token IDs can be transferred
+ *
+ * Terms Encoding Format:
+ * - Single transfer: abi.encode(address contract, uint256 tokenId, uint256 maxAmount) [96 bytes]
+ * - Batch transfer: abi.encode(address contract, uint256[] tokenIds, uint256[] maxAmounts) [≥224 bytes]
+ * @notice For nonfungible ERC1155 tokens, the transfer amount must be 1.
  */
 contract ERC1155TransferEnforcer is CaveatEnforcer {
     ////////////////////////////// State //////////////////////////////
