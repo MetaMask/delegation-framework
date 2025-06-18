@@ -124,7 +124,7 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
 
         BalanceTracker memory balanceTracker_ = balanceTracker[hashKey_];
 
-        // validation has already been  made
+        // validation has already been made
         if (balanceTracker_.expectedDecrease == 0 && balanceTracker_.expectedIncrease == 0) return;
 
         uint256 currentBalance_ = IERC20(token_).balanceOf(recipient_);
