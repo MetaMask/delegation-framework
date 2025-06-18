@@ -23,6 +23,7 @@ CHAIN_IDS=(
   56         # binance
   97         # binance-testnet
   80069      # berachain-testnet
+  5115       # citrea-testnet
 )
 
 ##########################################
@@ -53,6 +54,7 @@ get_chain_config() {
         56)       config=("$BINANCESCAN_API_KEY" "etherscan" "$BINANCE_RPC_URL" "https://bscscan.com/") ;; # binance
         97)       config=("$BINANCESCAN_API_KEY" "etherscan" "$BINANCE_TESTNET_RPC_URL" "https://testnet.bscscan.com/") ;; # binance-testnet
         80069)    config=("$BERACHAIN_API_KEY" "custom" "$BERACHAIN_TESTNET_RPC_URL" "https://api-testnet.berascan.com/api") ;; # berachain-testnet
+        5115)     config=("key" "blockscout" "$CITREA_TESTNET_RPC_URL" "hthttps://explorer.testnet.citrea.xyz/api") ;; # citrea-testnet
         *)
             echo "Unknown chain ID: $chain_id" >&2
             return 1

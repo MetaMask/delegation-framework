@@ -52,6 +52,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Optimism Sepolia
 - Arbitrum Sepolia
 - Berachain testnet
+- Citera testnet
 
 ## **Deployments**
 
