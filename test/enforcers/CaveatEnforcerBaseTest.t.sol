@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
-pragma solidity 0.8.23;
+pragma solidity ^0.8.23;
 
 import { BaseTest } from "../utils/BaseTest.t.sol";
 import { Implementation, SignatureType } from "../utils/Types.t.sol";
