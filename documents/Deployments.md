@@ -36,15 +36,19 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Polygon
 - Binance Smart Chain
 - Optimism
-- Abitrum
+- Abitrum One
+- Abitrum Nova
 - Linea
 - Base
 - Gnosis Chain
+- Berachain
+- Unichain
 
 ### Testnets
 
 - Ethereum Sepolia
 - Linea Sepolia
+- Polygon Amoy
 - Base Sepolia
 - MegaEth
 - Gnosis Chiado
@@ -52,6 +56,8 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Optimism Sepolia
 - Arbitrum Sepolia
 - Berachain testnet
+- Unichain Sepolia
+- Monad
 
 ## **Deployments**
 

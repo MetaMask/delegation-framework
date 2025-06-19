@@ -16,13 +16,19 @@ CHAIN_IDS=(
   10         # optimism
   11155420   # optimism-sepolia
   42161      # arbitrum
+  42170      # arbitrum nova
   421614     # arbitrum-sepolia
   137        # polygon
+  80002      # polygon-amoy
   100        # gnosis
   10200      # gnosis-chiado
   56         # binance
   97         # binance-testnet
+  80094      # berachain
   80069      # berachain-testnet
+  130        # unichain
+  1301       # unichain-sepolia
+  10143      # monad-testnet
 )
 
 ##########################################
@@ -46,13 +52,19 @@ get_chain_config() {
         10)       config=("$OPTIMISTIC_API_KEY" "etherscan" "$OPTIMISM_RPC_URL" "https://optimistic.etherscan.io/") ;; # optimism
         11155420) config=("$OPTIMISTIC_API_KEY" "etherscan" "$OPTIMISM_SEPOLIA_RPC_URL" "https://sepolia-optimism.etherscan.io/") ;; # optimism-sepolia
         42161)    config=("$ARBISCAN_API_KEY" "etherscan" "$ARBITRUM_RPC_URL" "https://arbiscan.io/")   ;; # arbitrum
+        42170)    config=("$ETHERSCAN_API_KEY" "etherscan" "$ARBITRUM_NOVA_RPC_URL" "")   ;; # arbitrum nova
         421614)   config=("$ARBISCAN_API_KEY" "etherscan" "$ARBITRUM_SEPOLIA_RPC_URL" "https://sepolia.arbiscan.io/") ;; # arbitrum-sepolia
         137)      config=("$POLYGONSCAN_API_KEY" "etherscan" "$POLYGON_RPC_URL" "https://polygonscan.com/") ;; # polygon
+        80002)    config=("$ETHERSCAN_API_KEY" "etherscan" "$POLYGON_AMOY_RPC_URL" "https://amoy.polygonscan.com/") ;; # polygon-amoy
         100)      config=("$GNOSISSCAN_API_KEY" "etherscan" "$GNOSIS_RPC_URL" "https://gnosisscan.io/") ;; # gnosis
         10200)    config=("$GNOSISSCAN_API_KEY" "blockscout" "$GNOSIS_CHIADO_RPC_URL" "https://gnosis-chiado.blockscout.com/api") ;; # gnosis-chiado
         56)       config=("$BINANCESCAN_API_KEY" "etherscan" "$BINANCE_RPC_URL" "https://bscscan.com/") ;; # binance
         97)       config=("$BINANCESCAN_API_KEY" "etherscan" "$BINANCE_TESTNET_RPC_URL" "https://testnet.bscscan.com/") ;; # binance-testnet
+        80094)    config=("$BERACHAIN_API_KEY" "custom" "$BERACHAIN_RPC_URL" "https://api.berascan.com/api") ;; # berachain
         80069)    config=("$BERACHAIN_API_KEY" "custom" "$BERACHAIN_TESTNET_RPC_URL" "https://api-testnet.berascan.com/api") ;; # berachain-testnet
+        130)      config=("$UNICHAIN_API_KEY" "custom" "$UNICHAIN_RPC_URL" "https://api.uniscan.xyz/api") ;; # unichain
+        1301)     config=("$UNICHAIN_API_KEY" "custom" "$UNICHAIN_SEPOLIA_RPC_URL" "https://api-sepolia.uniscan.xyz/api") ;; # unichain-sepolia
+        10143)    config=("$ETHERSCAN_API_KEY" "etherscan" "$MONAD_TESTNET_RPC_URL" "") ;; # unichain-sepolia
         *)
             echo "Unknown chain ID: $chain_id" >&2
             return 1
