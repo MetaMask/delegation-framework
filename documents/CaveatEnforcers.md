@@ -135,3 +135,7 @@ The total balance enforcer will:
 3. Validate that the final balance has increased by at least 900 tokens
 
 This ensures that the combined effect of all enforcers is properly validated, preventing scenarios where individual enforcers might be satisfied by the same balance change.  
+
+#### Delegating to EOA
+
+If you are delegating to an EOA a delegation chain the EOA cannot execute directly since it cannot redeem inner delegations. EOA can become a deleGator by using EIP7702 or it can use an adapter contract to execute the delegation. An example for that is available in `./src/helpers/DelegationMetaSwapAdapter.sol`.
