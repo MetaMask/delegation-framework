@@ -48,6 +48,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 
 - Ethereum Sepolia
 - Linea Sepolia
+- Polygon Amoy
 - Base Sepolia
 - MegaEth
 - Gnosis Chiado

@@ -19,6 +19,7 @@ CHAIN_IDS=(
   42170      # arbitrum nova
   421614     # arbitrum-sepolia
   137        # polygon
+  80002      # polygon-amoy
   100        # gnosis
   10200      # gnosis-chiado
   56         # binance
@@ -54,6 +55,7 @@ get_chain_config() {
         42170)    config=("$ETHERSCAN_API_KEY" "etherscan" "$ARBITRUM_NOVA_RPC_URL" "")   ;; # arbitrum nova
         421614)   config=("$ARBISCAN_API_KEY" "etherscan" "$ARBITRUM_SEPOLIA_RPC_URL" "https://sepolia.arbiscan.io/") ;; # arbitrum-sepolia
         137)      config=("$POLYGONSCAN_API_KEY" "etherscan" "$POLYGON_RPC_URL" "https://polygonscan.com/") ;; # polygon
+        80002)    config=("$ETHERSCAN_API_KEY" "etherscan" "$POLYGON_AMOY_RPC_URL" "https://amoy.polygonscan.com/") ;; # polygon-amoy
         100)      config=("$GNOSISSCAN_API_KEY" "etherscan" "$GNOSIS_RPC_URL" "https://gnosisscan.io/") ;; # gnosis
         10200)    config=("$GNOSISSCAN_API_KEY" "blockscout" "$GNOSIS_CHIADO_RPC_URL" "https://gnosis-chiado.blockscout.com/api") ;; # gnosis-chiado
         56)       config=("$BINANCESCAN_API_KEY" "etherscan" "$BINANCE_RPC_URL" "https://bscscan.com/") ;; # binance
