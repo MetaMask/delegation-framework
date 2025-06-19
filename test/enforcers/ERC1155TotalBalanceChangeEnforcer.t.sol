@@ -55,6 +55,19 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(termsData_.amount, 100);
     }
 
+    // Validates that getHashKey function returns the correct hash
+    function test_getHashKey() public {
+        address caller_ = address(dm);
+        address token_ = address(token);
+        address recipient_ = address(delegator);
+        uint256 tokenId_ = 1;
+
+        bytes32 expectedHash_ = keccak256(abi.encode(caller_, token_, recipient_, tokenId_));
+        bytes32 actualHash_ = enforcer.getHashKey(caller_, token_, recipient_, tokenId_);
+
+        assertEq(actualHash_, expectedHash_, "getHashKey should return correct hash");
+    }
+
     // Validates that a balance has increased at least by the expected amount.
     function test_allow_ifBalanceIncreases() public {
         // Expect increase by at least 100.
