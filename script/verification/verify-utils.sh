@@ -29,6 +29,9 @@ CHAIN_IDS=(
   130        # unichain
   1301       # unichain-sepolia
   10143      # monad-testnet
+  5115       # citrea-testnet
+  57073      # ink
+  763373     # ink-sepolia
 )
 
 ##########################################
@@ -65,6 +68,9 @@ get_chain_config() {
         130)      config=("$UNICHAIN_API_KEY" "custom" "$UNICHAIN_RPC_URL" "https://api.uniscan.xyz/api") ;; # unichain
         1301)     config=("$UNICHAIN_API_KEY" "custom" "$UNICHAIN_SEPOLIA_RPC_URL" "https://api-sepolia.uniscan.xyz/api") ;; # unichain-sepolia
         10143)    config=("$ETHERSCAN_API_KEY" "etherscan" "$MONAD_TESTNET_RPC_URL" "") ;; # unichain-sepolia
+        5115)     config=("key" "blockscout" "$CITREA_TESTNET_RPC_URL" "https://explorer.testnet.citrea.xyz/api") ;; # citrea-testnet
+        57073)    config=("key" "blockscout" "$INK_RPC_URL" "https://explorer.inkonchain.com/api") ;; # ink
+        763373)   config=("key" "blockscout" "$INK_SEPOLIA_RPC_URL" "https://explorer-sepolia.inkonchain.com/api") ;; # ink-sepolia
         *)
             echo "Unknown chain ID: $chain_id" >&2
             return 1
