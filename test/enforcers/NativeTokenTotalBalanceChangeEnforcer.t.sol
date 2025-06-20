@@ -2,7 +2,6 @@
 pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
-import "../../src/utils/Types.sol";
 import { Execution } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { NativeTokenTotalBalanceChangeEnforcer } from "../../src/enforcers/NativeTokenTotalBalanceChangeEnforcer.sol";
@@ -152,6 +151,24 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
     }
 
+    // Reverts if balance changes between beforeAllHook calls for the same recipient
+    function test_notAllow_balanceChangedBetweenBeforeAllHookCalls() public {
+        address recipient_ = delegator;
+        bytes memory terms_ = abi.encodePacked(false, recipient_, uint256(100));
+
+        // First beforeAllHook call - caches the initial balance
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
+
+        // Modify the recipient's balance between beforeAllHook calls
+        _increaseBalance(delegator, 50);
+
+        // Second beforeAllHook call - should revert because balance changed
+        vm.prank(dm);
+        vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:balance-changed"));
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
+    }
+
     // should fail with invalid call type mode (try instead of default)
     function test_revertWithInvalidExecutionMode() public {
         vm.prank(address(delegationManager));
@@ -161,13 +178,14 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
     ////////////////////////////// Multiple Enforcers //////////////////////////////
 
+    // Reverts if the total balance increase is insufficient with multiple enforcers.
+    // We are running 2 enforcers in the delegation chain: both increasing by 100. Total expected balance change is an
+    // increase of at least 200.
     function test_multiple_enforcers_insufficient_increase() public {
         address recipient_ = delegator;
         // increase by at least 100
         bytes memory terms_ = abi.encodePacked(false, recipient_, uint256(100));
 
-        // we are running 2 enforcers in the delegation chain: both increasing by 100. Total expected balance change is an
-        // increase of at least 200.
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
 
@@ -179,16 +197,11 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:insufficient-balance-increase"));
         vm.prank(dm);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
-
-        _increaseBalance(delegator, 1);
-
-        vm.prank(dm);
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
-
-        vm.prank(dm);
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
     }
 
+    // Reverts if the total balance decrease is excessive with multiple enforcers.
+    // We are running 2 enforcers in the delegation chain: both decreasing by 100. Total expected balance change is an
+    // decrease of at most 200.
     function test_multiple_enforcers_excessive_decrease() public {
         address recipient_ = delegator;
         vm.deal(recipient_, 1000); // Start with 1000
@@ -196,8 +209,6 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // Expect it to decrease by at most 100
         bytes memory terms_ = abi.encodePacked(true, recipient_, uint256(100));
 
-        // we are running 2 enforcers in the delegation chain: both decreasing by 100. Total expected balance change is an
-        // decrease of at most 200.
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
 
@@ -209,16 +220,11 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:exceeded-balance-decrease"));
         vm.prank(dm);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
-
-        _increaseBalance(delegator, 1);
-
-        vm.prank(dm);
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
-
-        vm.prank(dm);
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
     }
 
+    // Reverts if the total balance increase is insufficient with multiple enforcers.
+    // We are running 3 enforcers in the delegation chain: 2 increasing and 1 decreasing. Total expected balance change is an
+    // increase of at least 100.
     function test_mixed_enforcers_insufficient_increase() public {
         address recipient_ = delegator;
         // increase by at least 100
@@ -226,8 +232,6 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // decrease by at most 100
         bytes memory termsDecrease_ = abi.encodePacked(true, recipient_, uint256(100));
 
-        // we are running 3 enforcers in the delegation chain: 2 increasing and 1 decreasing. Total expected balance change is an
-        // increase of at least 100.
         vm.prank(dm);
         enforcer.beforeAllHook(termsIncrease_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
 
@@ -242,19 +246,11 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:insufficient-balance-increase"));
         vm.prank(dm);
         enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
-
-        _increaseBalance(delegator, 1);
-
-        vm.prank(dm);
-        enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
-
-        vm.prank(dm);
-        enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
-
-        vm.prank(dm);
-        enforcer.afterAllHook(termsDecrease_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
     }
 
+    // Reverts if the total balance decrease is excessive with multiple enforcers.
+    // We are running 3 enforcers in the delegation chain: 1 increasing and 2 decreasing. Total expected balance change is an
+    // decrease of at most 100.
     function test_mixed_enforcers_excessive_decrease() public {
         address recipient_ = delegator;
         vm.deal(recipient_, 1000); // Start with 1000
@@ -264,8 +260,6 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // decrease by at most 100
         bytes memory termsDecrease_ = abi.encodePacked(true, recipient_, uint256(100));
 
-        // we are running 3 enforcers in the delegation chain: 1 increasing and 2 decreasing. Total expected balance change is an
-        // decrease of at most 100.
         vm.prank(dm);
         enforcer.beforeAllHook(termsIncrease_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
 
@@ -280,21 +274,11 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:exceeded-balance-decrease"));
         vm.prank(dm);
         enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
-
-        _increaseBalance(delegator, 1);
-
-        vm.prank(dm);
-        enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
-
-        vm.prank(dm);
-        enforcer.afterAllHook(termsDecrease_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
-
-        vm.prank(dm);
-        enforcer.afterAllHook(termsDecrease_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
     }
 
     ////////////////////////////// Check events //////////////////////////////
 
+    // Validates that the events are emitted correctly for an increase scenario.
     function test_events_emitted_correctly() public {
         address recipient_ = delegator;
         // Increase by 100
@@ -336,6 +320,7 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(logs2.length, 0, "Should not emit any events");
     }
 
+    // Validates that the events are emitted correctly for a decrease scenario.
     function test_events_emitted_correctly_with_decrease() public {
         address recipient_ = delegator;
         // Decrease by 100

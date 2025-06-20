@@ -4,8 +4,7 @@ pragma solidity 0.8.23;
 import "forge-std/Test.sol";
 import { BasicERC20 } from "../utils/BasicERC20.t.sol";
 
-import "../../src/utils/Types.sol";
-import { Execution } from "../../src/utils/Types.sol";
+import { Execution, Caveat, Delegation, ModeCode, CallType, ExecType } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
@@ -51,6 +50,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         delegator = address(users.alice.deleGator);
         delegate = address(users.bob.deleGator);
         recipient = address(users.carol.deleGator);
+        someUser = address(users.dave.deleGator);
         dm = address(delegationManager);
         vm.label(address(enforcer), "ERC20 Balance Change Enforcer");
         vm.label(address(token), "ERC20 Test Token");
@@ -196,8 +196,6 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
-    ////////////////////////////// Errors //////////////////////////////
-
     // Reverts if an increase hasn't been sufficient
     function test_notAllow_insufficientIncrease() public {
         // Terms: flag=false (increase expected), required increase of 100 tokens.
@@ -225,6 +223,24 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(dm);
         vm.expectRevert(bytes("ERC20TotalBalanceChangeEnforcer:insufficient-balance-increase"));
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+    }
+
+    // Reverts if balance changes between beforeAllHook calls for the same recipient/token pair
+    function test_notAllow_balanceChangedBetweenBeforeAllHookCalls() public {
+        bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(100));
+
+        // First beforeAllHook call - caches the initial balance
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Modify the recipient's balance between beforeAllHook calls
+        vm.prank(delegator);
+        token.mint(recipient, 50);
+
+        // Second beforeAllHook call - should revert because balance changed
+        vm.prank(dm);
+        vm.expectRevert(bytes("ERC20TotalBalanceChangeEnforcer:balance-changed"));
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Validates that the terms are well formed (exactly 73 bytes)
@@ -289,6 +305,9 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
     ////////////////////////////// Multiple enforcer in delegation chain Functionality //////////////////////////////
 
+    // Reverts if the total balance increase is insufficient.
+    // We are running 3 enforcers in the delegation chain: all increasing by 100. Total expected balance change is an
+    // increase of at least 300.
     function test_multiple_enforcers_insufficient_increase() public {
         // Terms: [flag=false, token, recipient, amount=100]
         bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(100));
@@ -300,12 +319,15 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(delegator);
-        token.mint(recipient, 250);
+        token.mint(recipient, 299);
         vm.prank(dm);
         vm.expectRevert("ERC20TotalBalanceChangeEnforcer:insufficient-balance-increase");
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
+    // Validates that the total balance decrease is correct with multiple decrease enforcers.
+    // We are running 2 enforcers in the delegation chain: both decreasing by 10. Total expected balance change is a
+    // decrease of at most 20.
     function test_multiple_enforcers_decrease() public {
         uint256 initialBalance_ = 100;
         vm.prank(delegator);
@@ -327,6 +349,9 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
+    // Reverts if the total balance decrease is excessive with multiple decrease enforcers.
+    // We are running 2 enforcers in the delegation chain: both decreasing by 10. Total expected balance change is a
+    // decrease of at most 20.
     function test_multiple_enforcers_excessiveDecrease() public {
         uint256 initialBalance_ = 100;
         vm.prank(delegator);
@@ -347,6 +372,9 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
+    // Validates that the total balance increase is correct with multiple enforcers.
+    // We are running 2 enforcers in the delegation chain: one increasing by 100 and one decreasing by 10. Total expected
+    // balance change is an increase of at least 90.
     function test_mixed_enforcers_overall_increase() public {
         // Terms: [flag=false, token, recipient, amount=100]
         bytes memory termsIncrease_ = abi.encodePacked(false, address(token), address(recipient), uint256(100));
@@ -364,6 +392,9 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.afterAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
+    // Validates that the total balance decrease is correct with multiple enforcers.
+    // We are running 2 enforcers in the delegation chain: one increasing by 10 and one decreasing by 100. Total expected
+    // balance change is a decrease of at most 90.
     function test_mixed_enforcers_overall_decrease() public {
         uint256 initialBalance_ = 100;
         vm.prank(delegator);
@@ -385,6 +416,9 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.afterAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
+    // Reverts if the total balance increase is insufficient with multiple enforcers.
+    // We are running 2 enforcers in the delegation chain: one increasing by 100 and one decreasing by 10. Total expected
+    // balance change is an increase of at least 90.
     function test_mixed_enforcers_insufficientIncrease() public {
         // Terms: [flag=false, token, recipient, amount=100]
         bytes memory termsIncrease_ = abi.encodePacked(false, address(token), address(recipient), uint256(100));
@@ -400,8 +434,12 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(dm);
         vm.expectRevert("ERC20TotalBalanceChangeEnforcer:insufficient-balance-increase");
         enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.afterAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
+    // Reverts if the total balance decrease is excessive with multiple enforcers.
+    // We are running 2 enforcers in the delegation chain: one increasing by 10 and one decreasing by 100. Total expected
+    // balance change is a decrease of at most 90.
     function test_mixed_enforcers_excessiveDecrease() public {
         uint256 initialBalance_ = 100;
         vm.prank(delegator);
@@ -421,10 +459,12 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(dm);
         vm.expectRevert("ERC20TotalBalanceChangeEnforcer:exceeded-balance-decrease");
         enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        enforcer.afterAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     ////////////////////////////// Check events //////////////////////////////
 
+    // Validates that the events are emitted correctly for an increase scenario.
     function test_events_emitted_correctly() public {
         bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(100));
 
