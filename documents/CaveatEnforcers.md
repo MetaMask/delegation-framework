@@ -94,7 +94,7 @@ This includes:
 - `ERC20TotalBalanceChangeEnforcer`
 - `ERC721TotalBalanceChangeEnforcer`
 - `ERC1155TotalBalanceChangeEnforcer`
-- `NativeTotalBalanceChangeEnforcer`
+- `NativeTokenTotalBalanceChangeEnforcer`
 
 These enforcers are introduced in parallel to the normal `Balance Change enforcers` for scenarios where we have a delegation chain where multiple instances of the same enforcer can be present. 
 
