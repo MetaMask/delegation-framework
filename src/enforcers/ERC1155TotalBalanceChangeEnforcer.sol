@@ -9,12 +9,12 @@ import { ModeCode } from "../utils/Types.sol";
 /**
  * @title ERC1155TotalBalanceChangeEnforcer
  * @notice Enforces that a recipient's token balance increases by at least the expected total amount across multiple delegations
- * or decreases by at most the expected total amount across multiple delegations. In a delegation chain there can be a combination
- * of both increases and decreases and the enforcer will track the total expected change.
+ * or decreases by at most the expected total amount across multiple delegations. In a delegation chain, there can be a combination
+ * of both increases and decreases, and the enforcer will track the total expected change.
  * @dev Tracks initial balance and accumulates expected increases and decreases per recipient/token pair within a redemption
  * @dev This enforcer operates only in default execution mode.
  * @dev Security considerations:
- * - State is shared between enforcers watching the same recipient/token pair. After transaction execution the state is cleared.
+ * - State is shared between enforcers watching the same recipient/token pair. After transaction execution, the state is cleared.
  * - Balance changes are tracked by comparing beforeAll/afterAll balances.
  * - If delegate is a EOA and not a deleGator in a situation with multiple delegations a adapter contract can be used to redeem
  * delegations. An example of this is the SwapMock contract in the ERC20TotalBalanceChangeEnforcer test suite.

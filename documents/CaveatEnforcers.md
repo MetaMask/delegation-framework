@@ -100,7 +100,7 @@ These enforcers are introduced in parallel to the normal `Balance Change enforce
 
 #### Key Differences from Regular Balance Change Enforcers
 
-**Regular Balance Change Enforcers** (e.g., `NativeBalanceChangeEnforcer`) track balance changes by comparing the recipient's balance before and after execution using `beforeHook` and `afterHook`. Since enforcers watching the same recipient share state, a single balance modification may satisfy multiple enforcers simultaneously, which can lead to unintended behavior in delegation chains.
+**Regular Balance Change Enforcers** (e.g., `NativeBalanceChangeEnforcer`) track balance changes by comparing the recipient's balance before and after execution using `beforeHook` and `afterHook`. Since enforcers watching the same recipient and token share state, a single balance modification may satisfy multiple enforcers simultaneously, which can lead to unintended behavior in delegation chains.
 
 **Total Balance Change Enforcers** address this issue by:
 
