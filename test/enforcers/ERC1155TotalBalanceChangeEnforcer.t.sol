@@ -413,9 +413,9 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // First beforeAllHook - should emit TrackedBalance and UpdatedExpectedBalance
         vm.expectEmit(true, true, true, true);
-        emit ERC1155TotalBalanceChangeEnforcer.TrackedBalance(dm, delegator, address(token), 0);
+        emit ERC1155TotalBalanceChangeEnforcer.TrackedBalance(dm, delegator, address(token), tokenId, 0);
         vm.expectEmit(true, true, true, true);
-        emit ERC1155TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, address(token), delegator, false, 100);
+        emit ERC1155TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, delegator, address(token), tokenId, false, 100);
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
 
@@ -427,10 +427,10 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(logs.length, 1, "Should only emit one event");
 
         // Verify it's the UpdatedExpectedBalance event
-        assertEq(logs[0].topics[0], keccak256("UpdatedExpectedBalance(address,address,address,bool,uint256)"));
+        assertEq(logs[0].topics[0], keccak256("UpdatedExpectedBalance(address,address,address,uint256,bool,uint256)"));
         assertEq(logs[0].topics[1], bytes32(uint256(uint160(dm)))); // delegationManager
-        assertEq(logs[0].topics[2], bytes32(uint256(uint160(address(token))))); // token
-        assertEq(logs[0].topics[3], bytes32(uint256(uint160(address(delegator))))); // recipient
+        assertEq(logs[0].topics[2], bytes32(uint256(uint160(address(delegator))))); // recipient
+        assertEq(logs[0].topics[3], bytes32(uint256(uint160(address(token))))); // token
 
         // mint 2 tokens
         vm.prank(delegator);
@@ -438,7 +438,7 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // First afterAllHook - should emit ValidatedBalance
         vm.expectEmit(true, true, true, true);
-        emit ERC1155TotalBalanceChangeEnforcer.ValidatedBalance(dm, delegator, address(token), 200);
+        emit ERC1155TotalBalanceChangeEnforcer.ValidatedBalance(dm, delegator, address(token), tokenId, 200);
         vm.prank(dm);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
 
@@ -461,9 +461,9 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // beforeAllHook - should emit TrackedBalance and UpdatedExpectedBalance
         vm.expectEmit(true, true, true, true);
-        emit ERC1155TotalBalanceChangeEnforcer.TrackedBalance(dm, delegator, address(token), 100);
+        emit ERC1155TotalBalanceChangeEnforcer.TrackedBalance(dm, delegator, address(token), tokenId, 100);
         vm.expectEmit(true, true, true, true);
-        emit ERC1155TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, address(token), delegator, true, 100);
+        emit ERC1155TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, delegator, address(token), tokenId, true, 100);
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
 
@@ -472,7 +472,7 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // afterAllHook - should emit ValidatedBalance
         vm.expectEmit(true, true, true, true);
-        emit ERC1155TotalBalanceChangeEnforcer.ValidatedBalance(dm, delegator, address(token), 100);
+        emit ERC1155TotalBalanceChangeEnforcer.ValidatedBalance(dm, delegator, address(token), tokenId, 100);
         vm.prank(dm);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }

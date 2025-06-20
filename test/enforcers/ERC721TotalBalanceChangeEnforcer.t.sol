@@ -419,7 +419,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.expectEmit(true, true, true, true);
         emit ERC721TotalBalanceChangeEnforcer.TrackedBalance(dm, delegator, address(token), 0);
         vm.expectEmit(true, true, true, true);
-        emit ERC721TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, address(token), delegator, false, 1);
+        emit ERC721TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, delegator, address(token), false, 1);
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
 
@@ -433,8 +433,8 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // Verify it's the UpdatedExpectedBalance event
         assertEq(logs[0].topics[0], keccak256("UpdatedExpectedBalance(address,address,address,bool,uint256)"));
         assertEq(logs[0].topics[1], bytes32(uint256(uint160(dm)))); // delegationManager
-        assertEq(logs[0].topics[2], bytes32(uint256(uint160(address(token))))); // token
-        assertEq(logs[0].topics[3], bytes32(uint256(uint160(address(delegator))))); // recipient
+        assertEq(logs[0].topics[2], bytes32(uint256(uint160(address(delegator))))); // recipient
+        assertEq(logs[0].topics[3], bytes32(uint256(uint160(address(token))))); // token
 
         // mint 2 tokens
         vm.prank(delegator);
@@ -471,7 +471,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.expectEmit(true, true, true, true);
         emit ERC721TotalBalanceChangeEnforcer.TrackedBalance(dm, delegator, address(token), 2);
         vm.expectEmit(true, true, true, true);
-        emit ERC721TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, address(token), delegator, true, 1);
+        emit ERC721TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, delegator, address(token), true, 1);
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
 

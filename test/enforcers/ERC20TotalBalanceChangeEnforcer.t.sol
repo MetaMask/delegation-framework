@@ -472,7 +472,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.expectEmit(true, true, true, true);
         emit ERC20TotalBalanceChangeEnforcer.TrackedBalance(dm, recipient, address(token), 0);
         vm.expectEmit(true, true, true, true);
-        emit ERC20TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, address(token), recipient, false, 100);
+        emit ERC20TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, recipient, address(token), false, 100);
 
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
@@ -490,8 +490,8 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // Verify it's the UpdatedExpectedBalance event
         assertEq(logs[0].topics[0], keccak256("UpdatedExpectedBalance(address,address,address,bool,uint256)"));
         assertEq(logs[0].topics[1], bytes32(uint256(uint160(dm)))); // delegationManager
-        assertEq(logs[0].topics[2], bytes32(uint256(uint160(address(token))))); // token
-        assertEq(logs[0].topics[3], bytes32(uint256(uint160(address(recipient))))); // recipint
+        assertEq(logs[0].topics[2], bytes32(uint256(uint160(address(recipient))))); // recipint
+        assertEq(logs[0].topics[3], bytes32(uint256(uint160(address(token))))); // token
 
         // Perform the balance change
         vm.prank(delegator);
@@ -524,7 +524,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.expectEmit(true, true, true, true);
         emit ERC20TotalBalanceChangeEnforcer.TrackedBalance(dm, recipient, address(token), 100);
         vm.expectEmit(true, true, true, true);
-        emit ERC20TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, address(token), recipient, true, 50);
+        emit ERC20TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, recipient, address(token), true, 50);
 
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);

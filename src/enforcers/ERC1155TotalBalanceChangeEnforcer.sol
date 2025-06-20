@@ -22,11 +22,20 @@ import { ModeCode } from "../utils/Types.sol";
 contract ERC1155TotalBalanceChangeEnforcer is CaveatEnforcer {
     ////////////////////////////// Events //////////////////////////////
 
-    event TrackedBalance(address indexed delegationManager, address indexed recipient, address indexed token, uint256 balance);
-    event UpdatedExpectedBalance(
-        address indexed delegationManager, address indexed token, address indexed recipient, bool enforceDecrease, uint256 expected
+    event TrackedBalance(
+        address indexed delegationManager, address indexed recipient, address indexed token, uint256 tokenId, uint256 balance
     );
-    event ValidatedBalance(address indexed delegationManager, address indexed recipient, address indexed token, uint256 expected);
+    event UpdatedExpectedBalance(
+        address indexed delegationManager,
+        address indexed recipient,
+        address indexed token,
+        uint256 tokenId,
+        bool enforceDecrease,
+        uint256 expected
+    );
+    event ValidatedBalance(
+        address indexed delegationManager, address indexed recipient, address indexed token, uint256 tokenId, uint256 expected
+    );
 
     ////////////////////////////// State //////////////////////////////
 
@@ -93,7 +102,7 @@ contract ERC1155TotalBalanceChangeEnforcer is CaveatEnforcer {
 
         if (balanceTracker_.expectedIncrease == 0 && balanceTracker_.expectedDecrease == 0) {
             balanceTracker_.balanceBefore = balance_;
-            emit TrackedBalance(msg.sender, terms_.recipient, terms_.token, balance_);
+            emit TrackedBalance(msg.sender, terms_.recipient, terms_.token, terms_.tokenId, balance_);
         } else {
             require(balanceTracker_.balanceBefore == balance_, "ERC1155TotalBalanceChangeEnforcer:balance-changed");
         }
@@ -106,7 +115,9 @@ contract ERC1155TotalBalanceChangeEnforcer is CaveatEnforcer {
 
         balanceTracker[hashKey_] = balanceTracker_;
 
-        emit UpdatedExpectedBalance(msg.sender, terms_.token, terms_.recipient, terms_.enforceDecrease, terms_.amount);
+        emit UpdatedExpectedBalance(
+            msg.sender, terms_.recipient, terms_.token, terms_.tokenId, terms_.enforceDecrease, terms_.amount
+        );
     }
 
     /**
@@ -157,7 +168,7 @@ contract ERC1155TotalBalanceChangeEnforcer is CaveatEnforcer {
 
         delete balanceTracker[hashKey_];
 
-        emit ValidatedBalance(msg.sender, terms_.recipient, terms_.token, expected_);
+        emit ValidatedBalance(msg.sender, terms_.recipient, terms_.token, terms_.tokenId, expected_);
     }
 
     /**

@@ -24,7 +24,7 @@ contract ERC721TotalBalanceChangeEnforcer is CaveatEnforcer {
 
     event TrackedBalance(address indexed delegationManager, address indexed recipient, address indexed token, uint256 balance);
     event UpdatedExpectedBalance(
-        address indexed delegationManager, address indexed token, address indexed recipient, bool enforceDecrease, uint256 expected
+        address indexed delegationManager, address indexed recipient, address indexed token, bool enforceDecrease, uint256 expected
     );
     event ValidatedBalance(address indexed delegationManager, address indexed recipient, address indexed token, uint256 expected);
 
@@ -98,7 +98,7 @@ contract ERC721TotalBalanceChangeEnforcer is CaveatEnforcer {
 
         balanceTracker[hashKey_] = balanceTracker_;
 
-        emit UpdatedExpectedBalance(msg.sender, token_, recipient_, enforceDecrease_, amount_);
+        emit UpdatedExpectedBalance(msg.sender, recipient_, token_, enforceDecrease_, amount_);
     }
 
     /**
