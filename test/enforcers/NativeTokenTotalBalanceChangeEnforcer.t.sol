@@ -5,13 +5,13 @@ import "forge-std/Test.sol";
 import "../../src/utils/Types.sol";
 import { Execution } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
-import { NativeTotalBalanceChangeEnforcer } from "../../src/enforcers/NativeTotalBalanceChangeEnforcer.sol";
+import { NativeTokenTotalBalanceChangeEnforcer } from "../../src/enforcers/NativeTokenTotalBalanceChangeEnforcer.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 import { Counter } from "../utils/Counter.t.sol";
 
-contract NativeTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
+contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     ////////////////////////////// State //////////////////////////////
-    NativeTotalBalanceChangeEnforcer public enforcer;
+    NativeTokenTotalBalanceChangeEnforcer public enforcer;
     address delegator;
     address delegate;
     address dm;
@@ -25,7 +25,7 @@ contract NativeTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         delegator = address(users.alice.deleGator);
         delegate = address(users.bob.deleGator);
         dm = address(delegationManager);
-        enforcer = new NativeTotalBalanceChangeEnforcer();
+        enforcer = new NativeTokenTotalBalanceChangeEnforcer();
         vm.label(address(enforcer), "Native Balance Change Enforcer");
         noExecution = Execution(address(0), 0, hex"");
     }
@@ -104,7 +104,7 @@ contract NativeTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.startPrank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
         _increaseBalance(delegator, 10);
-        vm.expectRevert(bytes("NativeTotalBalanceChangeEnforcer:insufficient-balance-increase"));
+        vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:insufficient-balance-increase"));
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
     }
 
@@ -119,7 +119,7 @@ contract NativeTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.startPrank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
         _decreaseBalance(delegator, 150);
-        vm.expectRevert(bytes("NativeTotalBalanceChangeEnforcer:exceeded-balance-decrease"));
+        vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:exceeded-balance-decrease"));
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
     }
 
@@ -130,12 +130,12 @@ contract NativeTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // Too small
         terms_ = abi.encodePacked(false, recipient_, uint8(100));
-        vm.expectRevert(bytes("NativeTotalBalanceChangeEnforcer:invalid-terms-length"));
+        vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
 
         // Too large
         terms_ = abi.encodePacked(false, uint256(100), uint256(100));
-        vm.expectRevert(bytes("NativeTotalBalanceChangeEnforcer:invalid-terms-length"));
+        vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
     }
 
@@ -176,7 +176,7 @@ contract NativeTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         _increaseBalance(delegator, 199);
 
-        vm.expectRevert(bytes("NativeTotalBalanceChangeEnforcer:insufficient-balance-increase"));
+        vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:insufficient-balance-increase"));
         vm.prank(dm);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
 
@@ -206,7 +206,7 @@ contract NativeTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         _decreaseBalance(delegator, 201);
 
-        vm.expectRevert(bytes("NativeTotalBalanceChangeEnforcer:exceeded-balance-decrease"));
+        vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:exceeded-balance-decrease"));
         vm.prank(dm);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
 
@@ -239,7 +239,7 @@ contract NativeTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         _increaseBalance(delegator, 99);
 
-        vm.expectRevert(bytes("NativeTotalBalanceChangeEnforcer:insufficient-balance-increase"));
+        vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:insufficient-balance-increase"));
         vm.prank(dm);
         enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
 
@@ -277,7 +277,7 @@ contract NativeTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         _decreaseBalance(delegator, 101);
 
-        vm.expectRevert(bytes("NativeTotalBalanceChangeEnforcer:exceeded-balance-decrease"));
+        vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:exceeded-balance-decrease"));
         vm.prank(dm);
         enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
 
@@ -302,9 +302,9 @@ contract NativeTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // First beforeAllHook - should emit TrackedBalance and UpdatedExpectedBalance
         vm.expectEmit(true, true, true, true);
-        emit NativeTotalBalanceChangeEnforcer.TrackedBalance(dm, recipient_, 100000000000000000000);
+        emit NativeTokenTotalBalanceChangeEnforcer.TrackedBalance(dm, recipient_, 100000000000000000000);
         vm.expectEmit(true, true, true, true);
-        emit NativeTotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, recipient_, false, 100);
+        emit NativeTokenTotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, recipient_, false, 100);
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), recipient_, delegate);
 
@@ -324,7 +324,7 @@ contract NativeTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // First afterAllHook - should emit ValidatedBalance
         vm.expectEmit(true, true, true, true);
-        emit NativeTotalBalanceChangeEnforcer.ValidatedBalance(dm, delegator, 200);
+        emit NativeTokenTotalBalanceChangeEnforcer.ValidatedBalance(dm, delegator, 200);
         vm.prank(dm);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
 
@@ -343,9 +343,9 @@ contract NativeTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // First beforeAllHook - should emit TrackedBalance and UpdatedExpectedBalance
         vm.expectEmit(true, true, true, true);
-        emit NativeTotalBalanceChangeEnforcer.TrackedBalance(dm, recipient_, 100000000000000000000);
+        emit NativeTokenTotalBalanceChangeEnforcer.TrackedBalance(dm, recipient_, 100000000000000000000);
         vm.expectEmit(true, true, true, true);
-        emit NativeTotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, recipient_, true, 100);
+        emit NativeTokenTotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, recipient_, true, 100);
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), recipient_, delegate);
 
@@ -353,7 +353,7 @@ contract NativeTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // First afterAllHook - should emit ValidatedBalance
         vm.expectEmit(true, true, true, true);
-        emit NativeTotalBalanceChangeEnforcer.ValidatedBalance(dm, delegator, 100);
+        emit NativeTokenTotalBalanceChangeEnforcer.ValidatedBalance(dm, delegator, 100);
         vm.prank(dm);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
     }

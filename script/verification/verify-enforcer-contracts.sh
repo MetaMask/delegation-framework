@@ -57,7 +57,7 @@ ENFORCERS=(
   "ERC20TotalBalanceChangeEnforcer"
   "ERC721TotalBalanceChangeEnforcer"
   "ERC1155TotalBalanceChangeEnforcer"
-  "NativeTotalBalanceChangeEnforcer"
+  "NativeTokenTotalBalanceChangeEnforcer"
 )
 
 ADDRESSES=(

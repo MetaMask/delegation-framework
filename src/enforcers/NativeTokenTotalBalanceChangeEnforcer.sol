@@ -5,10 +5,10 @@ import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";
 
 /**
- * @title NativeTotalBalanceChangeEnforcer
- * @notice Enforces that a recipient's native balance increases by at least the expected total amount across multiple delegations
- * or decreases by at most the expected total amount across multiple delegations. In a delegation chain there can be a combination
- * of both increases and decreases and the enforcer will track the total expected change.
+ * @title NativeTokenTotalBalanceChangeEnforcer
+ * @notice Enforces that a recipient's native token balance increases by at least the expected total amount across multiple
+ * delegations or decreases by at most the expected total amount across multiple delegations. In a delegation chain,
+ * there can be a combination of both increases and decreases, and the enforcer will track the total expected change.
  * @dev Tracks initial balance and accumulates expected increases and decreases per recipient within a redemption
  * @dev This enforcer operates only in default execution mode.
  * @dev Security considerations:
@@ -17,7 +17,7 @@ import { ModeCode } from "../utils/Types.sol";
  * - If the delegate is an EOA and not a DeleGator in a situation with multiple delegations, an adapter contract can be used to
  * redeem delegations. An example of this is the src/helpers/DelegationMetaSwapAdapter.sol contract.
  */
-contract NativeTotalBalanceChangeEnforcer is CaveatEnforcer {
+contract NativeTokenTotalBalanceChangeEnforcer is CaveatEnforcer {
     ////////////////////////////// Events //////////////////////////////
 
     event TrackedBalance(address indexed delegationManager, address indexed recipient, uint256 balance);
@@ -81,7 +81,7 @@ contract NativeTotalBalanceChangeEnforcer is CaveatEnforcer {
             balanceTracker_.balanceBefore = recipient_.balance;
             emit TrackedBalance(msg.sender, recipient_, recipient_.balance);
         } else {
-            require(balanceTracker_.balanceBefore == recipient_.balance, "NativeTotalBalanceChangeEnforcer:balance-changed");
+            require(balanceTracker_.balanceBefore == recipient_.balance, "NativeTokenTotalBalanceChangeEnforcer:balance-changed");
         }
 
         if (enforceDecrease_) {
@@ -127,13 +127,13 @@ contract NativeTotalBalanceChangeEnforcer is CaveatEnforcer {
             expected_ = balanceTracker_.expectedIncrease - balanceTracker_.expectedDecrease;
             require(
                 recipient_.balance >= balanceTracker_.balanceBefore + expected_,
-                "NativeTotalBalanceChangeEnforcer:insufficient-balance-increase"
+                "NativeTokenTotalBalanceChangeEnforcer:insufficient-balance-increase"
             );
         } else {
             expected_ = balanceTracker_.expectedDecrease - balanceTracker_.expectedIncrease;
             require(
                 recipient_.balance >= balanceTracker_.balanceBefore - expected_,
-                "NativeTotalBalanceChangeEnforcer:exceeded-balance-decrease"
+                "NativeTokenTotalBalanceChangeEnforcer:exceeded-balance-decrease"
             );
         }
 
@@ -155,7 +155,7 @@ contract NativeTotalBalanceChangeEnforcer is CaveatEnforcer {
      * enforceDecrease)
      */
     function getTermsInfo(bytes calldata _terms) public pure returns (bool enforceDecrease_, address recipient_, uint256 amount_) {
-        require(_terms.length == 53, "NativeTotalBalanceChangeEnforcer:invalid-terms-length");
+        require(_terms.length == 53, "NativeTokenTotalBalanceChangeEnforcer:invalid-terms-length");
         enforceDecrease_ = _terms[0] != 0;
         recipient_ = address(bytes20(_terms[1:21]));
         amount_ = uint256(bytes32(_terms[21:]));
