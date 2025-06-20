@@ -16,8 +16,8 @@ import { ModeCode } from "../utils/Types.sol";
  * @dev Security considerations:
  * - State is shared between enforcers watching the same recipient/token pair. After transaction execution, the state is cleared.
  * - Balance changes are tracked by comparing beforeAll/afterAll balances.
- * - If the delegate is an EOA and not a DeleGator in a situation with multiple delegations, an adapter contract can be used to redeem
- * delegations. An example of this is the SwapMock contract in the ERC20TotalBalanceChangeEnforcer test suite.
+ * - If the delegate is an EOA and not a DeleGator in a situation with multiple delegations, an adapter contract can be used to
+ * redeem delegations. An example of this is the src/helpers/DelegationMetaSwapAdapter.sol contract.
  */
 contract ERC1155TotalBalanceChangeEnforcer is CaveatEnforcer {
     ////////////////////////////// Events //////////////////////////////
