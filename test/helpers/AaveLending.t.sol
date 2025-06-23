@@ -13,6 +13,7 @@ import { AllowedTargetsEnforcer } from "../../src/enforcers/AllowedTargetsEnforc
 import { AllowedMethodsEnforcer } from "../../src/enforcers/AllowedMethodsEnforcer.sol";
 import { AllowedCalldataEnforcer } from "../../src/enforcers/AllowedCalldataEnforcer.sol";
 import { ValueLteEnforcer } from "../../src/enforcers/ValueLteEnforcer.sol";
+import { LogicalOrWrapperEnforcer } from "../../src/enforcers/LogicalOrWrapperEnforcer.sol";
 import { IPool } from "./interfaces/IAavePool.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -36,6 +37,7 @@ contract AaveLendingTest is BaseTest {
     AllowedMethodsEnforcer public allowedMethodsEnforcer;
     AllowedCalldataEnforcer public allowedCalldataEnforcer;
     ValueLteEnforcer public valueLteEnforcer;
+    LogicalOrWrapperEnforcer public logicalOrWrapperEnforcer;
 
     uint256 public constant MAINNET_FORK_BLOCK = 22734910; // Use latest available block
     uint256 public constant INITIAL_USDC_BALANCE = 10000000000; // 10k USDC
@@ -59,11 +61,13 @@ contract AaveLendingTest is BaseTest {
         allowedMethodsEnforcer = new AllowedMethodsEnforcer();
         allowedCalldataEnforcer = new AllowedCalldataEnforcer();
         valueLteEnforcer = new ValueLteEnforcer();
+        logicalOrWrapperEnforcer = new LogicalOrWrapperEnforcer(delegationManager);
 
         vm.label(address(allowedTargetsEnforcer), "AllowedTargetsEnforcer");
         vm.label(address(allowedMethodsEnforcer), "AllowedMethodsEnforcer");
         vm.label(address(allowedCalldataEnforcer), "AllowedCalldataEnforcer");
         vm.label(address(valueLteEnforcer), "ValueLteEnforcer");
+        vm.label(address(logicalOrWrapperEnforcer), "LogicalOrWrapperEnforcer");
         vm.label(address(AAVE_POOL), "Aave lending");
         vm.label(address(USDC), "USDC");
         vm.label(USDC_WHALE, "USDC Whale");
@@ -279,5 +283,110 @@ contract AaveLendingTest is BaseTest {
         // Check state after delegation
         uint256 aliceUSDCBalance = USDC.balanceOf(address(users.alice.deleGator));
         assertEq(aliceUSDCBalance, INITIAL_USDC_BALANCE);
+    }
+
+    function test_aliceDelegatedDepositWithLogicalOrWrapper() public {
+        // Check initial balance
+        uint256 aliceUSDCInitialBalance = USDC.balanceOf(address(users.alice.deleGator));
+        assertEq(aliceUSDCInitialBalance, INITIAL_USDC_BALANCE);
+
+        LogicalOrWrapperEnforcer.CaveatGroup[] memory groups_ = new LogicalOrWrapperEnforcer.CaveatGroup[](2);
+
+        // Create delegation caveats for approving USDC
+        Caveat[] memory approveCaveats_ = new Caveat[](4);
+
+        // Recommended: Restrict to specific contract
+        approveCaveats_[0] =
+            Caveat({ args: hex"", enforcer: address(allowedTargetsEnforcer), terms: abi.encodePacked(address(USDC)) });
+
+        // Recommended: Restrict to deposit function only
+        approveCaveats_[1] =
+            Caveat({ args: hex"", enforcer: address(allowedMethodsEnforcer), terms: abi.encodePacked(IERC20.approve.selector) });
+
+        // Recommended: Restrict approve amount
+        uint256 paramStart_ = abi.encodeWithSelector(IERC20.approve.selector, address(0)).length;
+        approveCaveats_[2] = Caveat({
+            args: hex"",
+            enforcer: address(allowedCalldataEnforcer),
+            terms: abi.encodePacked(paramStart_, DEPOSIT_AMOUNT)
+        });
+
+        // Recommended: Set value limit to 0
+        approveCaveats_[3] = Caveat({ args: hex"", enforcer: address(valueLteEnforcer), terms: abi.encode(0) });
+
+        // Create delegation caveats for lending
+        Caveat[] memory lendingCaveats_ = new Caveat[](4);
+
+        // Recommended: Restrict to specific contract
+        lendingCaveats_[0] =
+            Caveat({ args: hex"", enforcer: address(allowedTargetsEnforcer), terms: abi.encodePacked(address(AAVE_POOL)) });
+
+        // Recommended: Restrict to deposit function only
+        lendingCaveats_[1] =
+            Caveat({ args: hex"", enforcer: address(allowedMethodsEnforcer), terms: abi.encodePacked(IPool.supply.selector) });
+
+        // Recommended: Restrict supply argument "onBehalfOf" to alice
+        paramStart_ = abi.encodeWithSelector(IPool.supply.selector, address(0), uint256(0)).length;
+        lendingCaveats_[2] = Caveat({
+            args: hex"",
+            enforcer: address(allowedCalldataEnforcer),
+            terms: abi.encode(paramStart_, address(users.alice.deleGator))
+        });
+
+        // Recommended: Set value limit to 0
+        lendingCaveats_[3] = Caveat({ args: hex"", enforcer: address(valueLteEnforcer), terms: abi.encode(0) });
+
+        groups_[0] = LogicalOrWrapperEnforcer.CaveatGroup({ caveats: approveCaveats_ });
+        groups_[1] = LogicalOrWrapperEnforcer.CaveatGroup({ caveats: lendingCaveats_ });
+
+        Caveat[] memory orCaveats_ = new Caveat[](1);
+        orCaveats_[0] = Caveat({ args: hex"", enforcer: address(logicalOrWrapperEnforcer), terms: abi.encode(groups_) });
+
+        // Create delegation for lending
+        Delegation memory delegation = Delegation({
+            delegate: address(users.bob.deleGator),
+            delegator: address(users.alice.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: orCaveats_,
+            salt: 0,
+            signature: hex""
+        });
+
+        // Sign delegation
+        delegation = signDelegation(users.alice, delegation);
+
+        // Create proper execution for approving USDC
+        Execution memory approveExecution_ = Execution({
+            target: address(USDC),
+            value: 0,
+            callData: abi.encodeWithSelector(IERC20.approve.selector, address(AAVE_POOL), DEPOSIT_AMOUNT)
+        });
+
+        // Create execution for lending
+        Execution memory lendingExecution_ = Execution({
+            target: address(AAVE_POOL),
+            value: 0,
+            callData: abi.encodeWithSelector(IPool.supply.selector, address(USDC), DEPOSIT_AMOUNT, address(users.alice.deleGator), 0)
+        });
+
+        // Execute delegation
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation;
+
+        delegations_[0].caveats[0].args =
+            abi.encode(LogicalOrWrapperEnforcer.SelectedGroup({ groupIndex: 0, caveatArgs: new bytes[](4) }));
+        invokeDelegation_UserOp(users.bob, delegations_, approveExecution_);
+
+        delegations_[0].caveats[0].args =
+            abi.encode(LogicalOrWrapperEnforcer.SelectedGroup({ groupIndex: 1, caveatArgs: new bytes[](4) }));
+        invokeDelegation_UserOp(users.bob, delegations_, lendingExecution_);
+
+        // Check state after delegation
+        uint256 aliceUSDCBalance = USDC.balanceOf(address(users.alice.deleGator));
+        assertEq(aliceUSDCBalance, INITIAL_USDC_BALANCE - DEPOSIT_AMOUNT);
+
+        IERC20 aUSDC = IERC20(AAVE_POOL.getReserveAToken(address(USDC)));
+        uint256 aliceATokenBalance = aUSDC.balanceOf(address(users.alice.deleGator));
+        assertEq(aliceATokenBalance, DEPOSIT_AMOUNT);
     }
 }
