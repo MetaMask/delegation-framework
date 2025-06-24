@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.23;
 
+import { IERC5267 } from "@openzeppelin/contracts/interfaces/IERC5267.sol";
+import { IERC173 } from "../../../src/interfaces/IERC173.sol";
+
 /**
  * @title IVaultEthStaking
  * @author StakeWise
@@ -282,6 +285,160 @@ interface IKeeperRewards {
      * @param _rewardsMinOracles The new min number of oracles for confirming rewards update
      */
     function setRewardsMinOracles(uint256 _rewardsMinOracles) external;
+}
+
+/**
+ * @title IKeeperOracles
+ * @author StakeWise
+ * @notice Defines the interface for the KeeperOracles contract
+ */
+interface IKeeperOracles is IERC5267 {
+    /**
+     * @notice Event emitted on the oracle addition
+     * @param oracle The address of the added oracle
+     */
+    event OracleAdded(address indexed oracle);
+
+    /**
+     * @notice Event emitted on the oracle removal
+     * @param oracle The address of the removed oracle
+     */
+    event OracleRemoved(address indexed oracle);
+
+    /**
+     * @notice Event emitted on oracles config update
+     * @param configIpfsHash The IPFS hash of the new config
+     */
+    event ConfigUpdated(string configIpfsHash);
+
+    /**
+     * @notice Function for verifying whether oracle is registered or not
+     * @param oracle The address of the oracle to check
+     * @return `true` for the registered oracle, `false` otherwise
+     */
+    function isOracle(address oracle) external view returns (bool);
+
+    /**
+     * @notice Total Oracles
+     * @return The total number of oracles registered
+     */
+    function totalOracles() external view returns (uint256);
+
+    /**
+     * @notice Function for adding oracle to the set
+     * @param oracle The address of the oracle to add
+     */
+    function addOracle(address oracle) external;
+
+    /**
+     * @notice Function for removing oracle from the set
+     * @param oracle The address of the oracle to remove
+     */
+    function removeOracle(address oracle) external;
+
+    /**
+     * @notice Function for updating the config IPFS hash
+     * @param configIpfsHash The new config IPFS hash
+     */
+    function updateConfig(string calldata configIpfsHash) external;
+}
+
+/**
+ * @title IKeeperValidators
+ * @author StakeWise
+ * @notice Defines the interface for the Keeper validators
+ */
+interface IKeeperValidators is IKeeperOracles, IKeeperRewards {
+    /**
+     * @notice Event emitted on validators approval
+     * @param vault The address of the Vault
+     * @param exitSignaturesIpfsHash The IPFS hash with the validators' exit signatures
+     */
+    event ValidatorsApproval(address indexed vault, string exitSignaturesIpfsHash);
+
+    /**
+     * @notice Event emitted on exit signatures update
+     * @param caller The address of the function caller
+     * @param vault The address of the Vault
+     * @param nonce The nonce used for verifying Oracles' signatures
+     * @param exitSignaturesIpfsHash The IPFS hash with the validators' exit signatures
+     */
+    event ExitSignaturesUpdated(address indexed caller, address indexed vault, uint256 nonce, string exitSignaturesIpfsHash);
+
+    /**
+     * @notice Event emitted on validators min oracles number update
+     * @param oracles The new minimum number of oracles required to approve validators
+     */
+    event ValidatorsMinOraclesUpdated(uint256 oracles);
+
+    /**
+     * @notice Get nonce for the next vault exit signatures update
+     * @param vault The address of the Vault to get the nonce for
+     * @return The nonce of the Vault for updating signatures
+     */
+    function exitSignaturesNonces(address vault) external view returns (uint256);
+
+    /**
+     * @notice Struct for approving registration of one or more validators
+     * @param validatorsRegistryRoot The deposit data root used to verify that oracles approved validators
+     * @param deadline The deadline for submitting the approval
+     * @param validators The concatenation of the validators' public key, signature and deposit data root
+     * @param signatures The concatenation of Oracles' signatures
+     * @param exitSignaturesIpfsHash The IPFS hash with the validators' exit signatures
+     */
+    struct ApprovalParams {
+        bytes32 validatorsRegistryRoot;
+        uint256 deadline;
+        bytes validators;
+        bytes signatures;
+        string exitSignaturesIpfsHash;
+    }
+
+    /**
+     * @notice The minimum number of oracles required to update validators
+     * @return The minimum number of oracles
+     */
+    function validatorsMinOracles() external view returns (uint256);
+
+    /**
+     * @notice Function for approving validators registration
+     * @param params The parameters for approving validators registration
+     */
+    function approveValidators(ApprovalParams calldata params) external;
+
+    /**
+     * @notice Function for updating exit signatures for every hard fork
+     * @param vault The address of the Vault to update signatures for
+     * @param deadline The deadline for submitting signatures update
+     * @param exitSignaturesIpfsHash The IPFS hash with the validators' exit signatures
+     * @param oraclesSignatures The concatenation of Oracles' signatures
+     */
+    function updateExitSignatures(
+        address vault,
+        uint256 deadline,
+        string calldata exitSignaturesIpfsHash,
+        bytes calldata oraclesSignatures
+    )
+        external;
+
+    /**
+     * @notice Function for updating validators min oracles number
+     * @param _validatorsMinOracles The new minimum number of oracles required to approve validators
+     */
+    function setValidatorsMinOracles(uint256 _validatorsMinOracles) external;
+}
+
+/**
+ * @title IKeeper
+ * @author StakeWise
+ * @notice Defines the interface for the Keeper contract
+ */
+interface IKeeper is IKeeperOracles, IKeeperRewards, IKeeperValidators, IERC173 {
+    /**
+     * @notice Initializes the Keeper contract. Can only be called once.
+     * @param _owner The address of the owner
+     */
+    function initialize(address _owner) external;
 }
 
 /**
