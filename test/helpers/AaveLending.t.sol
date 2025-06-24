@@ -34,6 +34,15 @@ import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol"
  * 2. We use a custom contract "AaveAdapter" to which alice delegates with only transfer balance. AaveAdapter
  * is then the one that takes care of approving tokens to Aave and doing the lending. This way the adapter is the
  * one that over approves tokens. Making it safer. But this introduces a middleware contract.
+ * Also there are 2 different ways of using the AaveAdapter:
+ * - supplyByDelegation - this is a more restrictive way where alice needs to create a transfer delegation to the adapter,
+ * then another delegation to the executor for him to call supplyByDelegation. This way alice can restrict who can call
+ * the aaveAdapter.
+ * - supplyByDelegationOpenEnded - this is less restrictive since anyone can call it as long as they have a valid transfer
+ * delegation
+ * to the adapter.
+ *
+ * In both cases only the creator of the transfer delegation can receive aTokens.
  */
 contract AaveLendingTest is BaseTest {
     using ModeLib for ModeCode;
@@ -455,7 +464,7 @@ contract AaveLendingTest is BaseTest {
         assertEq(aliceATokenBalance, DEPOSIT_AMOUNT);
     }
 
-    // Testing delegating transfer to adapter and then delegating suppyByDelegation
+    // Testing delegating transfer to adapter and then delegating supplyByDelegation
     function test_aliceDelegatedDepositViaAdapterDelegation() public {
         // Check initial balance
         uint256 aliceUSDCInitialBalance = USDC.balanceOf(address(users.alice.deleGator));
@@ -527,6 +536,48 @@ contract AaveLendingTest is BaseTest {
         uint256 aliceATokenBalance = aUSDC.balanceOf(address(users.alice.deleGator));
         assertEq(aliceATokenBalance, DEPOSIT_AMOUNT);
     }
+
+    // Testing delegating transfer to adapter and then calling (can be called by anyone) suppyByDelegationOpenEnded
+    function test_aliceDelegatedDepositViaOpenEndedAdapterDelegation() public {
+        // Check initial balance
+        uint256 aliceUSDCInitialBalance = USDC.balanceOf(address(users.alice.deleGator));
+        assertEq(aliceUSDCInitialBalance, INITIAL_USDC_BALANCE);
+
+        // Create delegation for transferring USDC to adapter
+        Caveat[] memory transferCaveats_ = new Caveat[](1);
+
+        transferCaveats_[0] = Caveat({
+            args: hex"",
+            enforcer: address(erc20TransferAmountEnforcer),
+            terms: abi.encodePacked(address(USDC), DEPOSIT_AMOUNT)
+        });
+
+        // Create delegation for transfer
+        Delegation memory delegation = Delegation({
+            delegate: address(aaveAdapter),
+            delegator: address(users.alice.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: transferCaveats_,
+            salt: 0,
+            signature: hex""
+        });
+
+        // Sign delegation
+        delegation = signDelegation(users.alice, delegation);
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation;
+
+        aaveAdapter.supplyByDelegationOpenEnded(delegations_, address(USDC), DEPOSIT_AMOUNT);
+
+        // Check state after delegation
+        uint256 aliceUSDCBalance = USDC.balanceOf(address(users.alice.deleGator));
+        assertEq(aliceUSDCBalance, INITIAL_USDC_BALANCE - DEPOSIT_AMOUNT);
+
+        IERC20 aUSDC = IERC20(AAVE_POOL.getReserveAToken(address(USDC)));
+        uint256 aliceATokenBalance = aUSDC.balanceOf(address(users.alice.deleGator));
+        assertEq(aliceATokenBalance, DEPOSIT_AMOUNT);
+    }
 }
 
 // This is a POC for the AaveAdapter contract.
@@ -559,5 +610,26 @@ contract AaveAdapter {
 
         IERC20(_token).approve(address(aavePool), _amount);
         aavePool.supply(_token, _amount, msg.sender, 0);
+    }
+
+    // This function redeems the delegation then approves and supplies the token to Aave.
+    function supplyByDelegationOpenEnded(Delegation[] memory _delegations, address _token, uint256 _amount) external {
+        require(_delegations.length == 1, "Wrong number of delegations");
+
+        bytes[] memory permissionContexts_ = new bytes[](1);
+        permissionContexts_[0] = abi.encode(_delegations);
+
+        ModeCode[] memory encodedModes_ = new ModeCode[](1);
+        encodedModes_[0] = ModeLib.encodeSimpleSingle();
+
+        bytes[] memory executionCallDatas_ = new bytes[](1);
+
+        bytes memory encodedTransfer_ = abi.encodeCall(IERC20.transfer, (address(this), _amount));
+        executionCallDatas_[0] = ExecutionLib.encodeSingle(address(_token), 0, encodedTransfer_);
+
+        delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
+
+        IERC20(_token).approve(address(aavePool), _amount);
+        aavePool.supply(_token, _amount, _delegations[0].delegator, 0);
     }
 }
