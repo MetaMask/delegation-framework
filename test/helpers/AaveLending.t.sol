@@ -14,8 +14,10 @@ import { AllowedMethodsEnforcer } from "../../src/enforcers/AllowedMethodsEnforc
 import { AllowedCalldataEnforcer } from "../../src/enforcers/AllowedCalldataEnforcer.sol";
 import { ValueLteEnforcer } from "../../src/enforcers/ValueLteEnforcer.sol";
 import { LogicalOrWrapperEnforcer } from "../../src/enforcers/LogicalOrWrapperEnforcer.sol";
+import { ERC20TransferAmountEnforcer } from "../../src/enforcers/ERC20TransferAmountEnforcer.sol";
 import { IPool } from "./interfaces/IAavePool.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
 
 // @dev Do not remove this comment below
 /// forge-config: default.evm_version = "shanghai"
@@ -23,7 +25,15 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /**
  * @title AaveLending Test
  * @notice Tests delegation-based lending on Aave v3.
- * @dev Uses a forked Ethereum mainnet environment to test real contract interactions
+ * @dev Uses a forked Ethereum mainnet environment to test real contract interactions.
+ * We are testing 2 different ways of using delegation framework to enable lending on Aave v3.
+ * 1. Alice delegates token approval on USDC and supply on Aave. This can be done in 2 seperate delegations
+ * or in a single delegation using LogicalOrWrapperEnforcer. This way the funds and approval are going
+ * directly from alice to USDC/Aave. But if we want to do rebalancing this means that alice would need to over
+ * approve tokens so that we can withdraw and deposit again.
+ * 2. We use a custom contract "AaveAdapter" to which alice delegates with only transfer balance. AaveAdapter
+ * is then the one that takes care of approving tokens to Aave and doing the lending. This way the adapter is the
+ * one that over approves tokens. Making it safer. But this introduces a middleware contract.
  */
 contract AaveLendingTest is BaseTest {
     using ModeLib for ModeCode;
@@ -38,6 +48,8 @@ contract AaveLendingTest is BaseTest {
     AllowedCalldataEnforcer public allowedCalldataEnforcer;
     ValueLteEnforcer public valueLteEnforcer;
     LogicalOrWrapperEnforcer public logicalOrWrapperEnforcer;
+    ERC20TransferAmountEnforcer public erc20TransferAmountEnforcer;
+    AaveAdapter public aaveAdapter;
 
     uint256 public constant MAINNET_FORK_BLOCK = 22734910; // Use latest available block
     uint256 public constant INITIAL_USDC_BALANCE = 10000000000; // 10k USDC
@@ -61,16 +73,21 @@ contract AaveLendingTest is BaseTest {
         allowedMethodsEnforcer = new AllowedMethodsEnforcer();
         allowedCalldataEnforcer = new AllowedCalldataEnforcer();
         valueLteEnforcer = new ValueLteEnforcer();
+        erc20TransferAmountEnforcer = new ERC20TransferAmountEnforcer();
+
         logicalOrWrapperEnforcer = new LogicalOrWrapperEnforcer(delegationManager);
+        aaveAdapter = new AaveAdapter(address(delegationManager), address(AAVE_POOL));
 
         vm.label(address(allowedTargetsEnforcer), "AllowedTargetsEnforcer");
         vm.label(address(allowedMethodsEnforcer), "AllowedMethodsEnforcer");
         vm.label(address(allowedCalldataEnforcer), "AllowedCalldataEnforcer");
         vm.label(address(valueLteEnforcer), "ValueLteEnforcer");
         vm.label(address(logicalOrWrapperEnforcer), "LogicalOrWrapperEnforcer");
+        vm.label(address(erc20TransferAmountEnforcer), "ERC20TransferAmountEnforcer");
         vm.label(address(AAVE_POOL), "Aave lending");
         vm.label(address(USDC), "USDC");
         vm.label(USDC_WHALE, "USDC Whale");
+        vm.label(address(aaveAdapter), "AaveAdapter");
 
         vm.deal(address(users.alice.deleGator), 1 ether);
 
@@ -78,6 +95,7 @@ contract AaveLendingTest is BaseTest {
         USDC.transfer(address(users.alice.deleGator), INITIAL_USDC_BALANCE); // 10k USDC
     }
 
+    // Testing directly depositing USDC to Aave to see if everything works on the forked mainnet
     function test_aliceDirectDeposit() public {
         uint256 aliceUSDCInitialBalance = USDC.balanceOf(address(users.alice.deleGator));
         assertEq(aliceUSDCInitialBalance, INITIAL_USDC_BALANCE);
@@ -95,6 +113,7 @@ contract AaveLendingTest is BaseTest {
         assertEq(aliceATokenBalance, DEPOSIT_AMOUNT);
     }
 
+    // Testing directly withdrawing USDC from Aave to see if everything works on the forked mainnet
     function test_aliceDirectWithdraw() public {
         vm.prank(address(users.alice.deleGator));
         USDC.approve(address(AAVE_POOL), DEPOSIT_AMOUNT);
@@ -108,6 +127,7 @@ contract AaveLendingTest is BaseTest {
         assertEq(aliceUSDCBalance, INITIAL_USDC_BALANCE);
     }
 
+    // Testing delegating approval and supply functions in 2 separate delegations
     function test_aliceDelegatedDeposit() public {
         // Check initial balance
         uint256 aliceUSDCInitialBalance = USDC.balanceOf(address(users.alice.deleGator));
@@ -218,6 +238,7 @@ contract AaveLendingTest is BaseTest {
         assertEq(aliceATokenBalance, DEPOSIT_AMOUNT);
     }
 
+    // Testing delegating withdrawal function in a single delegation
     function test_aliceDelegatedWithdraw() public {
         // Set initial state of alice having deposited 1k USDC
         vm.prank(address(users.alice.deleGator));
@@ -285,6 +306,7 @@ contract AaveLendingTest is BaseTest {
         assertEq(aliceUSDCBalance, INITIAL_USDC_BALANCE);
     }
 
+    // Testing delegating approval and supply functions in a single delegation using LogicalOrWrapperEnforcer
     function test_aliceDelegatedDepositWithLogicalOrWrapper() public {
         // Check initial balance
         uint256 aliceUSDCInitialBalance = USDC.balanceOf(address(users.alice.deleGator));
@@ -388,5 +410,154 @@ contract AaveLendingTest is BaseTest {
         IERC20 aUSDC = IERC20(AAVE_POOL.getReserveAToken(address(USDC)));
         uint256 aliceATokenBalance = aUSDC.balanceOf(address(users.alice.deleGator));
         assertEq(aliceATokenBalance, DEPOSIT_AMOUNT);
+    }
+
+    // Testing delegating transfer to adapter and then supply by delegation
+    function test_aliceDelegatedDepositViaAdapter() public {
+        // Check initial balance
+        uint256 aliceUSDCInitialBalance = USDC.balanceOf(address(users.alice.deleGator));
+        assertEq(aliceUSDCInitialBalance, INITIAL_USDC_BALANCE);
+
+        // Create delegation for transferring USDC to adapter
+        Caveat[] memory transferCaveats_ = new Caveat[](1);
+
+        transferCaveats_[0] = Caveat({
+            args: hex"",
+            enforcer: address(erc20TransferAmountEnforcer),
+            terms: abi.encodePacked(address(USDC), DEPOSIT_AMOUNT)
+        });
+
+        // Create delegation for transfer
+        Delegation memory delegation = Delegation({
+            delegate: address(aaveAdapter),
+            delegator: address(users.alice.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: transferCaveats_,
+            salt: 0,
+            signature: hex""
+        });
+
+        // Sign delegation
+        delegation = signDelegation(users.alice, delegation);
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation;
+
+        vm.prank(address(users.alice.deleGator));
+        aaveAdapter.supplyByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
+
+        // Check state after delegation
+        uint256 aliceUSDCBalance = USDC.balanceOf(address(users.alice.deleGator));
+        assertEq(aliceUSDCBalance, INITIAL_USDC_BALANCE - DEPOSIT_AMOUNT);
+
+        IERC20 aUSDC = IERC20(AAVE_POOL.getReserveAToken(address(USDC)));
+        uint256 aliceATokenBalance = aUSDC.balanceOf(address(users.alice.deleGator));
+        assertEq(aliceATokenBalance, DEPOSIT_AMOUNT);
+    }
+
+    // Testing delegating transfer to adapter and then delegating suppyByDelegation
+    function test_aliceDelegatedDepositViaAdapterDelegation() public {
+        // Check initial balance
+        uint256 aliceUSDCInitialBalance = USDC.balanceOf(address(users.alice.deleGator));
+        assertEq(aliceUSDCInitialBalance, INITIAL_USDC_BALANCE);
+
+        // Create delegation for transferring USDC to adapter
+        Caveat[] memory transferCaveats_ = new Caveat[](1);
+
+        transferCaveats_[0] = Caveat({
+            args: hex"",
+            enforcer: address(erc20TransferAmountEnforcer),
+            terms: abi.encodePacked(address(USDC), DEPOSIT_AMOUNT)
+        });
+
+        // Create delegation for transfer
+        Delegation memory delegation = Delegation({
+            delegate: address(aaveAdapter),
+            delegator: address(users.alice.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: transferCaveats_,
+            salt: 0,
+            signature: hex""
+        });
+
+        // Sign delegation
+        delegation = signDelegation(users.alice, delegation);
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation;
+
+        // Create delegation caveats for lending
+        Caveat[] memory supplyCaveats_ = new Caveat[](1);
+
+        // Recommended: Restrict to specific contract
+        supplyCaveats_[0] =
+            Caveat({ args: hex"", enforcer: address(allowedTargetsEnforcer), terms: abi.encodePacked(address(aaveAdapter)) });
+
+        // Create delegation for supply
+        Delegation memory supplyDelegation = Delegation({
+            delegate: address(users.bob.deleGator),
+            delegator: address(users.alice.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: supplyCaveats_,
+            salt: 0,
+            signature: hex""
+        });
+
+        // Sign delegation
+        supplyDelegation = signDelegation(users.alice, supplyDelegation);
+
+        // Create execution for supply
+        Execution memory supplyExecution_ = Execution({
+            target: address(aaveAdapter),
+            value: 0,
+            callData: abi.encodeWithSelector(AaveAdapter.supplyByDelegation.selector, delegations_, address(USDC), DEPOSIT_AMOUNT)
+        });
+
+        // Execute delegation
+        Delegation[] memory supplyDelegations_ = new Delegation[](1);
+        supplyDelegations_[0] = supplyDelegation;
+
+        invokeDelegation_UserOp(users.bob, supplyDelegations_, supplyExecution_);
+
+        // Check state after delegation
+        uint256 aliceUSDCBalance = USDC.balanceOf(address(users.alice.deleGator));
+        assertEq(aliceUSDCBalance, INITIAL_USDC_BALANCE - DEPOSIT_AMOUNT);
+
+        IERC20 aUSDC = IERC20(AAVE_POOL.getReserveAToken(address(USDC)));
+        uint256 aliceATokenBalance = aUSDC.balanceOf(address(users.alice.deleGator));
+        assertEq(aliceATokenBalance, DEPOSIT_AMOUNT);
+    }
+}
+
+// This is a POC for the AaveAdapter contract.
+contract AaveAdapter {
+    IDelegationManager public immutable delegationManager;
+    IPool public immutable aavePool;
+
+    constructor(address _delegationManager, address _aavePool) {
+        delegationManager = IDelegationManager(_delegationManager);
+        aavePool = IPool(_aavePool);
+    }
+
+    // This function redeems the delegation then approves and supplies the token to Aave.
+    function supplyByDelegation(Delegation[] memory _delegations, address _token, uint256 _amount) external {
+        require(_delegations.length == 1, "Wrong number of delegations");
+        require(_delegations[0].delegator == msg.sender, "Not allowed");
+
+        bytes[] memory permissionContexts_ = new bytes[](1);
+        permissionContexts_[0] = abi.encode(_delegations);
+
+        ModeCode[] memory encodedModes_ = new ModeCode[](1);
+        encodedModes_[0] = ModeLib.encodeSimpleSingle();
+
+        bytes[] memory executionCallDatas_ = new bytes[](1);
+
+        bytes memory encodedTransfer_ = abi.encodeCall(IERC20.transfer, (address(this), _amount));
+        executionCallDatas_[0] = ExecutionLib.encodeSingle(address(_token), 0, encodedTransfer_);
+
+        delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
+
+        IERC20(_token).approve(address(aavePool), _amount);
+        aavePool.supply(_token, _amount, msg.sender, 0);
     }
 }
