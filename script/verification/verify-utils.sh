@@ -19,6 +19,7 @@ CHAIN_IDS=(
   42170      # arbitrum nova
   421614     # arbitrum-sepolia
   137        # polygon
+  80002      # polygon-amoy
   100        # gnosis
   10200      # gnosis-chiado
   56         # binance
@@ -28,6 +29,9 @@ CHAIN_IDS=(
   130        # unichain
   1301       # unichain-sepolia
   10143      # monad-testnet
+  5115       # citrea-testnet
+  57073      # ink
+  763373     # ink-sepolia
 )
 
 ##########################################
@@ -54,6 +58,7 @@ get_chain_config() {
         42170)    config=("$ETHERSCAN_API_KEY" "etherscan" "$ARBITRUM_NOVA_RPC_URL" "")   ;; # arbitrum nova
         421614)   config=("$ARBISCAN_API_KEY" "etherscan" "$ARBITRUM_SEPOLIA_RPC_URL" "https://sepolia.arbiscan.io/") ;; # arbitrum-sepolia
         137)      config=("$POLYGONSCAN_API_KEY" "etherscan" "$POLYGON_RPC_URL" "https://polygonscan.com/") ;; # polygon
+        80002)    config=("$ETHERSCAN_API_KEY" "etherscan" "$POLYGON_AMOY_RPC_URL" "https://amoy.polygonscan.com/") ;; # polygon-amoy
         100)      config=("$GNOSISSCAN_API_KEY" "etherscan" "$GNOSIS_RPC_URL" "https://gnosisscan.io/") ;; # gnosis
         10200)    config=("$GNOSISSCAN_API_KEY" "blockscout" "$GNOSIS_CHIADO_RPC_URL" "https://gnosis-chiado.blockscout.com/api") ;; # gnosis-chiado
         56)       config=("$BINANCESCAN_API_KEY" "etherscan" "$BINANCE_RPC_URL" "https://bscscan.com/") ;; # binance
@@ -63,6 +68,9 @@ get_chain_config() {
         130)      config=("$UNICHAIN_API_KEY" "custom" "$UNICHAIN_RPC_URL" "https://api.uniscan.xyz/api") ;; # unichain
         1301)     config=("$UNICHAIN_API_KEY" "custom" "$UNICHAIN_SEPOLIA_RPC_URL" "https://api-sepolia.uniscan.xyz/api") ;; # unichain-sepolia
         10143)    config=("$ETHERSCAN_API_KEY" "etherscan" "$MONAD_TESTNET_RPC_URL" "") ;; # unichain-sepolia
+        5115)     config=("key" "blockscout" "$CITREA_TESTNET_RPC_URL" "https://explorer.testnet.citrea.xyz/api") ;; # citrea-testnet
+        57073)    config=("key" "blockscout" "$INK_RPC_URL" "https://explorer.inkonchain.com/api") ;; # ink
+        763373)   config=("key" "blockscout" "$INK_SEPOLIA_RPC_URL" "https://explorer-sepolia.inkonchain.com/api") ;; # ink-sepolia
         *)
             echo "Unknown chain ID: $chain_id" >&2
             return 1

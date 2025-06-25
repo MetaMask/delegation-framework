@@ -43,11 +43,13 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Gnosis Chain
 - Berachain
 - Unichain
+- Ink
 
 ### Testnets
 
 - Ethereum Sepolia
 - Linea Sepolia
+- Polygon Amoy
 - Base Sepolia
 - MegaEth
 - Gnosis Chiado
@@ -57,6 +59,8 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Berachain testnet
 - Unichain Sepolia
 - Monad
+- Citera testnet
+- Ink Sepolia
 
 ## **Deployments**
 
