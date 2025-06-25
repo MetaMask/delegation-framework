@@ -43,6 +43,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Gnosis Chain
 - Berachain
 - Unichain
+- Ink
 
 ### Testnets
 
@@ -58,6 +59,8 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Berachain testnet
 - Unichain Sepolia
 - Monad
+- Citera testnet
+- Ink Sepolia
 
 ## **Deployments**
 
