@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
-pragma solidity 0.8.23;
+pragma solidity ^0.8.23;
 
 import { Test } from "forge-std/Test.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
