@@ -1,14 +1,14 @@
 // Based on: https://github.com/aave-dao/aave-v3-origin/blob/main/src/contracts/interfaces/IPool.sol
 
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+// SPDX-License-Identifier: MIT AND Apache-2.0
+pragma solidity 0.8.23;
 
 /**
- * @title IPool
+ * @title IAavePool
  * @author Aave
  * @notice Defines the basic interface for an Aave Pool.
  */
-interface IPool {
+interface IAavePool {
     /**
      * @dev Emitted on mintUnbacked()
      * @param reserve The address of the underlying asset of the reserve
