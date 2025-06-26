@@ -74,6 +74,10 @@ Developers can build new Caveat Enforcers for their own use cases, and the possi
 
 [Read more on "Caveats" ->](/documents/DelegationManager.md#Caveats)
 
+### Security
+
+See [Security Guidelines](/documents/Security.md) for security considerations.
+
 ## Development
 
 ### Third Party Developers
