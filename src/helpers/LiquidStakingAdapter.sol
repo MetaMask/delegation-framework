@@ -96,12 +96,12 @@ contract LiquidStakingAdapter is Ownable {
         requestIds_ = _requestWithdrawals(_amounts, totalAmount_, delegator_);
     }
 
-    /// @notice Request withdrawals with permit using delegation-based operation
+    /// @notice Request withdrawals with permit
     /// @dev Delegates can execute this function to request withdrawals using permit signatures
     /// @param _amounts Array of stETH amounts to withdraw
     /// @param _permit Permit signature data for gasless approval
     /// @return requestIds_ Array of withdrawal request IDs
-    function requestWithdrawalsWithPermitByDelegation(
+    function requestWithdrawalsWithPermit(
         uint256[] memory _amounts,
         IWithdrawalQueue.PermitInput memory _permit
     )

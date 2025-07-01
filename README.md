@@ -74,6 +74,12 @@ Developers can build new Caveat Enforcers for their own use cases, and the possi
 
 [Read more on "Caveats" ->](/documents/DelegationManager.md#Caveats)
 
+### Delegation Adapters
+
+Delegation Adapters are specialized contracts that bridge the gap between the delegation framework and external protocols that don't natively support delegations.
+
+[Read more on "Delegation Adapters" ->](/documents/Adapters.md)
+
 ## Development
 
 ### Third Party Developers

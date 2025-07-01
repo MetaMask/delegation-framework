@@ -752,71 +752,201 @@ contract LiquidStakingTest is BaseTest {
     }
 
     /**
-     * @notice Test requestWithdrawalsWithPermitByDelegation function
+     * @notice Test requestWithdrawalsWithPermit function
      */
-    // function test_liquidStakingAdapter_requestWithdrawalsWithPermitByDelegation() public {
-    //     vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), 22791044);
-    //     setUpContracts();
+    function test_liquidStakingAdapter_requestWithdrawalsWithPermit() public {
+        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), 22791044);
+        setUpContracts();
 
-    //     LiquidStakingAdapter liquidStakingAdapter =
-    //         new LiquidStakingAdapter(address(alice.deleGator), address(delegationManager), LIDO_WITHDRAWAL_QUEUE, STETH_ADDRESS);
+        LiquidStakingAdapter liquidStakingAdapter_ =
+            new LiquidStakingAdapter(address(alice.deleGator), address(delegationManager), LIDO_WITHDRAWAL_QUEUE, STETH_ADDRESS);
 
-    //     // Give Alice some stETH
-    //     uint256 testAmount = 500 ether;
-    //     vm.deal(address(alice.deleGator), 100 ether);
+        uint256 aliceStETHBalance_ = stETH.balanceOf(LIDO_WITHDRAWAL_REQUESTER_ADDRESS);
+        uint256 withdrawalAmount_ = 1000 ether;
+        require(aliceStETHBalance_ >= withdrawalAmount_, "Alice should have enough stETH");
 
-    //     // Get stETH by depositing to Lido
-    //     vm.prank(address(alice.deleGator));
-    //     (bool success,) = STETH_ADDRESS.call{ value: testAmount }("");
-    //     require(success, "Failed to get stETH");
+        // Create permit signature (using dummy values for testing)
+        IWithdrawalQueue.PermitInput memory permit_ = IWithdrawalQueue.PermitInput({
+            value: withdrawalAmount_,
+            deadline: block.timestamp + 1 hours,
+            v: 27,
+            r: bytes32(uint256(1)),
+            s: bytes32(uint256(2))
+        });
 
-    //     uint256 aliceStETHBalance = stETH.balanceOf(address(alice.deleGator));
-    //     uint256 withdrawalAmount = 100 ether;
-    //     require(aliceStETHBalance >= withdrawalAmount, "Alice should have enough stETH");
+        uint256[] memory amounts_ = new uint256[](1);
+        amounts_[0] = withdrawalAmount_;
 
-    //     // Create permit signature (using dummy values for testing)
-    //     IWithdrawalQueue.PermitInput memory permit = IWithdrawalQueue.PermitInput({
-    //         value: withdrawalAmount,
-    //         deadline: block.timestamp + 1 hours,
-    //         v: 27,
-    //         r: bytes32(uint256(1)),
-    //         s: bytes32(uint256(2))
-    //     });
+        // Mock the permit call since we can't generate real permit signatures in tests
+        vm.mockCall(
+            STETH_ADDRESS,
+            abi.encodeWithSelector(
+                IERC20Permit.permit.selector,
+                LIDO_WITHDRAWAL_REQUESTER_ADDRESS,
+                address(liquidStakingAdapter_),
+                permit_.value,
+                permit_.deadline,
+                permit_.v,
+                permit_.r,
+                permit_.s
+            ),
+            ""
+        );
 
-    //     uint256[] memory amounts = new uint256[](1);
-    //     amounts[0] = withdrawalAmount;
+        // Approve stETH transfer to adapter - mocked
+        vm.prank(LIDO_WITHDRAWAL_REQUESTER_ADDRESS);
+        stETH.approve(address(liquidStakingAdapter_), withdrawalAmount_);
 
-    //     // Mock the permit call since we can't generate real permit signatures in tests
-    //     vm.mockCall(
-    //         STETH_ADDRESS,
-    //         abi.encodeWithSelector(
-    //             IERC20Permit.permit.selector,
-    //             address(alice.deleGator),
-    //             address(liquidStakingAdapter),
-    //             permit.value,
-    //             permit.deadline,
-    //             permit.v,
-    //             permit.r,
-    //             permit.s
-    //         ),
-    //         ""
-    //     );
+        // Call the permit-based function
+        vm.prank(LIDO_WITHDRAWAL_REQUESTER_ADDRESS);
+        uint256[] memory requestIds_ = liquidStakingAdapter_.requestWithdrawalsWithPermit(amounts_, permit_);
 
-    //     uint256 aliceInitialBalance = stETH.balanceOf(address(alice.deleGator));
+        IWithdrawalQueue.WithdrawalRequestStatus[] memory statuses_ = withdrawalQueue.getWithdrawalStatus(requestIds_);
+        assertEq(statuses_[0].amountOfStETH, withdrawalAmount_, "stETH amount mismatch");
+        assertGt(statuses_[0].amountOfShares, 0, "shares amount mismatch");
+        assertEq(statuses_[0].owner, LIDO_WITHDRAWAL_REQUESTER_ADDRESS, "owner address mismatch");
+        assertEq(statuses_[0].timestamp, block.timestamp, "timestamp mismatch");
+        assertEq(statuses_[0].isFinalized, false, "withdrawal should not be finalized");
+        assertEq(statuses_[0].isClaimed, false, "withdrawal should not be claimed");
+    }
 
-    //     // Call the permit-based function
-    //     vm.prank(address(alice.deleGator));
-    //     uint256[] memory requestIds = liquidStakingAdapter.requestWithdrawalsWithPermitByDelegation(amounts, permit);
+    /**
+     * @notice Test permit functionality in requestWithdrawalsWithPermit
+     * @dev This test verifies that permit and transferFrom work correctly even though
+     *      the transaction will revert at the withdrawal queue stage due to wrong caller
+     */
+    function test_liquidStakingAdapter_permitFunctionality() public {
+        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), 22791044);
+        setUpContracts();
 
-    //     // Verify withdrawal request was created
-    //     assertGt(requestIds.length, 0, "Should create withdrawal requests");
+        LiquidStakingAdapter liquidStakingAdapter_ = new LiquidStakingAdapter(
+            address(users.alice.deleGator), address(delegationManager), LIDO_WITHDRAWAL_QUEUE, STETH_ADDRESS
+        );
 
-    //     // Check that stETH was transferred (adapter should not hold any)
-    //     assertEq(stETH.balanceOf(address(liquidStakingAdapter)), 0, "Adapter should not hold stETH after withdrawal request");
+        uint256 withdrawalAmount_ = 1000 ether;
 
-    //     // Verify Alice's stETH balance decreased
-    //     assertLt(stETH.balanceOf(address(alice.deleGator)), aliceInitialBalance, "Alice's stETH balance should decrease");
-    // }
+        // Create permit input with real signature
+        IWithdrawalQueue.PermitInput memory permit_ = _createPermitInput(
+            address(users.alice.deleGator), address(liquidStakingAdapter_), withdrawalAmount_, users.alice.privateKey
+        );
+
+        uint256[] memory amounts_ = new uint256[](1);
+        amounts_[0] = withdrawalAmount_;
+
+        // Deposit ETH to get stETH for alice
+        vm.deal(address(users.alice.deleGator), 10000 ether);
+        vm.prank(address(users.alice.deleGator));
+        liquidStaking.depositToLido{ value: 10000 ether }(0);
+
+        // Expect the permit call to be made
+        vm.expectCall(
+            STETH_ADDRESS,
+            abi.encodeWithSelector(
+                IERC20Permit.permit.selector,
+                address(users.alice.deleGator),
+                address(liquidStakingAdapter_),
+                permit_.value,
+                permit_.deadline,
+                permit_.v,
+                permit_.r,
+                permit_.s
+            )
+        );
+
+        // Expect the transferFrom call to be made
+        vm.expectCall(
+            STETH_ADDRESS,
+            abi.encodeWithSelector(
+                IERC20.transferFrom.selector, address(users.alice.deleGator), address(liquidStakingAdapter_), withdrawalAmount_
+            )
+        );
+
+        // Expect the safeIncreaseAllowance call to be made to the withdrawal queue
+        vm.expectCall(STETH_ADDRESS, abi.encodeWithSelector(IERC20.approve.selector, LIDO_WITHDRAWAL_QUEUE, type(uint256).max));
+
+        // Expect Transfer event from alice to adapter
+        vm.expectEmit(true, true, false, true, STETH_ADDRESS);
+        emit IERC20.Transfer(address(users.alice.deleGator), address(liquidStakingAdapter_), withdrawalAmount_);
+
+        // Expect Approval event for withdrawal queue
+        vm.expectEmit(true, true, false, true, STETH_ADDRESS);
+        emit IERC20.Approval(address(liquidStakingAdapter_), LIDO_WITHDRAWAL_QUEUE, type(uint256).max);
+
+        // Call the function as alice - this will work for permit/transfer but fail at withdrawal queue
+        vm.prank(address(users.alice.deleGator));
+
+        // We expect this to revert at the withdrawal queue stage, but permit and transfer should work
+        uint256[] memory requestIds_ = liquidStakingAdapter_.requestWithdrawalsWithPermit(amounts_, permit_);
+
+        IWithdrawalQueue.WithdrawalRequestStatus[] memory statuses_ = withdrawalQueue.getWithdrawalStatus(requestIds_);
+        assertEq(statuses_[0].amountOfStETH, withdrawalAmount_, "stETH amount mismatch");
+        assertGt(statuses_[0].amountOfShares, 0, "shares amount mismatch");
+        assertEq(statuses_[0].owner, address(users.alice.deleGator), "owner address mismatch");
+        assertEq(statuses_[0].timestamp, block.timestamp, "timestamp mismatch");
+        assertEq(statuses_[0].isFinalized, false, "withdrawal should not be finalized");
+        assertEq(statuses_[0].isClaimed, false, "withdrawal should not be claimed");
+    }
+
+    /**
+     * @notice Creates a permit input with a real EIP-712 signature
+     * @param _owner The address that owns the tokens
+     * @param _spender The address that will be allowed to spend the tokens
+     * @param _value The amount of tokens to permit
+     * @param _privateKey The private key to sign the permit with
+     * @return permit_ The permit input with signature
+     */
+    function _createPermitInput(
+        address _owner,
+        address _spender,
+        uint256 _value,
+        uint256 _privateKey
+    )
+        internal
+        view
+        returns (IWithdrawalQueue.PermitInput memory permit_)
+    {
+        // Get owner's nonce for permit
+        uint256 nonce_ = IERC20Permit(STETH_ADDRESS).nonces(_owner);
+
+        // Create EIP-712 permit signature
+        bytes32 PERMIT_TYPEHASH = keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
+
+        // Get domain separator from stETH contract
+        bytes32 domainSeparator_;
+        try IERC20Permit(STETH_ADDRESS).DOMAIN_SEPARATOR() returns (bytes32 _domainSeparator) {
+            domainSeparator_ = _domainSeparator;
+        } catch {
+            // Fallback: construct domain separator manually if not available
+            domainSeparator_ = keccak256(
+                abi.encode(
+                    keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                    keccak256("Liquid staked Ether 2.0"),
+                    keccak256("2"),
+                    block.chainid,
+                    STETH_ADDRESS
+                )
+            );
+        }
+
+        bytes32 structHash_ = keccak256(
+            abi.encode(
+                PERMIT_TYPEHASH,
+                _owner,
+                _spender,
+                _value,
+                nonce_,
+                (block.timestamp + 1 hours) // deadline
+            )
+        );
+
+        bytes32 digest_ = keccak256(abi.encodePacked("\x19\x01", domainSeparator_, structHash_));
+
+        // Sign with the provided private key
+        (uint8 v_, bytes32 r_, bytes32 s_) = vm.sign(_privateKey, digest_);
+
+        // Create permit input with real signature
+        permit_ = IWithdrawalQueue.PermitInput({ value: _value, deadline: (block.timestamp + 1 hours), v: v_, r: r_, s: s_ });
+    }
 
     ////////////////////// Helper Functions //////////////////////
 
