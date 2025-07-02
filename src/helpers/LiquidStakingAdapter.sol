@@ -4,7 +4,7 @@ pragma solidity 0.8.23;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
@@ -13,22 +13,34 @@ import { IWithdrawalQueue } from "./interfaces/IWithdrawalQueue.sol";
 import { Delegation, ModeCode } from "../utils/Types.sol";
 
 /// @title LiquidStakingAdapter
-/// @notice Adapter contract for liquid staking withdrawal operations using delegations
-/// @dev Handles stETH withdrawals through Lido's withdrawal queue using delegation-based permissions
-contract LiquidStakingAdapter is Ownable {
+/// @notice Adapter contract for liquid staking withdrawal operations using delegations or permits
+/// @dev This contract facilitates stETH withdrawals through Lido's withdrawal queue using two approaches:
+///      1. Delegation-based: Users create delegations allowing this contract to transfer their stETH,
+///         then the contract requests withdrawals on their behalf. The user retains ownership of withdrawal requests.
+///      2. Permit-based: Users sign permits allowing gasless approvals, then the contract transfers stETH
+///         and requests withdrawals.
+///
+///      The contract acts as an intermediary that:
+///      - Receives stETH through delegation redemption or direct transfer with permit
+///      - Approves the withdrawal queue to spend stETH
+///      - Requests withdrawals from Lido's queue, with the original token owner maintaining request ownership
+///      - Never permanently holds user funds (all operations are atomic)
+///
+///      Ownable functionality is implemented for emergency token recovery only. The owner can withdraw
+///      tokens that users may have accidentally sent directly to this contract (bypassing the intended
+///      delegation/permit flows). Under normal operation, this contract should never hold tokens as all
+///      operations transfer tokens directly between users and Lido's contracts.
+contract LiquidStakingAdapter is Ownable2Step {
     using SafeERC20 for IERC20;
 
     /// @notice Thrown when a zero address is provided for required parameters
     error InvalidZeroAddress();
 
-    /// @notice Thrown when wrong number of delegations is provided
-    error WrongNumberOfDelegations();
+    /// @notice Thrown when the number of delegations provided is not exactly one
+    error InvalidDelegationsLength();
 
     /// @notice Thrown when no amounts are specified for withdrawal
     error NoAmountsSpecified();
-
-    /// @dev Error while transferring the native token to the recipient.
-    error FailedNativeTokenTransfer(address recipient);
 
     /// @notice Delegation manager for handling delegated operations
     IDelegationManager public immutable delegationManager;
@@ -47,7 +59,7 @@ contract LiquidStakingAdapter is Ownable {
     /// @param token Address of the token withdrawn
     /// @param recipient Address of the recipient
     /// @param amount Amount of tokens withdrawn
-    event TokensWithdrawn(IERC20 indexed token, address indexed recipient, uint256 amount);
+    event StuckTokensWithdrawn(IERC20 indexed token, address indexed recipient, uint256 amount);
 
     /// @notice Initializes the adapter with required contract addresses
     /// @param _owner Address of the owner of the contract
@@ -74,7 +86,7 @@ contract LiquidStakingAdapter is Ownable {
         external
         returns (uint256[] memory requestIds_)
     {
-        if (_delegations.length != 1) revert WrongNumberOfDelegations();
+        if (_delegations.length != 1) revert InvalidDelegationsLength();
 
         address delegator_ = _delegations[0].delegator;
         uint256 totalAmount_ = _calculateTotalAmount(_amounts);
@@ -123,22 +135,19 @@ contract LiquidStakingAdapter is Ownable {
     }
 
     /**
-     * @notice Withdraws a specified token from the contract to a recipient.
-     * @dev Only callable by the contract owner.
-     * @param _token The token to be withdrawn (use address(0) for native token).
-     * @param _amount The amount of tokens (or native) to withdraw.
-     * @param _recipient The address to receive the withdrawn tokens.
+     * @notice Emergency function to recover tokens accidentally sent to this contract.
+     * @dev This contract should never hold ERC20 tokens as all token operations are handled
+     * through delegation-based transfers that move tokens directly between users and Lido.
+     * This function is only for recovering tokens that users may have sent to this contract
+     * by mistake (e.g., direct transfers instead of using delegation functions).
+     * @param _token The token to be recovered.
+     * @param _amount The amount of tokens to recover.
+     * @param _recipient The address to receive the recovered tokens.
      */
     function withdraw(IERC20 _token, uint256 _amount, address _recipient) external onlyOwner {
-        if (address(_token) == address(0)) {
-            (bool success_,) = _recipient.call{ value: _amount }("");
+        IERC20(_token).safeTransfer(_recipient, _amount);
 
-            if (!success_) revert FailedNativeTokenTransfer(_recipient);
-        } else {
-            IERC20(_token).safeTransfer(_recipient, _amount);
-        }
-
-        emit TokensWithdrawn(_token, _recipient, _amount);
+        emit StuckTokensWithdrawn(_token, _recipient, _amount);
     }
 
     /// @notice Internal function to handle common withdrawal request logic

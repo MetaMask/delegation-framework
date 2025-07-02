@@ -661,16 +661,16 @@ contract LiquidStakingTest is BaseTest {
         LiquidStakingAdapter liquidStakingAdapter_ =
             new LiquidStakingAdapter(address(alice.deleGator), address(delegationManager), LIDO_WITHDRAWAL_QUEUE, STETH_ADDRESS);
 
-        // Test WrongNumberOfDelegations error
+        // Test InvalidDelegationsLength error
         Delegation[] memory emptyDelegations_ = new Delegation[](0);
         uint256[] memory amounts_ = new uint256[](1);
         amounts_[0] = 100 ether;
 
-        vm.expectRevert(LiquidStakingAdapter.WrongNumberOfDelegations.selector);
+        vm.expectRevert(LiquidStakingAdapter.InvalidDelegationsLength.selector);
         liquidStakingAdapter_.requestWithdrawalsByDelegation(emptyDelegations_, amounts_);
 
         Delegation[] memory tooManyDelegations_ = new Delegation[](2);
-        vm.expectRevert(LiquidStakingAdapter.WrongNumberOfDelegations.selector);
+        vm.expectRevert(LiquidStakingAdapter.InvalidDelegationsLength.selector);
         liquidStakingAdapter_.requestWithdrawalsByDelegation(tooManyDelegations_, amounts_);
 
         // Test NoAmountsSpecified error
@@ -715,40 +715,6 @@ contract LiquidStakingTest is BaseTest {
             bobInitialBalance_ + adapterBalance_,
             "Bob should receive withdrawn basicERC20"
         );
-
-        // Test native ETH withdrawal
-        uint256 ethAmount_ = 5 ether;
-        vm.deal(address(liquidStakingAdapter_), ethAmount_);
-
-        uint256 bobInitialETHBalance_ = address(bob.deleGator).balance;
-
-        vm.prank(address(alice.deleGator));
-        liquidStakingAdapter_.withdraw(IERC20(address(0)), ethAmount_, address(bob.deleGator));
-
-        assertEq(address(liquidStakingAdapter_).balance, 0, "Adapter should have no ETH after withdrawal");
-        assertEq(address(bob.deleGator).balance, bobInitialETHBalance_ + ethAmount_, "Bob should receive withdrawn ETH");
-    }
-
-    /**
-     * @notice Test native token transfer failure
-     */
-    function test_liquidStakingAdapter_withdraw_nativeTokenTransferFailure() public {
-        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), 22791044);
-        setUpContracts();
-
-        LiquidStakingAdapter liquidStakingAdapter_ =
-            new LiquidStakingAdapter(address(alice.deleGator), address(delegationManager), LIDO_WITHDRAWAL_QUEUE, STETH_ADDRESS);
-
-        // Deploy a contract that rejects ETH
-        RejectETH rejectETH_ = new RejectETH();
-
-        uint256 ethAmount_ = 1 ether;
-        vm.deal(address(liquidStakingAdapter_), ethAmount_);
-
-        // Should fail when trying to send ETH to a contract that rejects it
-        vm.prank(address(alice.deleGator));
-        vm.expectRevert(abi.encodeWithSelector(LiquidStakingAdapter.FailedNativeTokenTransfer.selector, address(rejectETH_)));
-        liquidStakingAdapter_.withdraw(IERC20(address(0)), ethAmount_, address(rejectETH_));
     }
 
     /**
@@ -1214,11 +1180,4 @@ contract LiquidStakingTest is BaseTest {
             signature: dummySignature_
         });
     }
-}
-
-/**
- * @notice Helper contract that rejects ETH transfers for testing
- */
-contract RejectETH {
-// This contract has no receive() or fallback() function, so it will reject ETH transfers
 }
