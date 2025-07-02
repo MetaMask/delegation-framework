@@ -2,9 +2,9 @@
 pragma solidity 0.8.23;
 
 import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
+import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import { BaseTest } from "../utils/BaseTest.t.sol";
-import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { Implementation, SignatureType } from "../utils/Types.t.sol";
 import { Execution, Delegation, Caveat, ModeCode } from "../../src/utils/Types.sol";
@@ -398,43 +398,43 @@ contract PooledStakingTest is BaseTest {
 
         // Group 0: Deposit operations
         {
-            Caveat[] memory depositCaveats = new Caveat[](2);
-            depositCaveats[0] =
+            Caveat[] memory depositCaveats_ = new Caveat[](2);
+            depositCaveats_[0] =
                 Caveat({ args: hex"", enforcer: address(allowedTargetsEnforcer), terms: abi.encodePacked(address(VAULT)) });
-            depositCaveats[1] = Caveat({
+            depositCaveats_[1] = Caveat({
                 args: hex"",
                 enforcer: address(exactCalldataEnforcer),
                 terms: abi.encodeWithSelector(IVaultEthStaking.deposit.selector, _delegator, address(0))
             });
-            groups[0] = LogicalOrWrapperEnforcer.CaveatGroup({ caveats: depositCaveats });
+            groups[0] = LogicalOrWrapperEnforcer.CaveatGroup({ caveats: depositCaveats_ });
         }
 
         // Group 1: Enter exit queue operations
         {
-            Caveat[] memory exitQueueCaveats = new Caveat[](3);
-            exitQueueCaveats[0] =
+            Caveat[] memory exitQueueCaveats_ = new Caveat[](3);
+            exitQueueCaveats_[0] =
                 Caveat({ args: hex"", enforcer: address(allowedTargetsEnforcer), terms: abi.encodePacked(address(VAULT)) });
-            exitQueueCaveats[1] = Caveat({ args: hex"", enforcer: address(valueLteEnforcer), terms: abi.encode(uint256(0)) });
-            exitQueueCaveats[2] = Caveat({
+            exitQueueCaveats_[1] = Caveat({ args: hex"", enforcer: address(valueLteEnforcer), terms: abi.encode(uint256(0)) });
+            exitQueueCaveats_[2] = Caveat({
                 args: hex"",
                 enforcer: address(allowedMethodsEnforcer),
                 terms: abi.encodePacked(IVaultEnterExit.enterExitQueue.selector)
             });
-            groups[1] = LogicalOrWrapperEnforcer.CaveatGroup({ caveats: exitQueueCaveats });
+            groups[1] = LogicalOrWrapperEnforcer.CaveatGroup({ caveats: exitQueueCaveats_ });
         }
 
         // Group 2: Claim exited assets operations
         {
-            Caveat[] memory claimCaveats = new Caveat[](3);
-            claimCaveats[0] =
+            Caveat[] memory claimCaveats_ = new Caveat[](3);
+            claimCaveats_[0] =
                 Caveat({ args: hex"", enforcer: address(allowedTargetsEnforcer), terms: abi.encodePacked(address(VAULT)) });
-            claimCaveats[1] = Caveat({ args: hex"", enforcer: address(valueLteEnforcer), terms: abi.encode(uint256(0)) });
-            claimCaveats[2] = Caveat({
+            claimCaveats_[1] = Caveat({ args: hex"", enforcer: address(valueLteEnforcer), terms: abi.encode(uint256(0)) });
+            claimCaveats_[2] = Caveat({
                 args: hex"",
                 enforcer: address(allowedMethodsEnforcer),
                 terms: abi.encodePacked(IVaultEnterExit.claimExitedAssets.selector)
             });
-            groups[2] = LogicalOrWrapperEnforcer.CaveatGroup({ caveats: claimCaveats });
+            groups[2] = LogicalOrWrapperEnforcer.CaveatGroup({ caveats: claimCaveats_ });
         }
     }
 }
