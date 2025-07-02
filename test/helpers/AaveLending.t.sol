@@ -4,6 +4,8 @@ pragma solidity 0.8.23;
 import { Test } from "forge-std/Test.sol";
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { BaseTest } from "../utils/BaseTest.t.sol";
 import { Implementation, SignatureType } from "../utils/Types.t.sol";
@@ -15,9 +17,9 @@ import { ValueLteEnforcer } from "../../src/enforcers/ValueLteEnforcer.sol";
 import { LogicalOrWrapperEnforcer } from "../../src/enforcers/LogicalOrWrapperEnforcer.sol";
 import { ERC20TransferAmountEnforcer } from "../../src/enforcers/ERC20TransferAmountEnforcer.sol";
 import { IAavePool } from "../../src/helpers/interfaces/IAavePool.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
 import { AaveAdapter } from "../../src/helpers/AaveAdapter.sol";
+import { BasicERC20 } from "../utils/BasicERC20.t.sol";
 
 // @dev Do not remove this comment below
 /// forge-config: default.evm_version = "shanghai"
@@ -53,6 +55,7 @@ contract AaveLendingTest is BaseTest {
     IERC20 public constant USDC = IERC20(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
     IERC20 public aUSDC;
     address public constant USDC_WHALE = 0x37305B1cD40574E4C5Ce33f8e8306Be057fD7341;
+    address public owner;
 
     // Enforcers for delegation restrictions
     AllowedTargetsEnforcer public allowedTargetsEnforcer;
@@ -80,6 +83,8 @@ contract AaveLendingTest is BaseTest {
         // Call parent setup to initialize delegation framework
         super.setUp();
 
+        owner = makeAddr("AaveAdapter Owner");
+
         // Deploy enforcers
         allowedTargetsEnforcer = new AllowedTargetsEnforcer();
         allowedMethodsEnforcer = new AllowedMethodsEnforcer();
@@ -88,7 +93,7 @@ contract AaveLendingTest is BaseTest {
         erc20TransferAmountEnforcer = new ERC20TransferAmountEnforcer();
 
         logicalOrWrapperEnforcer = new LogicalOrWrapperEnforcer(delegationManager);
-        aaveAdapter = new AaveAdapter(address(delegationManager), address(AAVE_POOL));
+        aaveAdapter = new AaveAdapter(owner, address(delegationManager), address(AAVE_POOL));
 
         vm.label(address(allowedTargetsEnforcer), "AllowedTargetsEnforcer");
         vm.label(address(allowedMethodsEnforcer), "AllowedMethodsEnforcer");
@@ -683,27 +688,27 @@ contract AaveLendingTest is BaseTest {
     /// @notice Tests that constructor reverts when delegation manager is zero address
     function test_constructor_revertsOnZeroDelegationManager() public {
         vm.expectRevert(AaveAdapter.InvalidZeroAddress.selector);
-        new AaveAdapter(address(0), address(AAVE_POOL));
+        new AaveAdapter(owner, address(0), address(AAVE_POOL));
     }
 
     /// @notice Tests that constructor reverts when Aave pool is zero address
     function test_constructor_revertsOnZeroAavePool() public {
         vm.expectRevert(AaveAdapter.InvalidZeroAddress.selector);
-        new AaveAdapter(address(delegationManager), address(0));
+        new AaveAdapter(owner, address(delegationManager), address(0));
     }
 
     /// @notice Tests that constructor reverts when both delegation manager and Aave pool are zero addresses
     function test_constructor_revertsOnBothZeroAddresses() public {
         vm.expectRevert(AaveAdapter.InvalidZeroAddress.selector);
-        new AaveAdapter(address(0), address(0));
+        new AaveAdapter(owner, address(0), address(0));
     }
 
     /// @notice Tests successful constructor with valid addresses
     function test_constructor_successWithValidAddresses() public {
-        AaveAdapter newAdapter = new AaveAdapter(address(delegationManager), address(AAVE_POOL));
+        AaveAdapter newAdapter_ = new AaveAdapter(owner, address(delegationManager), address(AAVE_POOL));
 
-        assertEq(address(newAdapter.delegationManager()), address(delegationManager));
-        assertEq(address(newAdapter.aavePool()), address(AAVE_POOL));
+        assertEq(address(newAdapter_.delegationManager()), address(delegationManager));
+        assertEq(address(newAdapter_.aavePool()), address(AAVE_POOL));
     }
 
     ////////////////////// Edge Case Tests //////////////////////
@@ -711,20 +716,20 @@ contract AaveLendingTest is BaseTest {
     /// @notice Tests supplyByDelegation with maximum uint256 amount
     function test_supplyByDelegation_withMaxAmount() public {
         // First, we need to ensure Alice has sufficient balance for a reasonable test
-        uint256 testAmount = INITIAL_USDC_BALANCE; // Use all her balance
+        uint256 testAmount_ = INITIAL_USDC_BALANCE; // Use all her balance
 
         _assertBalances(INITIAL_USDC_BALANCE, 0);
 
         // Create transfer delegation to adapter
-        Delegation memory delegation_ = _createTransferDelegation(address(aaveAdapter), address(USDC), testAmount);
+        Delegation memory delegation_ = _createTransferDelegation(address(aaveAdapter), address(USDC), testAmount_);
 
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation_;
 
         vm.prank(address(users.alice.deleGator));
-        aaveAdapter.supplyByDelegation(delegations_, address(USDC), testAmount);
+        aaveAdapter.supplyByDelegation(delegations_, address(USDC), testAmount_);
 
-        _assertBalances(0, testAmount);
+        _assertBalances(0, testAmount_);
     }
 
     /// @notice Tests withdrawByDelegation with maximum uint256 amount (withdraw all)
@@ -733,7 +738,7 @@ contract AaveLendingTest is BaseTest {
         _assertBalances(INITIAL_USDC_BALANCE - DEPOSIT_AMOUNT, DEPOSIT_AMOUNT);
 
         // Get Alice's actual aToken balance and use a high limit for delegation
-        uint256 aTokenBalance = aUSDC.balanceOf(address(users.alice.deleGator));
+        uint256 aTokenBalance_ = aUSDC.balanceOf(address(users.alice.deleGator));
 
         // Create transfer delegation to adapter with very high allowance for max amount withdrawal
         Delegation memory delegation_ = _createTransferDelegation(address(aaveAdapter), address(aUSDC), type(uint128).max);
@@ -742,7 +747,7 @@ contract AaveLendingTest is BaseTest {
         delegations_[0] = delegation_;
 
         vm.prank(address(users.alice.deleGator));
-        aaveAdapter.withdrawByDelegation(delegations_, address(USDC), aTokenBalance);
+        aaveAdapter.withdrawByDelegation(delegations_, address(USDC), aTokenBalance_);
 
         _assertBalances(INITIAL_USDC_BALANCE, 0);
     }
@@ -783,15 +788,15 @@ contract AaveLendingTest is BaseTest {
         vm.prank(address(users.alice.deleGator));
         aaveAdapter.supplyByDelegation(delegations1_, address(USDC), DEPOSIT_AMOUNT);
 
-        uint256 allowanceAfterFirst = USDC.allowance(address(aaveAdapter), address(AAVE_POOL));
-        assertEq(allowanceAfterFirst, type(uint256).max - DEPOSIT_AMOUNT);
+        uint256 allowanceAfterFirst_ = USDC.allowance(address(aaveAdapter), address(AAVE_POOL));
+        assertEq(allowanceAfterFirst_, type(uint256).max - DEPOSIT_AMOUNT);
 
         // Second supply should not change allowance (reuse same delegation)
         vm.prank(address(users.alice.deleGator));
         aaveAdapter.supplyByDelegation(delegations1_, address(USDC), DEPOSIT_AMOUNT);
 
-        uint256 allowanceAfterSecond = USDC.allowance(address(aaveAdapter), address(AAVE_POOL));
-        assertEq(allowanceAfterSecond, type(uint256).max - (2 * DEPOSIT_AMOUNT));
+        uint256 allowanceAfterSecond_ = USDC.allowance(address(aaveAdapter), address(AAVE_POOL));
+        assertEq(allowanceAfterSecond_, type(uint256).max - (2 * DEPOSIT_AMOUNT));
 
         // Check USDC balance
         uint256 aliceUSDCBalance_ = USDC.balanceOf(address(users.alice.deleGator));
@@ -803,20 +808,98 @@ contract AaveLendingTest is BaseTest {
         assertLe(aliceATokenBalance_, 2 * DEPOSIT_AMOUNT + 10, "aUSDC balance should not exceed deposit + small interest");
     }
 
+    ////////////////////// Withdraw Function Tests //////////////////////
+
+    /// @notice Tests that only owner can call withdraw function
+    function test_withdraw_onlyOwner() public {
+        // Create test token and give some balance to the adapter
+        BasicERC20 testToken_ = new BasicERC20(owner, "TestToken", "TST", 1000 ether);
+
+        // Mint some tokens to the adapter
+        vm.prank(owner);
+        testToken_.mint(address(aaveAdapter), 100 ether);
+
+        // Verify adapter has tokens
+        assertEq(testToken_.balanceOf(address(aaveAdapter)), 100 ether);
+
+        // Try to call withdraw from non-owner address (should fail)
+        vm.prank(address(users.alice.deleGator));
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(users.alice.deleGator)));
+        aaveAdapter.withdraw(testToken_, 50 ether, address(users.alice.deleGator));
+
+        // Verify balance hasn't changed
+        assertEq(testToken_.balanceOf(address(aaveAdapter)), 100 ether);
+    }
+
+    /// @notice Tests that withdraw function works correctly when called by owner
+    function test_withdraw_functionality() public {
+        // Create test token and give some balance to the adapter
+        BasicERC20 testToken_ = new BasicERC20(owner, "TestToken", "TST", 1000 ether);
+
+        // Mint some tokens to the adapter
+        vm.prank(owner);
+        testToken_.mint(address(aaveAdapter), 100 ether);
+
+        // Verify initial balances
+        assertEq(testToken_.balanceOf(address(aaveAdapter)), 100 ether);
+        assertEq(testToken_.balanceOf(address(users.alice.deleGator)), 0);
+
+        // Expect the event to be emitted
+        vm.expectEmit(true, true, true, true, address(aaveAdapter));
+        emit AaveAdapter.StuckTokensWithdrawn(testToken_, address(users.alice.deleGator), 50 ether);
+
+        // Call withdraw as owner
+        vm.prank(owner);
+        aaveAdapter.withdraw(testToken_, 50 ether, address(users.alice.deleGator));
+
+        // Verify balances after withdrawal
+        assertEq(testToken_.balanceOf(address(aaveAdapter)), 50 ether);
+        assertEq(testToken_.balanceOf(address(users.alice.deleGator)), 50 ether);
+    }
+
+    /// @notice Tests withdraw function with full balance
+    function test_withdraw_fullBalance() public {
+        // Create test token and give some balance to the adapter
+        BasicERC20 testToken_ = new BasicERC20(owner, "TestToken", "TST", 1000 ether);
+
+        // Mint some tokens to the adapter
+        vm.prank(owner);
+        testToken_.mint(address(aaveAdapter), 100 ether);
+
+        // Verify initial balance
+        assertEq(testToken_.balanceOf(address(aaveAdapter)), 100 ether);
+
+        // Withdraw full balance
+        vm.prank(owner);
+        aaveAdapter.withdraw(testToken_, 100 ether, address(users.bob.deleGator));
+
+        // Verify all tokens were withdrawn
+        assertEq(testToken_.balanceOf(address(aaveAdapter)), 0);
+        assertEq(testToken_.balanceOf(address(users.bob.deleGator)), 100 ether);
+    }
+
     ////////////////////// Helpers //////////////////////
 
     /// @notice Creates a transfer delegation with ERC20TransferAmountEnforcer
-    /// @param delegate Address that can execute the delegation
-    /// @param token Token to transfer
-    /// @param amount Amount to transfer
+    /// @param _delegate Address that can execute the delegation
+    /// @param _token Token to transfer
+    /// @param _amount Amount to transfer
     /// @return Signed delegation ready for execution
-    function _createTransferDelegation(address delegate, address token, uint256 amount) internal view returns (Delegation memory) {
+    function _createTransferDelegation(
+        address _delegate,
+        address _token,
+        uint256 _amount
+    )
+        internal
+        view
+        returns (Delegation memory)
+    {
         Caveat[] memory caveats_ = new Caveat[](1);
         caveats_[0] =
-            Caveat({ args: hex"", enforcer: address(erc20TransferAmountEnforcer), terms: abi.encodePacked(token, amount) });
+            Caveat({ args: hex"", enforcer: address(erc20TransferAmountEnforcer), terms: abi.encodePacked(_token, _amount) });
 
         Delegation memory delegation_ = Delegation({
-            delegate: delegate,
+            delegate: _delegate,
             delegator: address(users.alice.deleGator),
             authority: ROOT_AUTHORITY,
             caveats: caveats_,
@@ -828,15 +911,15 @@ contract AaveLendingTest is BaseTest {
     }
 
     /// @notice Creates a target-restricted delegation
-    /// @param delegate Address that can execute the delegation
-    /// @param target Allowed target address
+    /// @param _delegate Address that can execute the delegation
+    /// @param _target Allowed target address
     /// @return Signed delegation ready for execution
-    function _createTargetRestrictedDelegation(address delegate, address target) internal view returns (Delegation memory) {
+    function _createTargetRestrictedDelegation(address _delegate, address _target) internal view returns (Delegation memory) {
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(allowedTargetsEnforcer), terms: abi.encodePacked(target) });
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(allowedTargetsEnforcer), terms: abi.encodePacked(_target) });
 
         Delegation memory delegation_ = Delegation({
-            delegate: delegate,
+            delegate: _delegate,
             delegator: address(users.alice.deleGator),
             authority: ROOT_AUTHORITY,
             caveats: caveats_,
@@ -848,14 +931,14 @@ contract AaveLendingTest is BaseTest {
     }
 
     /// @notice Creates a comprehensive approval delegation with all security restrictions
-    /// @param delegate Address that can execute the delegation
-    /// @param spender Address to approve
-    /// @param amount Amount to approve
+    /// @param _delegate Address that can execute the delegation
+    /// @param _spender Address to approve
+    /// @param _amount Amount to approve
     /// @return Signed delegation ready for execution
     function _createApprovalDelegation(
-        address delegate,
-        address spender,
-        uint256 amount
+        address _delegate,
+        address _spender,
+        uint256 _amount
     )
         internal
         view
@@ -872,18 +955,18 @@ contract AaveLendingTest is BaseTest {
 
         // Restrict approve recipient
         uint256 paramStart_ = abi.encodeWithSelector(IERC20.approve.selector).length;
-        caveats_[2] = Caveat({ args: hex"", enforcer: address(allowedCalldataEnforcer), terms: abi.encode(paramStart_, spender) });
+        caveats_[2] = Caveat({ args: hex"", enforcer: address(allowedCalldataEnforcer), terms: abi.encode(paramStart_, _spender) });
 
         // Restrict approve amount
         paramStart_ = abi.encodeWithSelector(IERC20.approve.selector, address(0)).length;
         caveats_[3] =
-            Caveat({ args: hex"", enforcer: address(allowedCalldataEnforcer), terms: abi.encodePacked(paramStart_, amount) });
+            Caveat({ args: hex"", enforcer: address(allowedCalldataEnforcer), terms: abi.encodePacked(paramStart_, _amount) });
 
         // Set value limit to 0
         caveats_[4] = Caveat({ args: hex"", enforcer: address(valueLteEnforcer), terms: abi.encode(0) });
 
         Delegation memory delegation_ = Delegation({
-            delegate: delegate,
+            delegate: _delegate,
             delegator: address(users.alice.deleGator),
             authority: ROOT_AUTHORITY,
             caveats: caveats_,
@@ -895,9 +978,9 @@ contract AaveLendingTest is BaseTest {
     }
 
     /// @notice Creates a supply delegation with all security restrictions
-    /// @param delegate Address that can execute the delegation
+    /// @param _delegate Address that can execute the delegation
     /// @return Signed delegation ready for execution
-    function _createSupplyDelegation(address delegate) internal view returns (Delegation memory) {
+    function _createSupplyDelegation(address _delegate) internal view returns (Delegation memory) {
         Caveat[] memory caveats_ = new Caveat[](4);
 
         // Restrict to Aave pool
@@ -920,7 +1003,7 @@ contract AaveLendingTest is BaseTest {
         caveats_[3] = Caveat({ args: hex"", enforcer: address(valueLteEnforcer), terms: abi.encode(0) });
 
         Delegation memory delegation_ = Delegation({
-            delegate: delegate,
+            delegate: _delegate,
             delegator: address(users.alice.deleGator),
             authority: ROOT_AUTHORITY,
             caveats: caveats_,
@@ -932,9 +1015,9 @@ contract AaveLendingTest is BaseTest {
     }
 
     /// @notice Creates a withdraw delegation with all security restrictions
-    /// @param delegate Address that can execute the delegation
+    /// @param _delegate Address that can execute the delegation
     /// @return Signed delegation ready for execution
-    function _createWithdrawDelegation(address delegate) internal view returns (Delegation memory) {
+    function _createWithdrawDelegation(address _delegate) internal view returns (Delegation memory) {
         Caveat[] memory caveats_ = new Caveat[](4);
 
         // Restrict to Aave pool
@@ -957,7 +1040,7 @@ contract AaveLendingTest is BaseTest {
         caveats_[3] = Caveat({ args: hex"", enforcer: address(valueLteEnforcer), terms: abi.encode(0) });
 
         Delegation memory delegation_ = Delegation({
-            delegate: delegate,
+            delegate: _delegate,
             delegator: address(users.alice.deleGator),
             authority: ROOT_AUTHORITY,
             caveats: caveats_,

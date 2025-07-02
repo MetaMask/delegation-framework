@@ -1,18 +1,37 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { IDelegationManager } from "../interfaces/IDelegationManager.sol";
-import { IAavePool } from "./interfaces/IAavePool.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { Delegation, ModeCode, Execution } from "../utils/Types.sol";
+import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
+import { Delegation, ModeCode, Execution } from "../utils/Types.sol";
+import { IDelegationManager } from "../interfaces/IDelegationManager.sol";
+import { IAavePool } from "./interfaces/IAavePool.sol";
+
 /// @title AaveAdapter
-/// @notice Proof of concept adapter contract for Aave lending operations using delegations
-/// @dev Handles token transfers and Aave supply operations through delegation-based permissions
-contract AaveAdapter {
+/// @notice Adapter contract that enables Aave lending operations through MetaMask's delegation framework
+/// @dev This contract acts as an intermediary between users and Aave, enabling delegation-based token operations
+///      without requiring direct token approvals. It supports both supply and withdrawal operations with two
+///      execution models:
+///
+///      1. Delegator-only execution: Only the token owner (delegator) can execute operations, providing
+///         maximum control over when and how their tokens are used in Aave operations.
+///
+///      2. Open-ended execution: Any authorized delegate can execute operations on behalf of the delegator,
+///         enabling automated or third-party execution while ensuring benefits always flow to the delegator.
+///
+///      The contract leverages ERC-7710 delegations to transfer tokens from users to itself, then interacts
+///      with Aave pools on their behalf. This eliminates the need for traditional ERC20 approvals and enables
+///      more flexible, intent-based interactions with DeFi protocols.
+///
+///      Ownable functionality is implemented for emergency administration:
+///      - Recovery of tokens accidentally sent directly to the contract (bypassing delegation flow)
+///      - The contract is designed to never hold tokens during normal operation, making owner functions
+///        purely for exceptional circumstances
+contract AaveAdapter is Ownable2Step {
     using SafeERC20 for IERC20;
 
     ////////////////////// Events //////////////////////
@@ -30,6 +49,12 @@ contract AaveAdapter {
     /// @param token Address of the withdrawn token
     /// @param amount Amount of tokens withdrawn
     event WithdrawExecuted(address indexed delegator, address indexed delegate, address indexed token, uint256 amount);
+
+    /// @notice Event emitted when stuck tokens are withdrawn by owner
+    /// @param token Address of the token withdrawn
+    /// @param recipient Address of the recipient
+    /// @param amount Amount of tokens withdrawn
+    event StuckTokensWithdrawn(IERC20 indexed token, address indexed recipient, uint256 amount);
 
     ////////////////////// Errors //////////////////////
 
@@ -50,9 +75,10 @@ contract AaveAdapter {
     ////////////////////// Constructor //////////////////////
 
     /// @notice Initializes the adapter with delegation manager and Aave pool addresses
+    /// @param _owner Address of the contract owner
     /// @param _delegationManager Address of the delegation manager contract
     /// @param _aavePool Address of the Aave lending pool contract
-    constructor(address _delegationManager, address _aavePool) {
+    constructor(address _owner, address _delegationManager, address _aavePool) Ownable(_owner) {
         if (_delegationManager == address(0) || _aavePool == address(0)) revert InvalidZeroAddress();
 
         delegationManager = IDelegationManager(_delegationManager);
@@ -192,5 +218,21 @@ contract AaveAdapter {
         aavePool.withdraw(_token, _amount, _delegations[0].delegator);
 
         emit WithdrawExecuted(_delegations[0].delegator, msg.sender, _token, _amount);
+    }
+
+    /**
+     * @notice Emergency function to recover tokens accidentally sent to this contract.
+     * @dev This contract should never hold ERC20 tokens as all token operations are handled
+     * through delegation-based transfers that move tokens directly between users and Aave.
+     * This function is only for recovering tokens that users may have sent to this contract
+     * by mistake (e.g., direct transfers instead of using delegation functions).
+     * @param _token The token to be recovered.
+     * @param _amount The amount of tokens to recover.
+     * @param _recipient The address to receive the recovered tokens.
+     */
+    function withdraw(IERC20 _token, uint256 _amount, address _recipient) external onlyOwner {
+        IERC20(_token).safeTransfer(_recipient, _amount);
+
+        emit StuckTokensWithdrawn(_token, _recipient, _amount);
     }
 }
