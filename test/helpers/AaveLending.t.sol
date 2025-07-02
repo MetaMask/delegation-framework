@@ -447,6 +447,362 @@ contract AaveLendingTest is BaseTest {
         _assertBalances(INITIAL_USDC_BALANCE, 0);
     }
 
+    ////////////////////// Event Tests //////////////////////
+
+    /// @notice Tests that verify events are properly emitted by AaveAdapter functions
+    function test_supplyByDelegation_emitsSupplyExecutedEvent() public {
+        _assertBalances(INITIAL_USDC_BALANCE, 0);
+
+        // Create transfer delegation to adapter
+        Delegation memory delegation_ = _createTransferDelegation(address(aaveAdapter), address(USDC), DEPOSIT_AMOUNT);
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation_;
+
+        // Expect the SupplyExecuted event to be emitted
+        vm.expectEmit(true, true, true, true, address(aaveAdapter));
+        emit AaveAdapter.SupplyExecuted(
+            address(users.alice.deleGator), address(users.alice.deleGator), address(USDC), DEPOSIT_AMOUNT
+        );
+
+        vm.prank(address(users.alice.deleGator));
+        aaveAdapter.supplyByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
+
+        _assertBalances(INITIAL_USDC_BALANCE - DEPOSIT_AMOUNT, DEPOSIT_AMOUNT);
+    }
+
+    /// @notice Tests that supplyByDelegationOpenEnded emits the correct event when bob supplies on alice's behalf
+    function test_supplyByDelegationOpenEnded_emitsSupplyExecutedEvent() public {
+        _assertBalances(INITIAL_USDC_BALANCE, 0);
+
+        // Create transfer delegation to adapter
+        Delegation memory delegation_ = _createTransferDelegation(address(aaveAdapter), address(USDC), DEPOSIT_AMOUNT);
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation_;
+
+        // Expect the SupplyExecuted event to be emitted with different delegate (bob calling on alice's behalf)
+        vm.expectEmit(true, true, true, true, address(aaveAdapter));
+        emit AaveAdapter.SupplyExecuted(address(users.alice.deleGator), address(users.bob.deleGator), address(USDC), DEPOSIT_AMOUNT);
+
+        vm.prank(address(users.bob.deleGator));
+        aaveAdapter.supplyByDelegationOpenEnded(delegations_, address(USDC), DEPOSIT_AMOUNT);
+
+        _assertBalances(INITIAL_USDC_BALANCE - DEPOSIT_AMOUNT, DEPOSIT_AMOUNT);
+    }
+
+    /// @notice Tests that withdrawByDelegation emits the correct event when alice withdraws her own funds
+    function test_withdrawByDelegation_emitsWithdrawExecutedEvent() public {
+        _setupLendingState();
+        _assertBalances(INITIAL_USDC_BALANCE - DEPOSIT_AMOUNT, DEPOSIT_AMOUNT);
+
+        // Create transfer delegation to adapter
+        Delegation memory delegation_ = _createTransferDelegation(address(aaveAdapter), address(aUSDC), DEPOSIT_AMOUNT);
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation_;
+
+        // Expect the WithdrawExecuted event to be emitted
+        vm.expectEmit(true, true, true, true, address(aaveAdapter));
+        emit AaveAdapter.WithdrawExecuted(
+            address(users.alice.deleGator), address(users.alice.deleGator), address(USDC), DEPOSIT_AMOUNT
+        );
+
+        vm.prank(address(users.alice.deleGator));
+        aaveAdapter.withdrawByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
+
+        _assertBalances(INITIAL_USDC_BALANCE, 0);
+    }
+
+    /// @notice Tests that withdrawByDelegationOpenEnded emits the correct event when bob withdraws on alice's behalf
+    function test_withdrawByDelegationOpenEnded_emitsWithdrawExecutedEvent() public {
+        _setupLendingState();
+        _assertBalances(INITIAL_USDC_BALANCE - DEPOSIT_AMOUNT, DEPOSIT_AMOUNT);
+
+        Delegation memory delegation_ = _createTransferDelegation(address(aaveAdapter), address(aUSDC), DEPOSIT_AMOUNT);
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation_;
+
+        // Expect the WithdrawExecuted event to be emitted with different delegate (bob calling on alice's behalf)
+        vm.expectEmit(true, true, true, true, address(aaveAdapter));
+        emit AaveAdapter.WithdrawExecuted(
+            address(users.alice.deleGator), address(users.bob.deleGator), address(USDC), DEPOSIT_AMOUNT
+        );
+
+        vm.prank(address(users.bob.deleGator));
+        aaveAdapter.withdrawByDelegationOpenEnded(delegations_, address(USDC), DEPOSIT_AMOUNT);
+
+        _assertBalances(INITIAL_USDC_BALANCE, 0);
+    }
+
+    ////////////////////// Error Tests //////////////////////
+
+    /// @notice Tests that verify the custom errors are properly thrown by AaveAdapter functions
+    function test_supplyByDelegation_revertsOnInvalidDelegationsLength() public {
+        // Create empty delegations array
+        Delegation[] memory delegations_ = new Delegation[](0);
+
+        vm.expectRevert(AaveAdapter.InvalidDelegationsLength.selector);
+        vm.prank(address(users.alice.deleGator));
+        aaveAdapter.supplyByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
+
+        // Create delegations array with 2 elements
+        delegations_ = new Delegation[](2);
+        delegations_[0] = _createTransferDelegation(address(aaveAdapter), address(USDC), DEPOSIT_AMOUNT);
+        delegations_[1] = _createTransferDelegation(address(aaveAdapter), address(USDC), DEPOSIT_AMOUNT);
+
+        vm.expectRevert(AaveAdapter.InvalidDelegationsLength.selector);
+        vm.prank(address(users.alice.deleGator));
+        aaveAdapter.supplyByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
+    }
+
+    /// @notice Tests that supplyByDelegation reverts when called by an unauthorized caller (not the delegator)
+    function test_supplyByDelegation_revertsOnUnauthorizedCaller() public {
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = _createTransferDelegation(address(aaveAdapter), address(USDC), DEPOSIT_AMOUNT);
+
+        vm.expectRevert(AaveAdapter.UnauthorizedCaller.selector);
+        vm.prank(address(users.bob.deleGator));
+        aaveAdapter.supplyByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
+    }
+
+    /// @notice Tests that supplyByDelegation reverts when token is zero address
+    function test_supplyByDelegation_revertsOnInvalidZeroAddress() public {
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = _createTransferDelegation(address(aaveAdapter), address(USDC), DEPOSIT_AMOUNT);
+
+        vm.expectRevert(AaveAdapter.InvalidZeroAddress.selector);
+        vm.prank(address(users.alice.deleGator));
+        aaveAdapter.supplyByDelegation(delegations_, address(0), DEPOSIT_AMOUNT);
+    }
+
+    /// @notice Tests that supplyByDelegationOpenEnded reverts when delegations array length is not exactly 1
+    function test_supplyByDelegationOpenEnded_revertsOnInvalidDelegationsLength() public {
+        // Create empty delegations array
+        Delegation[] memory delegations_ = new Delegation[](0);
+
+        vm.expectRevert(AaveAdapter.InvalidDelegationsLength.selector);
+        aaveAdapter.supplyByDelegationOpenEnded(delegations_, address(USDC), DEPOSIT_AMOUNT);
+
+        // Create delegations array with 2 elements
+        delegations_ = new Delegation[](2);
+        delegations_[0] = _createTransferDelegation(address(aaveAdapter), address(USDC), DEPOSIT_AMOUNT);
+        delegations_[1] = _createTransferDelegation(address(aaveAdapter), address(USDC), DEPOSIT_AMOUNT);
+
+        vm.expectRevert(AaveAdapter.InvalidDelegationsLength.selector);
+        aaveAdapter.supplyByDelegationOpenEnded(delegations_, address(USDC), DEPOSIT_AMOUNT);
+    }
+
+    /// @notice Tests that supplyByDelegationOpenEnded reverts when token is zero address
+    function test_supplyByDelegationOpenEnded_revertsOnInvalidZeroAddress() public {
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = _createTransferDelegation(address(aaveAdapter), address(USDC), DEPOSIT_AMOUNT);
+
+        vm.expectRevert(AaveAdapter.InvalidZeroAddress.selector);
+        aaveAdapter.supplyByDelegationOpenEnded(delegations_, address(0), DEPOSIT_AMOUNT);
+    }
+
+    /// @notice Tests that withdrawByDelegation reverts when delegations array length is not exactly 1
+    function test_withdrawByDelegation_revertsOnInvalidDelegationsLength() public {
+        _setupLendingState();
+
+        // Create empty delegations array
+        Delegation[] memory delegations_ = new Delegation[](0);
+
+        vm.expectRevert(AaveAdapter.InvalidDelegationsLength.selector);
+        vm.prank(address(users.alice.deleGator));
+        aaveAdapter.withdrawByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
+
+        // Create delegations array with 2 elements
+        delegations_ = new Delegation[](2);
+        delegations_[0] = _createTransferDelegation(address(aaveAdapter), address(aUSDC), DEPOSIT_AMOUNT);
+        delegations_[1] = _createTransferDelegation(address(aaveAdapter), address(aUSDC), DEPOSIT_AMOUNT);
+
+        vm.expectRevert(AaveAdapter.InvalidDelegationsLength.selector);
+        vm.prank(address(users.alice.deleGator));
+        aaveAdapter.withdrawByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
+    }
+
+    /// @notice Tests that withdrawByDelegation reverts when called by an unauthorized caller (not the delegator)
+    function test_withdrawByDelegation_revertsOnUnauthorizedCaller() public {
+        _setupLendingState();
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = _createTransferDelegation(address(aaveAdapter), address(aUSDC), DEPOSIT_AMOUNT);
+
+        vm.expectRevert(AaveAdapter.UnauthorizedCaller.selector);
+        vm.prank(address(users.bob.deleGator));
+        aaveAdapter.withdrawByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
+    }
+
+    /// @notice Tests that withdrawByDelegation reverts when token is zero address
+    function test_withdrawByDelegation_revertsOnInvalidZeroAddress() public {
+        _setupLendingState();
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = _createTransferDelegation(address(aaveAdapter), address(aUSDC), DEPOSIT_AMOUNT);
+
+        vm.expectRevert(AaveAdapter.InvalidZeroAddress.selector);
+        vm.prank(address(users.alice.deleGator));
+        aaveAdapter.withdrawByDelegation(delegations_, address(0), DEPOSIT_AMOUNT);
+    }
+
+    /// @notice Tests that withdrawByDelegationOpenEnded reverts when delegations array length is not exactly 1
+    function test_withdrawByDelegationOpenEnded_revertsOnInvalidDelegationsLength() public {
+        _setupLendingState();
+
+        // Create empty delegations array
+        Delegation[] memory delegations_ = new Delegation[](0);
+
+        vm.expectRevert(AaveAdapter.InvalidDelegationsLength.selector);
+        aaveAdapter.withdrawByDelegationOpenEnded(delegations_, address(USDC), DEPOSIT_AMOUNT);
+
+        // Create delegations array with 2 elements
+        delegations_ = new Delegation[](2);
+        delegations_[0] = _createTransferDelegation(address(aaveAdapter), address(aUSDC), DEPOSIT_AMOUNT);
+        delegations_[1] = _createTransferDelegation(address(aaveAdapter), address(aUSDC), DEPOSIT_AMOUNT);
+
+        vm.expectRevert(AaveAdapter.InvalidDelegationsLength.selector);
+        aaveAdapter.withdrawByDelegationOpenEnded(delegations_, address(USDC), DEPOSIT_AMOUNT);
+    }
+
+    /// @notice Tests that withdrawByDelegationOpenEnded reverts when token is zero address
+    function test_withdrawByDelegationOpenEnded_revertsOnInvalidZeroAddress() public {
+        _setupLendingState();
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = _createTransferDelegation(address(aaveAdapter), address(aUSDC), DEPOSIT_AMOUNT);
+
+        vm.expectRevert(AaveAdapter.InvalidZeroAddress.selector);
+        aaveAdapter.withdrawByDelegationOpenEnded(delegations_, address(0), DEPOSIT_AMOUNT);
+    }
+
+    ////////////////////// Constructor Error Tests //////////////////////
+
+    /// @notice Tests that constructor reverts when delegation manager is zero address
+    function test_constructor_revertsOnZeroDelegationManager() public {
+        vm.expectRevert(AaveAdapter.InvalidZeroAddress.selector);
+        new AaveAdapter(address(0), address(AAVE_POOL));
+    }
+
+    /// @notice Tests that constructor reverts when Aave pool is zero address
+    function test_constructor_revertsOnZeroAavePool() public {
+        vm.expectRevert(AaveAdapter.InvalidZeroAddress.selector);
+        new AaveAdapter(address(delegationManager), address(0));
+    }
+
+    /// @notice Tests that constructor reverts when both delegation manager and Aave pool are zero addresses
+    function test_constructor_revertsOnBothZeroAddresses() public {
+        vm.expectRevert(AaveAdapter.InvalidZeroAddress.selector);
+        new AaveAdapter(address(0), address(0));
+    }
+
+    /// @notice Tests successful constructor with valid addresses
+    function test_constructor_successWithValidAddresses() public {
+        AaveAdapter newAdapter = new AaveAdapter(address(delegationManager), address(AAVE_POOL));
+
+        assertEq(address(newAdapter.delegationManager()), address(delegationManager));
+        assertEq(address(newAdapter.aavePool()), address(AAVE_POOL));
+    }
+
+    ////////////////////// Edge Case Tests //////////////////////
+
+    /// @notice Tests supplyByDelegation with maximum uint256 amount
+    function test_supplyByDelegation_withMaxAmount() public {
+        // First, we need to ensure Alice has sufficient balance for a reasonable test
+        uint256 testAmount = INITIAL_USDC_BALANCE; // Use all her balance
+
+        _assertBalances(INITIAL_USDC_BALANCE, 0);
+
+        // Create transfer delegation to adapter
+        Delegation memory delegation_ = _createTransferDelegation(address(aaveAdapter), address(USDC), testAmount);
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation_;
+
+        vm.prank(address(users.alice.deleGator));
+        aaveAdapter.supplyByDelegation(delegations_, address(USDC), testAmount);
+
+        _assertBalances(0, testAmount);
+    }
+
+    /// @notice Tests withdrawByDelegation with maximum uint256 amount (withdraw all)
+    function test_withdrawByDelegation_withMaxAmount() public {
+        _setupLendingState();
+        _assertBalances(INITIAL_USDC_BALANCE - DEPOSIT_AMOUNT, DEPOSIT_AMOUNT);
+
+        // Get Alice's actual aToken balance and use a high limit for delegation
+        uint256 aTokenBalance = aUSDC.balanceOf(address(users.alice.deleGator));
+
+        // Create transfer delegation to adapter with very high allowance for max amount withdrawal
+        Delegation memory delegation_ = _createTransferDelegation(address(aaveAdapter), address(aUSDC), type(uint128).max);
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation_;
+
+        vm.prank(address(users.alice.deleGator));
+        aaveAdapter.withdrawByDelegation(delegations_, address(USDC), aTokenBalance);
+
+        _assertBalances(INITIAL_USDC_BALANCE, 0);
+    }
+
+    /// @notice Tests that adapter properly handles allowance management
+    function test_ensureAllowance_increasesWhenNeeded() public {
+        _assertBalances(INITIAL_USDC_BALANCE, 0);
+
+        // Create transfer delegation to adapter
+        Delegation memory delegation_ = _createTransferDelegation(address(aaveAdapter), address(USDC), DEPOSIT_AMOUNT);
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation_;
+
+        // Check initial allowance (should be 0)
+        uint256 initialAllowance = USDC.allowance(address(aaveAdapter), address(AAVE_POOL));
+        assertEq(initialAllowance, 0);
+
+        vm.prank(address(users.alice.deleGator));
+        aaveAdapter.supplyByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
+
+        // Check that allowance was increased and then decreased by the transfer amount
+        uint256 finalAllowance = USDC.allowance(address(aaveAdapter), address(AAVE_POOL));
+        assertEq(finalAllowance, type(uint256).max - DEPOSIT_AMOUNT);
+
+        _assertBalances(INITIAL_USDC_BALANCE - DEPOSIT_AMOUNT, DEPOSIT_AMOUNT);
+    }
+
+    /// @notice Tests multiple supplies with existing allowance (should not increase again)
+    function test_ensureAllowance_doesNotIncreaseWhenSufficient() public {
+        _assertBalances(INITIAL_USDC_BALANCE, 0);
+
+        // First supply to set allowance with higher amount limit to allow multiple uses
+        Delegation memory delegation1_ = _createTransferDelegation(address(aaveAdapter), address(USDC), 2 * DEPOSIT_AMOUNT);
+        Delegation[] memory delegations1_ = new Delegation[](1);
+        delegations1_[0] = delegation1_;
+
+        vm.prank(address(users.alice.deleGator));
+        aaveAdapter.supplyByDelegation(delegations1_, address(USDC), DEPOSIT_AMOUNT);
+
+        uint256 allowanceAfterFirst = USDC.allowance(address(aaveAdapter), address(AAVE_POOL));
+        assertEq(allowanceAfterFirst, type(uint256).max - DEPOSIT_AMOUNT);
+
+        // Second supply should not change allowance (reuse same delegation)
+        vm.prank(address(users.alice.deleGator));
+        aaveAdapter.supplyByDelegation(delegations1_, address(USDC), DEPOSIT_AMOUNT);
+
+        uint256 allowanceAfterSecond = USDC.allowance(address(aaveAdapter), address(AAVE_POOL));
+        assertEq(allowanceAfterSecond, type(uint256).max - (2 * DEPOSIT_AMOUNT));
+
+        // Check USDC balance
+        uint256 aliceUSDCBalance_ = USDC.balanceOf(address(users.alice.deleGator));
+        assertEq(aliceUSDCBalance_, INITIAL_USDC_BALANCE - (2 * DEPOSIT_AMOUNT), "USDC balance mismatch");
+
+        // Check aUSDC balance (allow for small interest accrual)
+        uint256 aliceATokenBalance_ = aUSDC.balanceOf(address(users.alice.deleGator));
+        assertGe(aliceATokenBalance_, 2 * DEPOSIT_AMOUNT, "aUSDC balance should be at least 2x deposit amount");
+        assertLe(aliceATokenBalance_, 2 * DEPOSIT_AMOUNT + 10, "aUSDC balance should not exceed deposit + small interest");
+    }
+
     ////////////////////// Helpers //////////////////////
 
     /// @notice Creates a transfer delegation with ERC20TransferAmountEnforcer
