@@ -1,4 +1,4 @@
-name: Tests
+ tab name: Tests
 
 on: [push, pull_request]
 
@@ -14,7 +14,7 @@ jobs:
       - id: skip_check
         uses: MetaMask/skip-duplicate-actions@v5
         with:
-          concurrent_skipping: same_content_newer
+     tab   concurrent_skipping: same_content_newer
 
   check-ffi:
     runs-on: ubuntu-latest
