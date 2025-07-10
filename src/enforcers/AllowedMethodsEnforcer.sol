@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
-
+tab
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
@@ -12,7 +12,7 @@ import { ModeCode } from "../utils/Types.sol";
  * @dev This contract enforces the allowed methods a delegate may call.
  * @dev This enforcer operates only in single execution call type and with default execution mode.
  */
-contract AllowedMethodsEnforcer is CaveatEnforcer {
+tab contract AllowedMethodsEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
 
     ////////////////////////////// Public Methods //////////////////////////////
