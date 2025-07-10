@@ -54,7 +54,7 @@ abstract contract EIP7702DeleGatorCore is
 
     /// @dev The typehash for the PackedUserOperation struct
     bytes32 public constant PACKED_USER_OP_TYPEHASH = keccak256(
-        "PackedUserOperation(address sender,uint256 nonce,bytes initCode,bytes callData,bytes32 accountGasLimits,uint256 preVerificationGas,bytes32 gasFees,bytes paymasterAndData)"
+        "PackedUserOperation(address sender,uint256 nonce,bytes initCode,bytes callData,bytes32 accountGasLimits,uint256 preVerificationGas,bytes32 gasFees,bytes paymasterAndData,address entryPoint)"
     );
 
     ////////////////////////////// Events //////////////////////////////
@@ -477,7 +477,7 @@ abstract contract EIP7702DeleGatorCore is
      * Provides the typed data hash for a PackedUserOperation
      * @param _userOp the PackedUserOperation to hash
      */
-    function getPackedUserOperationHash(PackedUserOperation calldata _userOp) public pure returns (bytes32) {
+    function getPackedUserOperationHash(PackedUserOperation calldata _userOp) public view returns (bytes32) {
         return keccak256(
             abi.encode(
                 PACKED_USER_OP_TYPEHASH,
@@ -488,7 +488,8 @@ abstract contract EIP7702DeleGatorCore is
                 _userOp.accountGasLimits,
                 _userOp.preVerificationGas,
                 _userOp.gasFees,
-                keccak256(_userOp.paymasterAndData)
+                keccak256(_userOp.paymasterAndData),
+                entryPoint
             )
         );
     }

@@ -3,10 +3,9 @@ pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
-import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
+import { Execution, Caveat, Delegation } from "../../src/utils/Types.sol";
 import { Counter } from "../utils/Counter.t.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { BlockNumberEnforcer } from "../../src/enforcers/BlockNumberEnforcer.sol";
@@ -18,7 +17,6 @@ contract BlockNumberEnforcerTest is CaveatEnforcerBaseTest {
     ////////////////////// State //////////////////////
 
     BlockNumberEnforcer public blockNumberEnforcer;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////// Set up //////////////////////
 
@@ -45,7 +43,9 @@ contract BlockNumberEnforcerTest is CaveatEnforcerBaseTest {
         uint128 blockBeforeThreshold_ = 0; // Not using before threshold
         bytes memory inputTerms_ = abi.encodePacked(blockAfterThreshold_, blockBeforeThreshold_);
         vm.prank(address(delegationManager));
-        blockNumberEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        blockNumberEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     //should SUCCEED to INVOKE method BEFORE blockNumber reached
@@ -62,7 +62,9 @@ contract BlockNumberEnforcerTest is CaveatEnforcerBaseTest {
         uint128 blockBeforeThreshold_ = uint128(block.number + 10000);
         bytes memory inputTerms_ = abi.encodePacked(blockAfterThreshold_, blockBeforeThreshold_);
         vm.prank(address(delegationManager));
-        blockNumberEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        blockNumberEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     // should SUCCEED to INVOKE method inside blockNumber RANGE
@@ -80,7 +82,9 @@ contract BlockNumberEnforcerTest is CaveatEnforcerBaseTest {
         vm.roll(1000); // making block number between 1 and 10001
         bytes memory inputTerms_ = abi.encodePacked(blockAfterThreshold_, blockBeforeThreshold_);
         vm.prank(address(delegationManager));
-        blockNumberEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        blockNumberEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     ////////////////////// Invalid cases //////////////////////
@@ -107,7 +111,9 @@ contract BlockNumberEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectRevert("BlockNumberEnforcer:early-delegation");
 
-        blockNumberEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        blockNumberEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     // should FAIL to INVOKE method AFTER blockNumber reached
@@ -127,7 +133,9 @@ contract BlockNumberEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectRevert("BlockNumberEnforcer:expired-delegation");
 
-        blockNumberEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        blockNumberEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     // should FAIL to INVOKE method BEFORE blocknumber RANGE
@@ -146,7 +154,9 @@ contract BlockNumberEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectRevert("BlockNumberEnforcer:early-delegation");
 
-        blockNumberEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        blockNumberEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     // should FAIL to INVOKE method AFTER blocknumber RANGE"
@@ -166,7 +176,16 @@ contract BlockNumberEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectRevert("BlockNumberEnforcer:expired-delegation");
 
-        blockNumberEnforcer.beforeHook(inputTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        blockNumberEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
+    }
+
+    // should fail with invalid call type mode (try instead of default)
+    function test_revertWithInvalidExecutionMode() public {
+        vm.prank(address(delegationManager));
+        vm.expectRevert("CaveatEnforcer:invalid-execution-type");
+        blockNumberEnforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
     }
 
     ////////////////////// Integration //////////////////////

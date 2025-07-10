@@ -3,23 +3,19 @@ pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
 import { BasicERC20 } from "../utils/BasicERC20.t.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import "../../src/utils/Types.sol";
-import { Execution, ModeCode } from "../../src/utils/Types.sol";
+import { Execution } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { ValueLteEnforcer } from "../../src/enforcers/ValueLteEnforcer.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
 contract ValueLteEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////////////// State //////////////////////////////
     ValueLteEnforcer public enforcer;
     BasicERC20 public token;
     address delegator;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////////////// Events //////////////////////////////
 
@@ -67,7 +63,7 @@ contract ValueLteEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // Should not revert
-        enforcer.beforeHook(terms_, "", mode, executionCallData_, bytes32(0), address(0), address(0));
+        enforcer.beforeHook(terms_, "", singleDefaultMode, executionCallData_, bytes32(0), address(0), address(0));
 
         // Less than
         execution_ = Execution({
@@ -78,7 +74,7 @@ contract ValueLteEnforcerTest is CaveatEnforcerBaseTest {
         executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         // Should not revert
-        enforcer.beforeHook(terms_, "", mode, executionCallData_, bytes32(0), address(0), address(0));
+        enforcer.beforeHook(terms_, "", singleDefaultMode, executionCallData_, bytes32(0), address(0), address(0));
     }
 
     //////////////////////// Errors ////////////////////////
@@ -96,7 +92,7 @@ contract ValueLteEnforcerTest is CaveatEnforcerBaseTest {
 
         // Should not revert
         vm.expectRevert(bytes("ValueLteEnforcer:value-too-high"));
-        enforcer.beforeHook(terms_, "", mode, executionCallData_, bytes32(0), address(0), address(0));
+        enforcer.beforeHook(terms_, "", singleDefaultMode, executionCallData_, bytes32(0), address(0), address(0));
     }
 
     // Validates the terms are well formed
@@ -114,7 +110,21 @@ contract ValueLteEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.getTermsInfo(terms_);
     }
 
-    //////////////////////  Integration  //////////////////////
+    // Should fail with invalid call type mode (batch instead of single mode)
+    function test_revertWithInvalidCallTypeMode() public {
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(new Execution[](2));
+
+        vm.expectRevert("CaveatEnforcer:invalid-call-type");
+
+        enforcer.beforeHook(hex"", hex"", batchDefaultMode, executionCallData_, bytes32(0), address(0), address(0));
+    }
+
+    // should fail with invalid call type mode (try instead of default)
+    function test_revertWithInvalidExecutionMode() public {
+        vm.prank(address(delegationManager));
+        vm.expectRevert("CaveatEnforcer:invalid-execution-type");
+        enforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
+    }
 
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {
         return ICaveatEnforcer(address(enforcer));

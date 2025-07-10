@@ -17,7 +17,7 @@ import { ModeCode } from "../utils/Types.sol";
  *  5. The contract tracks how many native tokens have been spent and will revert
  *     if an attempted transfer (i.e. the value sent) exceeds what remains unlocked.
  *
- * @dev This enforcer only works when the execution is in single mode (`ModeCode.Single`).
+ * @dev This enforcer operates only in single execution call type and with default execution mode.
  * @dev To enable an 'infinite' token stream, set `maxAmount` to type(uint256).max
  */
 contract NativeTokenStreamingEnforcer is CaveatEnforcer {
@@ -56,38 +56,20 @@ contract NativeTokenStreamingEnforcer is CaveatEnforcer {
 
     /**
      * @notice Retrieves the current available allowance for a given delegation.
-     * @param _delegationHash The hash of the delegation.
      * @param _delegationManager The delegation manager address.
-     * @param _terms 128 packed bytes where:
-     * - 32 bytes: initial amount.
-     * - 32 bytes: max amount.
-     * - 32 bytes: amount per second.
-     * - 32 bytes: start time for the streaming allowance.
+     * @param _delegationHash The hash of the delegation.
      * @return availableAmount_ The native token amount available (capped by `maxAmount`).
      */
     function getAvailableAmount(
-        bytes32 _delegationHash,
         address _delegationManager,
-        bytes calldata _terms
+        bytes32 _delegationHash
     )
         external
         view
         returns (uint256 availableAmount_)
     {
-        StreamingAllowance memory storedAllowance_ = streamingAllowances[_delegationManager][_delegationHash];
-        if (storedAllowance_.spent != 0) return _getAvailableAmount(storedAllowance_);
-
-        // Not yet initialized: simulate using provided terms.
-        (uint256 initialAmount_, uint256 maxAmount_, uint256 amountPerSecond_, uint256 startTime_) = getTermsInfo(_terms);
-
-        StreamingAllowance memory allowance_ = StreamingAllowance({
-            initialAmount: initialAmount_,
-            maxAmount: maxAmount_,
-            amountPerSecond: amountPerSecond_,
-            startTime: startTime_,
-            spent: 0
-        });
-        return _getAvailableAmount(allowance_);
+        StreamingAllowance storage allowance_ = streamingAllowances[_delegationManager][_delegationHash];
+        availableAmount_ = _getAvailableAmount(allowance_);
     }
 
     /**
@@ -98,7 +80,7 @@ contract NativeTokenStreamingEnforcer is CaveatEnforcer {
      * - 32 bytes: max amount.
      * - 32 bytes: amount per second.
      * - 32 bytes: start time for the streaming allowance.
-     * @param _mode The execution mode (must be `ModeCode.Single`).
+     * @param _mode The execution mode. (Must be Single callType, Default execType)
      * @param _executionCallData The execution data which, when decoded via ExecutionLib.decodeSingle(),
      *        yields (target, value, callData). Here, the `value` is the native token amount.
      * @param _delegationHash The hash of the delegation being operated on.
@@ -115,7 +97,8 @@ contract NativeTokenStreamingEnforcer is CaveatEnforcer {
     )
         public
         override
-        onlySingleExecutionMode(_mode)
+        onlySingleCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
         _validateAndConsumeAllowance(_terms, _executionCallData, _delegationHash, _redeemer);
     }

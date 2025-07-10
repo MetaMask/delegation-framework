@@ -36,7 +36,7 @@ A simple example is "Alice delegates the ability to use her USDC to Bob limiting
 
 ### DeleGator
 
-A DeleGator is the contract an end user controls and uses to interact with other contracts onchain. A DeleGator is an [EIP-1967](https://eips.ethereum.org/EIPS/eip-1967[EIP1967]) proxy contract that uses a DeleGator Implementation which defines the granular details of how the DeleGator works. Users are free to migrate their DeleGator Implementation as their needs change.
+A DeleGator is the contract an end user controls and uses to interact with other contracts onchain. A DeleGator is an [EIP-1967](https://eips.ethereum.org/EIPS/eip-1967) proxy contract that uses a DeleGator Implementation which defines the granular details of how the DeleGator works. Users are free to migrate their DeleGator Implementation as their needs change.
 
 ### DeleGator Core
 
@@ -73,6 +73,12 @@ Caveats are used to add restrictions and rules for Delegations. By default, a De
 Developers can build new Caveat Enforcers for their own use cases, and the possibilities are endless. Developers can optimize their Delegations by making extremely specific and granular caveats for their individual use cases.
 
 [Read more on "Caveats" ->](/documents/DelegationManager.md#Caveats)
+
+### Delegation Adapters
+
+Delegation Adapters are specialized contracts that bridge the gap between the delegation framework and external protocols that don't natively support delegations.
+
+[Read more on "Delegation Adapters" ->](/documents/Adapters.md)
 
 ## Development
 
@@ -133,6 +139,10 @@ forge script script/DeployEIP7702StatelessDeleGator.s.sol --rpc-url <your_rpc_ur
 # Deploys a MultisigDeleGator on a UUPS proxy
 forge script script/DeployMultiSigDeleGator.s.sol --private-key $PRIVATE_KEY --broadcast
 ```
+
+### Deployments
+
+[Read more on "Deployments" ->](/documents/Deployments.md)
 
 ### Javascript
 

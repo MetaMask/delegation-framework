@@ -2,22 +2,18 @@
 pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
-import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
+import { Execution, Caveat, Delegation } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { ExactCalldataEnforcer } from "../../src/enforcers/ExactCalldataEnforcer.sol";
 import { BasicERC20, IERC20 } from "../utils/BasicERC20.t.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
 contract ExactCalldataEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////////////// State //////////////////////////////
     ExactCalldataEnforcer public exactCalldataEnforcer;
     BasicERC20 public basicCF20;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////////////// Setup //////////////////////////////
     function setUp() public override {
@@ -43,7 +39,9 @@ contract ExactCalldataEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = execution_.callData;
 
         vm.prank(address(delegationManager));
-        exactCalldataEnforcer.beforeHook(terms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        exactCalldataEnforcer.beforeHook(
+            terms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     /// @notice Test that the enforcer reverts when the executed calldata does not exactly match the expected calldata.
@@ -60,7 +58,9 @@ contract ExactCalldataEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         vm.expectRevert("ExactCalldataEnforcer:invalid-calldata");
-        exactCalldataEnforcer.beforeHook(terms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        exactCalldataEnforcer.beforeHook(
+            terms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     /// @notice Test that the enforcer works correctly with a dynamic array parameter.
@@ -78,7 +78,9 @@ contract ExactCalldataEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = execution_.callData;
 
         vm.prank(address(delegationManager));
-        exactCalldataEnforcer.beforeHook(terms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        exactCalldataEnforcer.beforeHook(
+            terms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     /// @notice Test that the enforcer works correctly with a dynamic string parameter.
@@ -91,7 +93,9 @@ contract ExactCalldataEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = execution_.callData;
 
         vm.prank(address(delegationManager));
-        exactCalldataEnforcer.beforeHook(terms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        exactCalldataEnforcer.beforeHook(
+            terms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     /// @notice Test that the enforcer passes when both expected and execution calldata are empty (ETH transfer).
@@ -103,7 +107,9 @@ contract ExactCalldataEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = "";
 
         vm.prank(address(delegationManager));
-        exactCalldataEnforcer.beforeHook(terms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        exactCalldataEnforcer.beforeHook(
+            terms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     /// @notice Test that the enforcer reverts when expected calldata is empty but execution calldata is non-empty.
@@ -116,7 +122,9 @@ contract ExactCalldataEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         vm.expectRevert("ExactCalldataEnforcer:invalid-calldata");
-        exactCalldataEnforcer.beforeHook(terms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(0));
+        exactCalldataEnforcer.beforeHook(
+            terms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+        );
     }
 
     /// @notice Test that the enforcer reverts when batch-encoded execution calldata is provided.
@@ -131,7 +139,25 @@ contract ExactCalldataEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         // Expect a revert because the enforcer calls decodeSingle() on batch encoded calldata.
         vm.expectRevert();
-        exactCalldataEnforcer.beforeHook(terms_, hex"", mode, batchEncodedCallData_, keccak256(""), address(0), address(0));
+        exactCalldataEnforcer.beforeHook(
+            terms_, hex"", singleDefaultMode, batchEncodedCallData_, keccak256(""), address(0), address(0)
+        );
+    }
+
+    // should fail with invalid call type mode (batch instead of single mode)
+    function test_revertWithInvalidCallTypeMode() public {
+        bytes memory executionCallData_ = ExecutionLib.encodeBatch(new Execution[](2));
+
+        vm.expectRevert("CaveatEnforcer:invalid-call-type");
+
+        exactCalldataEnforcer.beforeHook(hex"", hex"", batchDefaultMode, executionCallData_, bytes32(0), address(0), address(0));
+    }
+
+    // should fail with invalid call type mode (try instead of default)
+    function test_revertWithInvalidExecutionMode() public {
+        vm.prank(address(delegationManager));
+        vm.expectRevert("CaveatEnforcer:invalid-execution-type");
+        exactCalldataEnforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
     }
 
     ////////////////////////////// Integration Tests //////////////////////////////

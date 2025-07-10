@@ -14,6 +14,7 @@ import { ModeCode, Execution } from "../utils/Types.sol";
  * 1. First transaction must match specific target, method and calldata
  * 2. Second transaction must be an ERC20 transfer with specific parameters
  * @dev The delegation can only be executed once
+ * @dev This enforcer operates only in batch execution call type and with default execution mode.
  */
 contract SpecificActionERC20TransferBatchEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
@@ -48,7 +49,7 @@ contract SpecificActionERC20TransferBatchEnforcer is CaveatEnforcer {
      *   - Transfer amount (32 bytes)
      *   - First transaction target address (20 bytes)
      *   - First transaction calldata (remaining bytes)
-     * @param _mode The execution mode
+     * @param _mode The execution mode. (Must be Batch callType, Default execType)
      * @param _executionCallData The batch execution calldata
      * @param _delegationHash The delegation hash
      */
@@ -63,7 +64,8 @@ contract SpecificActionERC20TransferBatchEnforcer is CaveatEnforcer {
     )
         public
         override
-        onlyBatchExecutionMode(_mode)
+        onlyBatchCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
         // Check delegation hasn't been used
         if (usedDelegations[msg.sender][_delegationHash]) {

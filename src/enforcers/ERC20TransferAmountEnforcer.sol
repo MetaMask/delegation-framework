@@ -10,7 +10,7 @@ import { ModeCode } from "../utils/Types.sol";
 /**
  * @title ERC20TransferAmountEnforcer
  * @dev This contract enforces the transfer limit for ERC20 tokens.
- * @dev This caveat enforcer only works when the execution is in single mode.
+ * @dev This enforcer operates only in single execution call type and with default execution mode.
  */
 contract ERC20TransferAmountEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
@@ -31,7 +31,7 @@ contract ERC20TransferAmountEnforcer is CaveatEnforcer {
      * @dev This function enforces the transfer limit before the transaction is performed.
      * @param _terms The ERC20 token address, and the numeric maximum amount that the recipient may transfer on the signer's
      * behalf.
-     * @param _mode The mode of the execution.
+     * @param _mode The execution mode. (Must be Single callType, Default execType)
      * @param _executionCallData The transaction the delegate might try to perform.
      * @param _delegationHash The hash of the delegation being operated on.
      */
@@ -46,7 +46,8 @@ contract ERC20TransferAmountEnforcer is CaveatEnforcer {
     )
         public
         override
-        onlySingleExecutionMode(_mode)
+        onlySingleCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
         (uint256 limit_, uint256 spent_) = _validateAndIncrease(_terms, _executionCallData, _delegationHash);
         emit IncreasedSpentMap(msg.sender, _redeemer, _delegationHash, limit_, spent_);

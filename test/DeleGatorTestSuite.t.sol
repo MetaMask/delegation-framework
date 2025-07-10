@@ -10,8 +10,8 @@ import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionHelper } from "@erc7579/core/ExecutionHelper.sol";
+import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 
 import { IERC7821 } from "../src/interfaces/IERC7821.sol";
 import { EIP7702DeleGatorCore } from "../src/EIP7702/EIP7702DeleGatorCore.sol";
@@ -39,9 +39,11 @@ import { DeleGatorCore } from "../src/DeleGatorCore.sol";
 import { EncoderLib } from "../src/libraries/EncoderLib.sol";
 import { AllowedMethodsEnforcer } from "../src/enforcers/AllowedMethodsEnforcer.sol";
 import { AllowedTargetsEnforcer } from "../src/enforcers/AllowedTargetsEnforcer.sol";
+import { HybridDeleGator } from "../src/HybridDeleGator.sol";
+import { MultiSigDeleGator } from "../src/MultiSigDeleGator.sol";
+import { EIP7702StatelessDeleGator } from "../src/EIP7702/EIP7702StatelessDeleGator.sol";
 
 abstract contract DeleGatorTestSuite is BaseTest {
-    using ModeLib for ModeCode;
     using MessageHashUtils for bytes32;
 
     ////////////////////////////// Setup //////////////////////
@@ -62,7 +64,7 @@ abstract contract DeleGatorTestSuite is BaseTest {
         bobDeleGatorCounter = new Counter(address(users.bob.deleGator));
 
         oneSingularMode = new ModeCode[](1);
-        oneSingularMode[0] = ModeLib.encodeSimpleSingle();
+        oneSingularMode[0] = singleDefaultMode;
     }
 
     ////////////////////////////// State //////////////////////////////
@@ -100,6 +102,9 @@ abstract contract DeleGatorTestSuite is BaseTest {
     event Withdrawn(address indexed account, address withdrawAddress, uint256 amount);
     event SentPrefund(address indexed sender, uint256 amount, bool success);
     event RedeemedDelegation(address indexed rootDelegator, address indexed redeemer, Delegation delegation);
+
+    /// Hook: Expect an invalid empty signature revert.
+    function encodeInvalidEmptySignatureRevertReason() internal virtual returns (bytes memory);
 
     /// Hook: Expect an invalid signature revert.
     function encodeInvalidSignatureRevertReason() internal virtual returns (bytes memory);
@@ -278,8 +283,8 @@ abstract contract DeleGatorTestSuite is BaseTest {
         submitUserOp_Bundler(userOp_);
     }
 
-    // should not allow using a delegation without a signature
-    function test_notAllow_delegationWithoutSignature() public {
+    // should not allow using a delegation without a contract signature
+    function test_notAllow_delegationWithoutContactSignature() public {
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
@@ -304,7 +309,37 @@ abstract contract DeleGatorTestSuite is BaseTest {
         bytes[] memory executionCallDatas_ = new bytes[](1);
         executionCallDatas_[0] = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
-        vm.expectRevert(abi.encodeWithSelector(IDelegationManager.EmptySignature.selector));
+        bytes memory revertReason_ = encodeInvalidEmptySignatureRevertReason();
+        vm.expectRevert(revertReason_);
+
+        vm.prank(address(users.bob.deleGator));
+        users.bob.deleGator.redeemDelegations(permissionContexts_, oneSingularMode, executionCallDatas_);
+    }
+
+    // should not allow using a delegation without an EOA signature
+    function test_notAllow_delegationWithoutEOASignature() public {
+        (address someEOAUser_) = makeAddr("SomeEOAUser");
+
+        Delegation memory delegation_ = Delegation({
+            delegate: address(users.bob.deleGator),
+            delegator: someEOAUser_,
+            authority: ROOT_AUTHORITY,
+            caveats: new Caveat[](0),
+            salt: 0,
+            signature: hex""
+        });
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation_;
+
+        bytes[] memory permissionContexts_ = new bytes[](1);
+        permissionContexts_[0] = abi.encode(delegations_);
+
+        Execution memory execution_;
+        bytes[] memory executionCallDatas_ = new bytes[](1);
+        executionCallDatas_[0] = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSA.ECDSAInvalidSignatureLength.selector, uint256(0)));
 
         vm.prank(address(users.bob.deleGator));
         users.bob.deleGator.redeemDelegations(permissionContexts_, oneSingularMode, executionCallDatas_);
@@ -511,16 +546,17 @@ abstract contract DeleGatorTestSuite is BaseTest {
 
     // should emit an event when paying the prefund
     function test_emit_sentPrefund() public {
-        PackedUserOperation memory packedUserOperation_;
+        PackedUserOperation memory userOp_ = createAndSignUserOp(users.alice, address(users.alice.deleGator), hex"");
+
         vm.startPrank(address(entryPoint));
 
         vm.expectEmit(true, true, true, true, address(users.alice.deleGator));
         emit SentPrefund(address(entryPoint), 1, true);
-        users.alice.deleGator.validateUserOp(packedUserOperation_, bytes32(0), 1);
+        users.alice.deleGator.validateUserOp(userOp_, bytes32(0), 1);
 
         vm.expectEmit(true, true, true, true, address(users.alice.deleGator));
         emit SentPrefund(address(entryPoint), type(uint256).max, false);
-        users.alice.deleGator.validateUserOp(packedUserOperation_, bytes32(0), type(uint256).max);
+        users.alice.deleGator.validateUserOp(userOp_, bytes32(0), type(uint256).max);
     }
 
     // should allow anyone to redeem an open Delegation (offchain)
@@ -1226,7 +1262,7 @@ abstract contract DeleGatorTestSuite is BaseTest {
         // Execute Executions
         bytes memory userOpCallData_ = abi.encodeWithSignature(
             EXECUTE_SIGNATURE,
-            ModeLib.encode(CALLTYPE_SINGLE, EXECTYPE_DEFAULT, MODE_DEFAULT, ModePayload.wrap(0x00)),
+            singleDefaultMode,
             ExecutionLib.encodeSingle(address(aliceDeleGatorCounter), 0, abi.encodeWithSelector(Counter.increment.selector))
         );
         PackedUserOperation memory userOp_ = createUserOp(address(users.alice.deleGator), userOpCallData_);
@@ -1261,11 +1297,7 @@ abstract contract DeleGatorTestSuite is BaseTest {
         });
 
         // Execute Executions
-        bytes memory userOpCallData_ = abi.encodeWithSignature(
-            EXECUTE_SIGNATURE,
-            ModeLib.encode(CALLTYPE_BATCH, EXECTYPE_DEFAULT, MODE_DEFAULT, ModePayload.wrap(0x00)),
-            abi.encode(executionCallDatas_)
-        );
+        bytes memory userOpCallData_ = abi.encodeWithSignature(EXECUTE_SIGNATURE, batchDefaultMode, abi.encode(executionCallDatas_));
         PackedUserOperation memory userOp_ = createUserOp(address(users.alice.deleGator), userOpCallData_);
         bytes32 userOpHash_ = getPackedUserOperationTypedDataHash(userOp_);
         userOp_.signature = signHash(users.alice, userOpHash_);
@@ -1286,7 +1318,7 @@ abstract contract DeleGatorTestSuite is BaseTest {
         // Execute Executions
         bytes memory userOpCallData_ = abi.encodeWithSignature(
             EXECUTE_SIGNATURE,
-            ModeLib.encode(CALLTYPE_SINGLE, EXECTYPE_TRY, MODE_DEFAULT, ModePayload.wrap(0x00)),
+            singleTryMode,
             ExecutionLib.encodeSingle(address(aliceDeleGatorCounter), 0, abi.encodeWithSelector(Counter.increment.selector))
         );
         PackedUserOperation memory userOp_ = createUserOp(address(users.alice.deleGator), userOpCallData_);
@@ -1320,11 +1352,7 @@ abstract contract DeleGatorTestSuite is BaseTest {
         });
 
         // Execute Executions
-        bytes memory userOpCallData_ = abi.encodeWithSignature(
-            EXECUTE_SIGNATURE,
-            ModeLib.encode(CALLTYPE_BATCH, EXECTYPE_TRY, MODE_DEFAULT, ModePayload.wrap(0x00)),
-            abi.encode(executionCallDatas_)
-        );
+        bytes memory userOpCallData_ = abi.encodeWithSignature(EXECUTE_SIGNATURE, batchTryMode, abi.encode(executionCallDatas_));
         PackedUserOperation memory userOp_ = createUserOp(address(users.alice.deleGator), userOpCallData_);
         bytes32 userOpHash_ = getPackedUserOperationTypedDataHash(userOp_);
         userOp_.signature = signHash(users.alice, userOpHash_);
@@ -1524,7 +1552,7 @@ abstract contract DeleGatorTestSuite is BaseTest {
         // Execute Execution
         vm.prank(address(delegationManager));
         users.alice.deleGator.executeFromExecutor(
-            ModeLib.encode(CALLTYPE_SINGLE, EXECTYPE_DEFAULT, MODE_DEFAULT, ModePayload.wrap(0x00)),
+            singleDefaultMode,
             ExecutionLib.encodeSingle(address(aliceDeleGatorCounter), 0, abi.encodeWithSelector(Counter.increment.selector))
         );
 
@@ -1553,10 +1581,7 @@ abstract contract DeleGatorTestSuite is BaseTest {
             callData: abi.encodeWithSelector(Counter.increment.selector)
         });
         vm.prank(address(delegationManager));
-        users.alice.deleGator.executeFromExecutor(
-            ModeLib.encode(CALLTYPE_BATCH, EXECTYPE_DEFAULT, MODE_DEFAULT, ModePayload.wrap(0x00)),
-            ExecutionLib.encodeBatch(executions_)
-        );
+        users.alice.deleGator.executeFromExecutor(batchDefaultMode, ExecutionLib.encodeBatch(executions_));
 
         // Get final count
         uint256 finalValue_ = aliceDeleGatorCounter.count();
@@ -1573,7 +1598,7 @@ abstract contract DeleGatorTestSuite is BaseTest {
         // Execute Execution
         vm.prank(address(delegationManager));
         users.alice.deleGator.executeFromExecutor(
-            ModeLib.encode(CALLTYPE_SINGLE, EXECTYPE_TRY, MODE_DEFAULT, ModePayload.wrap(0x00)),
+            singleTryMode,
             ExecutionLib.encodeSingle(address(aliceDeleGatorCounter), 0, abi.encodeWithSelector(Counter.increment.selector))
         );
 
@@ -1602,10 +1627,7 @@ abstract contract DeleGatorTestSuite is BaseTest {
             callData: abi.encodeWithSelector(Counter.increment.selector)
         });
         vm.prank(address(delegationManager));
-        users.alice.deleGator.executeFromExecutor(
-            ModeLib.encode(CALLTYPE_BATCH, EXECTYPE_TRY, MODE_DEFAULT, ModePayload.wrap(0x00)),
-            ExecutionLib.encodeBatch(executions_)
-        );
+        users.alice.deleGator.executeFromExecutor(batchTryMode, ExecutionLib.encodeBatch(executions_));
 
         // Get final count
         uint256 finalValue_ = aliceDeleGatorCounter.count();
@@ -1703,12 +1725,11 @@ abstract contract DeleGatorTestSuite is BaseTest {
         // Invalid execution_, sending ETH to a contract that can't receive it.
         Execution memory execution_ = Execution({ target: address(aliceDeleGatorCounter), value: 1, callData: hex"" });
         bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
-        ModeCode mode_ = ModeLib.encodeSimpleSingle();
 
         vm.prank(address(delegationManager));
         // Expect it to emit a bubbled up reverted event
         vm.expectRevert();
-        users.alice.deleGator.executeFromExecutor(mode_, executionCallData_);
+        users.alice.deleGator.executeFromExecutor(singleDefaultMode, executionCallData_);
     }
 
     // should NOT allow Carol to redeem a delegation to Bob through a UserOp (offchain)
@@ -2019,7 +2040,6 @@ abstract contract DeleGatorTestSuite is BaseTest {
         bytes32 userOpHash_ = entryPoint.getUserOpHash(userOp_);
 
         vm.expectEmit(true, true, false, true, address(entryPoint));
-        // expect an event containing EmptySignature error
         emit UserOperationRevertReason(
             userOpHash_, address(users.carol.deleGator), 0, abi.encodeWithSelector(IDelegationManager.InvalidDelegate.selector)
         );
@@ -2151,10 +2171,9 @@ abstract contract DeleGatorTestSuite is BaseTest {
             callData: abi.encodeWithSelector(Counter.increment.selector)
         });
         bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
-        ModeCode mode_ = ModeLib.encodeSimpleSingle();
 
         vm.expectRevert(abi.encodeWithSelector(DeleGatorCore.NotDelegationManager.selector));
-        users.alice.deleGator.executeFromExecutor(mode_, executionCallData_);
+        users.alice.deleGator.executeFromExecutor(singleDefaultMode, executionCallData_);
     }
 
     // Should revert if execute is called from an address other than the EntryPoint
@@ -2242,9 +2261,82 @@ abstract contract DeleGatorTestSuite is BaseTest {
         );
         entryPoint.handleOps(userOps_, bundler);
     }
+
+    function test_replayAttackAcrossEntryPoints() public {
+        // Deploy a second EntryPoint
+        EntryPoint newEntryPoint_ = new EntryPoint();
+        vm.label(address(newEntryPoint_), "New EntryPoint");
+
+        // 1. Create a UserOp that will be valid with the original EntryPoint
+        address aliceDeleGatorAddr_ = address(users.alice.deleGator);
+
+        // A simple operation to transfer ETH to Bob
+        Execution memory execution_ = Execution({ target: users.bob.addr, value: 1 ether, callData: hex"" });
+
+        // Create the UserOp with current EntryPoint
+        bytes memory userOpCallData_ = abi.encodeWithSignature(EXECUTE_SINGULAR_SIGNATURE, execution_);
+        PackedUserOperation memory userOp_ = createUserOp(aliceDeleGatorAddr_, userOpCallData_);
+
+        // Alice signs it with the current EntryPoint's context
+        userOp_.signature = signHash(users.alice, getPackedUserOperationTypedDataHash(userOp_));
+
+        // Bob's initial balance for verification
+        uint256 bobInitialBalance = users.bob.addr.balance;
+
+        // 1. Execute the original UserOp through the first EntryPoint
+        PackedUserOperation[] memory userOps_ = new PackedUserOperation[](1);
+        userOps_[0] = userOp_;
+        vm.prank(bundler);
+        entryPoint.handleOps(userOps_, bundler);
+
+        // Verify first execution worked
+        uint256 bobBalanceAfterExecution_ = users.bob.addr.balance;
+        assertEq(bobBalanceAfterExecution_, bobInitialBalance + 1 ether);
+
+        // 2. Upgrade the code implementation
+        vm.startPrank(address(entryPoint));
+
+        // Upgrade to a new implementation and validate that the signers remain the same.
+        if (IMPLEMENTATION == Implementation.Hybrid) {
+            address newImpl_ = address(new HybridDeleGator(delegationManager, newEntryPoint_));
+            users.alice.deleGator.upgradeToAndCallAndRetainStorage(newImpl_, hex"");
+            HybridDeleGator hybridDeleGator_ = HybridDeleGator(payable(aliceDeleGatorAddr_));
+            assertEq(hybridDeleGator_.owner(), users.alice.addr);
+            (uint256 x_, uint256 y_) = hybridDeleGator_.getKey(users.alice.name);
+            assertEq(x_, users.alice.x);
+            assertEq(y_, users.alice.y);
+        } else if (IMPLEMENTATION == Implementation.MultiSig) {
+            address newImpl_ = address(new MultiSigDeleGator(delegationManager, newEntryPoint_));
+            users.alice.deleGator.upgradeToAndCallAndRetainStorage(newImpl_, hex"");
+            MultiSigDeleGator multiSigDeleGator_ = MultiSigDeleGator(payable(aliceDeleGatorAddr_));
+            assertTrue(multiSigDeleGator_.isSigner(users.alice.addr));
+        } else if (IMPLEMENTATION == Implementation.EIP7702Stateless) {
+            address newImpl_ = address(new EIP7702StatelessDeleGator(delegationManager, newEntryPoint_));
+            vm.etch(aliceDeleGatorAddr_, bytes.concat(hex"ef0100", abi.encodePacked(newImpl_)));
+        } else {
+            revert("Invalid Implementation");
+        }
+        vm.stopPrank();
+
+        // Verify the implementation was updated
+        assertEq(address(users.alice.deleGator.entryPoint()), address(newEntryPoint_));
+
+        // 3. Attempt to replay the original UserOp through the new EntryPoint
+        vm.prank(bundler);
+
+        vm.expectRevert(abi.encodeWithSelector(IEntryPoint.FailedOp.selector, 0, "AA24 signature error"));
+        newEntryPoint_.handleOps(userOps_, bundler);
+
+        // 4. Verify if the attack did not succeed - check if Bob received ETH again
+        assertEq(users.bob.addr.balance, bobBalanceAfterExecution_);
+    }
 }
 
 abstract contract UUPSDeleGatorTest is DeleGatorTestSuite {
+    function encodeInvalidEmptySignatureRevertReason() internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(IDelegationManager.InvalidERC1271Signature.selector);
+    }
+
     function encodeInvalidSignatureRevertReason() internal pure override returns (bytes memory) {
         return abi.encodeWithSelector(IDelegationManager.InvalidEOASignature.selector);
     }
@@ -2255,6 +2347,10 @@ abstract contract UUPSDeleGatorTest is DeleGatorTestSuite {
 }
 
 abstract contract EIP7702DeleGatorTest is DeleGatorTestSuite {
+    function encodeInvalidEmptySignatureRevertReason() internal pure override returns (bytes memory) {
+        return abi.encodeWithSelector(ECDSA.ECDSAInvalidSignatureLength.selector, uint256(0));
+    }
+
     function encodeInvalidSignatureRevertReason() internal pure override returns (bytes memory) {
         return abi.encodeWithSelector(IDelegationManager.InvalidERC1271Signature.selector);
     }

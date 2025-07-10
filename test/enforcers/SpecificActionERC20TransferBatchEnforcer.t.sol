@@ -2,7 +2,6 @@
 pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
@@ -15,14 +14,10 @@ import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 import { BasicERC20, IERC20 } from "../utils/BasicERC20.t.sol";
 
 contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////// State //////////////////////
 
     SpecificActionERC20TransferBatchEnforcer public batchEnforcer;
     BasicERC20 public token;
-    ModeCode public batchMode = ModeLib.encodeSimpleBatch();
-    ModeCode public singleMode = ModeLib.encodeSimpleSingle();
     uint256 public constant TRANSFER_AMOUNT = 10 ether;
 
     ////////////////////// Set up //////////////////////
@@ -50,7 +45,7 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
             delegationHash_,
             delegator_ // delegator
         );
-        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, delegationHash_, delegator_, address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchDefaultMode, executionCallData_, delegationHash_, delegator_, address(0));
     }
 
     // should allow multiple different delegations with same parameters
@@ -61,24 +56,35 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
         vm.startPrank(address(delegationManager));
 
         // First delegation
-        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("delegation1"), address(0), address(0));
+        batchEnforcer.beforeHook(
+            terms_, hex"", batchDefaultMode, executionCallData_, keccak256("delegation1"), address(0), address(0)
+        );
 
         // Second delegation with different hash
-        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("delegation2"), address(0), address(0));
+        batchEnforcer.beforeHook(
+            terms_, hex"", batchDefaultMode, executionCallData_, keccak256("delegation2"), address(0), address(0)
+        );
 
         vm.stopPrank();
     }
 
     ////////////////////// Invalid cases //////////////////////
 
-    // should fail with invalid mode (single mode instead of batch)
-    function test_revertWithInvalidMode() public {
+    // should fail with invalid call type mode (single mode instead of batch)
+    function test_revertWithInvalidCallTypeMode() public {
         (Execution[] memory executions_, bytes memory terms_) = _setupValidBatchAndTerms();
         bytes memory executionCallData_ = ExecutionLib.encodeBatch(executions_);
 
         vm.prank(address(delegationManager));
         vm.expectRevert("CaveatEnforcer:invalid-call-type");
-        batchEnforcer.beforeHook(terms_, hex"", singleMode, executionCallData_, keccak256("test"), address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", singleDefaultMode, executionCallData_, keccak256("test"), address(0), address(0));
+    }
+
+    // should fail with invalid call type mode (try instead of default)
+    function test_revertWithInvalidExecutionMode() public {
+        vm.prank(address(delegationManager));
+        vm.expectRevert("CaveatEnforcer:invalid-execution-type");
+        batchEnforcer.beforeHook(hex"", hex"", batchTryMode, hex"", bytes32(0), address(0), address(0));
     }
 
     // should fail when trying to reuse a delegation
@@ -90,11 +96,11 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
         vm.startPrank(address(delegationManager));
 
         // First use
-        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, delegationHash_, address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchDefaultMode, executionCallData_, delegationHash_, address(0), address(0));
 
         // Attempt reuse
         vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:delegation-already-used");
-        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, delegationHash_, address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchDefaultMode, executionCallData_, delegationHash_, address(0), address(0));
 
         vm.stopPrank();
     }
@@ -113,7 +119,7 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
 
         vm.prank(address(delegationManager));
         vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-batch-size");
-        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchDefaultMode, executionCallData_, keccak256("test"), address(0), address(0));
     }
 
     // should fail with invalid first transaction target
@@ -124,7 +130,7 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
 
         vm.prank(address(delegationManager));
         vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-first-transaction");
-        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchDefaultMode, executionCallData_, keccak256("test"), address(0), address(0));
     }
 
     // should fail with invalid first transaction value
@@ -135,7 +141,7 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
 
         vm.prank(address(delegationManager));
         vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-first-transaction");
-        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchDefaultMode, executionCallData_, keccak256("test"), address(0), address(0));
     }
 
     // should fail with invalid first transaction calldata
@@ -146,7 +152,7 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
 
         vm.prank(address(delegationManager));
         vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-first-transaction");
-        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchDefaultMode, executionCallData_, keccak256("test"), address(0), address(0));
     }
 
     // should fail with invalid second transaction target
@@ -157,7 +163,7 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
 
         vm.prank(address(delegationManager));
         vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-second-transaction");
-        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchDefaultMode, executionCallData_, keccak256("test"), address(0), address(0));
     }
 
     // should fail with invalid second transaction value
@@ -168,7 +174,7 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
 
         vm.prank(address(delegationManager));
         vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-second-transaction");
-        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchDefaultMode, executionCallData_, keccak256("test"), address(0), address(0));
     }
 
     // should fail with invalid second transaction calldata length
@@ -179,7 +185,7 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
 
         vm.prank(address(delegationManager));
         vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-second-transaction");
-        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchDefaultMode, executionCallData_, keccak256("test"), address(0), address(0));
     }
 
     // should fail with invalid second transaction selector
@@ -191,7 +197,7 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
 
         vm.prank(address(delegationManager));
         vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-second-transaction");
-        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchDefaultMode, executionCallData_, keccak256("test"), address(0), address(0));
     }
 
     // should fail with invalid second transaction recipient
@@ -203,7 +209,7 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
 
         vm.prank(address(delegationManager));
         vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-second-transaction");
-        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchDefaultMode, executionCallData_, keccak256("test"), address(0), address(0));
     }
 
     // should fail with invalid second transaction amount
@@ -215,7 +221,7 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
 
         vm.prank(address(delegationManager));
         vm.expectRevert("SpecificActionERC20TransferBatchEnforcer:invalid-second-transaction");
-        batchEnforcer.beforeHook(terms_, hex"", batchMode, executionCallData_, keccak256("test"), address(0), address(0));
+        batchEnforcer.beforeHook(terms_, hex"", batchDefaultMode, executionCallData_, keccak256("test"), address(0), address(0));
     }
 
     // should fail with invalid terms length
@@ -281,7 +287,7 @@ contract SpecificActionERC20TransferBatchEnforcerTest is CaveatEnforcerBaseTest 
 
         // Set up batch mode
         ModeCode[] memory oneBatchMode_ = new ModeCode[](1);
-        oneBatchMode_[0] = batchMode;
+        oneBatchMode_[0] = batchDefaultMode;
 
         // Bob redeems the delegation to execute the batch
         vm.prank(users.bob.addr);

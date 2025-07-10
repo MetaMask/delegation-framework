@@ -2,7 +2,6 @@
 pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import "../../src/utils/Types.sol";
@@ -12,15 +11,12 @@ import { NonceEnforcer } from "../../src/enforcers/NonceEnforcer.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
 contract NonceEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////////////// State //////////////////////////////
     NonceEnforcer public enforcer;
     Execution execution = Execution({ target: address(0), value: 0, callData: hex"" });
     bytes executionCallData = ExecutionLib.encodeSingle(execution.target, execution.value, execution.callData);
     address delegator = address(users.alice.deleGator);
     address dm = address(delegationManager);
-    ModeCode mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////////////// Events //////////////////////////////
 
@@ -72,7 +68,7 @@ contract NonceEnforcerTest is CaveatEnforcerBaseTest {
         vm.startPrank(dm);
 
         // Should not revert
-        enforcer.beforeHook(terms_, hex"", mode, executionCallData, bytes32(0), delegator, address(0));
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, address(0));
     }
 
     ////////////////////// Errors //////////////////////
@@ -100,7 +96,7 @@ contract NonceEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encode(nonce_ + 1);
         vm.startPrank(dm);
         vm.expectRevert(bytes("NonceEnforcer:invalid-nonce"));
-        enforcer.beforeHook(terms_, hex"", mode, executionCallData, bytes32(0), delegator, address(0));
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, address(0));
 
         // Increment ID so the current ID is high enough to check a lower ID
         vm.startPrank(dm);
@@ -111,10 +107,15 @@ contract NonceEnforcerTest is CaveatEnforcerBaseTest {
         terms_ = abi.encode(nonce_ - 1);
         vm.startPrank(dm);
         vm.expectRevert(bytes("NonceEnforcer:invalid-nonce"));
-        enforcer.beforeHook(terms_, hex"", mode, executionCallData, bytes32(0), delegator, address(0));
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, address(0));
     }
 
-    //////////////////////  Integration  //////////////////////
+    // should fail with invalid call type mode (try instead of default)
+    function test_revertWithInvalidExecutionMode() public {
+        vm.prank(address(delegationManager));
+        vm.expectRevert("CaveatEnforcer:invalid-execution-type");
+        enforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
+    }
 
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {
         return ICaveatEnforcer(address(enforcer));

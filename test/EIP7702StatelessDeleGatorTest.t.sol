@@ -7,6 +7,7 @@ import { EntryPoint } from "@account-abstraction/core/EntryPoint.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { ERC1967Proxy as DeleGatorProxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 import { SigningUtilsLib } from "./utils/SigningUtilsLib.t.sol";
 import { Implementation, SignatureType } from "./utils/Types.t.sol";
@@ -24,10 +25,8 @@ import { ERC1271Lib } from "../src/libraries/ERC1271Lib.sol";
 import { EIP7702DeleGatorCore } from "../src/EIP7702/EIP7702DeleGatorCore.sol";
 import {
     CALLTYPE_SINGLE,
-    CALLTYPE_BATCH,
     CALLTYPE_DELEGATECALL,
     EXECTYPE_DEFAULT,
-    EXECTYPE_TRY,
     MODE_DEFAULT,
     ModeLib,
     ExecType,
@@ -177,7 +176,9 @@ contract EIP7702StatelessDeleGatorTest is BaseTest {
         bytes32 hash_ = keccak256("hello world");
 
         bytes memory signature_ = hex"ffff";
-        assertEq(aliceDeleGator.isValidSignature(hash_, signature_), ERC1271Lib.SIG_VALIDATION_FAILED);
+
+        vm.expectRevert(abi.encodeWithSelector(ECDSA.ECDSAInvalidSignatureLength.selector, signature_.length));
+        aliceDeleGator.isValidSignature(hash_, signature_);
     }
 
     ////////////////////// General //////////////////////
@@ -215,9 +216,6 @@ contract EIP7702StatelessDeleGatorTest is BaseTest {
 
     // Test for function: execute(ModeCode _mode, bytes calldata _executionCalldata)
     function test_execute_ModeCode_accessControl() public {
-        // We'll create a ModeCode that represents a single revert on failure
-        ModeCode singleRevertMode_ = ModeCode.wrap(0);
-
         // The callData for a single call: (target, value, callData)
         // We'll encode it via ExecutionLib or by standard abi.encodePacked:
         bytes memory execCalldata_ =
@@ -227,19 +225,19 @@ contract EIP7702StatelessDeleGatorTest is BaseTest {
         address randomUser_ = address(0x12345);
         vm.prank(randomUser_);
         vm.expectRevert(EIP7702DeleGatorCore.NotEntryPointOrSelf.selector);
-        aliceDeleGator.execute(singleRevertMode_, execCalldata_);
+        aliceDeleGator.execute(singleDefaultMode, execCalldata_);
 
         // 2. Call from the entry point -> Should succeed
         uint256 initialCount_ = aliceDeleGatorCounter.count();
         vm.prank(address(entryPoint));
-        aliceDeleGator.execute(singleRevertMode_, execCalldata_);
+        aliceDeleGator.execute(singleDefaultMode, execCalldata_);
         uint256 finalCount_ = aliceDeleGatorCounter.count();
         assertEq(finalCount_, initialCount_ + 1, "Counter should have incremented from entryPoint call");
 
         // 3. Call from the contract itself -> Should succeed
         initialCount_ = aliceDeleGatorCounter.count();
         vm.prank(address(aliceDeleGator));
-        aliceDeleGator.execute(singleRevertMode_, execCalldata_);
+        aliceDeleGator.execute(singleDefaultMode, execCalldata_);
         finalCount_ = aliceDeleGatorCounter.count();
         assertEq(finalCount_, initialCount_ + 1, "Counter should have incremented from self-call");
     }
@@ -248,15 +246,10 @@ contract EIP7702StatelessDeleGatorTest is BaseTest {
     function test_supportsExecutionMode() public {
         ModePayload modePayloadDefault_ = ModePayload.wrap(bytes22(0x00));
 
-        ModeCode singleRevertMode_ = ModeLib.encode(CALLTYPE_SINGLE, EXECTYPE_DEFAULT, MODE_DEFAULT, modePayloadDefault_);
-        ModeCode singleTryMode_ = ModeLib.encode(CALLTYPE_SINGLE, EXECTYPE_DEFAULT, MODE_DEFAULT, modePayloadDefault_);
-        ModeCode batchRevertMode_ = ModeLib.encode(CALLTYPE_BATCH, EXECTYPE_TRY, MODE_DEFAULT, modePayloadDefault_);
-        ModeCode batchTryMode_ = ModeLib.encode(CALLTYPE_BATCH, EXECTYPE_TRY, MODE_DEFAULT, modePayloadDefault_);
-
-        assertTrue(aliceDeleGator.supportsExecutionMode(singleRevertMode_), "should support single revert");
-        assertTrue(aliceDeleGator.supportsExecutionMode(singleTryMode_), "should support single try");
-        assertTrue(aliceDeleGator.supportsExecutionMode(batchRevertMode_), "should support batch revert");
-        assertTrue(aliceDeleGator.supportsExecutionMode(batchTryMode_), "should support batch try");
+        assertTrue(aliceDeleGator.supportsExecutionMode(singleDefaultMode), "should support single revert");
+        assertTrue(aliceDeleGator.supportsExecutionMode(singleTryMode), "should support single try");
+        assertTrue(aliceDeleGator.supportsExecutionMode(batchDefaultMode), "should support batch revert");
+        assertTrue(aliceDeleGator.supportsExecutionMode(batchTryMode), "should support batch try");
 
         // Test a random/unsupported mode
         ModeCode unsupportedMode_ = ModeCode.wrap(bytes32(uint256(12345)));

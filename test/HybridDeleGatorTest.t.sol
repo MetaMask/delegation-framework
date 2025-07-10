@@ -6,7 +6,6 @@ import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy
 import { FCL_ecdsa_utils } from "@FCL/FCL_ecdsa_utils.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { BytesLib } from "@bytes-utils/BytesLib.sol";
-import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { SigningUtilsLib } from "./utils/SigningUtilsLib.t.sol";
 import { StorageUtilsLib } from "./utils/StorageUtilsLib.t.sol";

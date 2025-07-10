@@ -13,7 +13,8 @@ import { ModeCode } from "../utils/Types.sol";
  * @dev This contract implements a mechanism by which a user may transfer up to a fixed amount of tokens (the period amount)
  *      during a given time period. The transferable amount resets at the beginning of each period, and any unused tokens
  *      are forfeited once the period ends. Partial transfers within a period are allowed, but the total transfer in any
- *      period cannot exceed the specified limit. This enforcer is designed to work only in single execution mode (ModeCode.Single).
+ *      period cannot exceed the specified limit.
+ * @dev This enforcer operates only in single execution call type and with default execution mode.
  */
 contract ERC20PeriodTransferEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
@@ -38,7 +39,7 @@ contract ERC20PeriodTransferEnforcer is CaveatEnforcer {
     /**
      * @notice Emitted when a transfer is made, updating the transferred amount in the active period.
      * @param sender The address initiating the transfer.
-     * @param recipient The address that receives the tokens.
+     * @param redeemer The address that receives the tokens.
      * @param delegationHash The hash identifying the delegation.
      * @param token The ERC20 token contract address.
      * @param periodAmount The maximum tokens transferable per period.
@@ -49,7 +50,7 @@ contract ERC20PeriodTransferEnforcer is CaveatEnforcer {
      */
     event TransferredInPeriod(
         address indexed sender,
-        address indexed recipient,
+        address indexed redeemer,
         bytes32 indexed delegationHash,
         address token,
         uint256 periodAmount,
@@ -110,7 +111,7 @@ contract ERC20PeriodTransferEnforcer is CaveatEnforcer {
      *  - 32 bytes: periodAmount.
      *  - 32 bytes: periodDuration (in seconds).
      *  - 32 bytes: startDate for the first period.
-     * @param _mode The execution mode (must be ModeCode.Single).
+     * @param _mode The execution mode. (Must be Single callType, Default execType)
      * @param _executionCallData The transaction data (should be an `IERC20.transfer(address,uint256)` call).
      * @param _delegationHash The hash identifying the delegation.
      * @param _redeemer The address intended to receive the tokens.
@@ -126,7 +127,8 @@ contract ERC20PeriodTransferEnforcer is CaveatEnforcer {
     )
         public
         override
-        onlySingleExecutionMode(_mode)
+        onlySingleCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
         _validateAndConsumeTransfer(_terms, _executionCallData, _delegationHash, _redeemer);
     }
@@ -182,26 +184,23 @@ contract ERC20PeriodTransferEnforcer is CaveatEnforcer {
 
         (address token_, uint256 periodAmount_, uint256 periodDuration_, uint256 startDate_) = getTermsInfo(_terms);
 
-        // Validate terms
-        require(startDate_ > 0, "ERC20PeriodTransferEnforcer:invalid-zero-start-date");
-        require(periodDuration_ > 0, "ERC20PeriodTransferEnforcer:invalid-zero-period-duration");
-        require(periodAmount_ > 0, "ERC20PeriodTransferEnforcer:invalid-zero-period-amount");
-
         require(token_ == target_, "ERC20PeriodTransferEnforcer:invalid-contract");
         require(bytes4(callData_[0:4]) == IERC20.transfer.selector, "ERC20PeriodTransferEnforcer:invalid-method");
-
-        // Ensure the transfer period has started.
-        require(block.timestamp >= startDate_, "ERC20PeriodTransferEnforcer:transfer-not-started");
 
         PeriodicAllowance storage allowance_ = periodicAllowances[msg.sender][_delegationHash];
 
         // Initialize the allowance on first use.
         if (allowance_.startDate == 0) {
+            require(startDate_ > 0, "ERC20PeriodTransferEnforcer:invalid-zero-start-date");
+            require(periodAmount_ > 0, "ERC20PeriodTransferEnforcer:invalid-zero-period-amount");
+            require(periodDuration_ > 0, "ERC20PeriodTransferEnforcer:invalid-zero-period-duration");
+
+            // Ensure the transfer period has started.
+            require(block.timestamp >= startDate_, "ERC20PeriodTransferEnforcer:transfer-not-started");
+
             allowance_.periodAmount = periodAmount_;
             allowance_.periodDuration = periodDuration_;
             allowance_.startDate = startDate_;
-            allowance_.lastTransferPeriod = 0;
-            allowance_.transferredInCurrentPeriod = 0;
         }
 
         // Calculate available tokens using the current allowance state.
@@ -225,7 +224,7 @@ contract ERC20PeriodTransferEnforcer is CaveatEnforcer {
             token_,
             periodAmount_,
             periodDuration_,
-            allowance_.startDate,
+            startDate_,
             allowance_.transferredInCurrentPeriod,
             block.timestamp
         );

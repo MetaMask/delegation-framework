@@ -19,7 +19,7 @@ import { ModeCode } from "../utils/Types.sol";
  *  5. The enforcer tracks how many tokens have already been spent, and will revert
  *     if an attempted transfer exceeds what remains unlocked.
  *
- * @dev This caveat enforcer only works when the execution is in single mode (`ModeCode.Single`).
+ * @dev This enforcer operates only in single execution call type and with default execution mode.
  * @dev To enable an 'infinite' token stream, set `maxAmount` to type(uint256).max
  */
 contract ERC20StreamingEnforcer is CaveatEnforcer {
@@ -59,40 +59,21 @@ contract ERC20StreamingEnforcer is CaveatEnforcer {
 
     /**
      * @notice Retrieves the current available allowance for a specific delegation.
-     * @param _delegationHash The hash of the delegation being queried.
      * @param _delegationManager The address of the delegation manager.
-     * @param _terms 148 packed bytes where:
-     * - 20 bytes: ERC20 token address.
-     * - 32 bytes: initial amount.
-     * - 32 bytes: max amount.
-     * - 32 bytes: amount per second.
-     * - 32 bytes: start time for the streaming allowance.
+     * @param _delegationHash The hash of the delegation being queried.
      * @return availableAmount_ The number of tokens that are currently spendable
      * under this streaming allowance (capped by `maxAmount`).
      */
     function getAvailableAmount(
-        bytes32 _delegationHash,
         address _delegationManager,
-        bytes calldata _terms
+        bytes32 _delegationHash
     )
         external
         view
         returns (uint256 availableAmount_)
     {
-        StreamingAllowance memory storedAllowance_ = streamingAllowances[_delegationManager][_delegationHash];
-        if (storedAllowance_.spent != 0) return _getAvailableAmount(storedAllowance_);
-
-        // Not yet initialized: simulate using provided terms.
-        (, uint256 initialAmount_, uint256 maxAmount_, uint256 amountPerSecond_, uint256 startTime_) = getTermsInfo(_terms);
-
-        StreamingAllowance memory allowance_ = StreamingAllowance({
-            initialAmount: initialAmount_,
-            maxAmount: maxAmount_,
-            amountPerSecond: amountPerSecond_,
-            startTime: startTime_,
-            spent: 0
-        });
-        return _getAvailableAmount(allowance_);
+        StreamingAllowance storage allowance_ = streamingAllowances[_delegationManager][_delegationHash];
+        availableAmount_ = _getAvailableAmount(allowance_);
     }
 
     /**
@@ -104,7 +85,7 @@ contract ERC20StreamingEnforcer is CaveatEnforcer {
      * - 32 bytes: max amount.
      * - 32 bytes: amount per second.
      * - 32 bytes: start time for the streaming allowance.
-     * @param _mode The mode of the execution (must be `ModeCode.Single` for this enforcer).
+     * @param _mode The execution mode. (Must be Single callType, Default execType)
      * @param _executionCallData The transaction the delegate might try to perform.
      * @param _delegationHash The hash of the delegation being operated on.
      * @param _redeemer The address of the redeemer.
@@ -120,7 +101,8 @@ contract ERC20StreamingEnforcer is CaveatEnforcer {
     )
         public
         override
-        onlySingleExecutionMode(_mode)
+        onlySingleCallTypeMode(_mode)
+        onlyDefaultExecutionMode(_mode)
     {
         _validateAndConsumeAllowance(_terms, _executionCallData, _delegationHash, _redeemer);
     }

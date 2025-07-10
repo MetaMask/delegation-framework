@@ -13,12 +13,15 @@
 [submodule "lib/account-abstraction"]
 	path = lib/account-abstraction
 	url = https://github.com/eth-infinitism/account-abstraction
-[submodule "lib/erc7579-implementation"]
-	path = lib/erc7579-implementation
-	url = https://github.com/erc7579/erc7579-implementation
 [submodule "lib/SCL"]
 	path = lib/SCL
 	url = https://github.com/get-smooth/crypto-lib
 [submodule "lib/FCL"]
 	path = lib/FCL
+	url = https://github.com/rdubois-crypto/FreshCryptoLib
+[submodule "lib/erc7579-implementation"]
+	path = lib/erc7579-implementation
+	url = https://github.com/erc7579/erc7579-implementation
+[submodule "lib/FreshCryptoLib"]
+	path = lib/FreshCryptoLib
 	url = https://github.com/rdubois-crypto/FreshCryptoLib

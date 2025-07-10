@@ -6,7 +6,6 @@ import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import { ShortStrings, ShortString } from "@openzeppelin/contracts/utils/ShortStrings.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { Counter } from "./utils/Counter.t.sol";
@@ -22,7 +21,6 @@ import { MockCaveatEnforcer } from "./utils/MockCaveatEnforcer.sol";
 import { MockFailureCaveatEnforcer } from "./utils/MockFailureCaveatEnforcer.sol";
 
 contract DelegationManagerTest is BaseTest {
-    using ModeLib for ModeCode;
     using ShortStrings for *;
 
     ////////////////////////////// Setup //////////////////////////////
@@ -41,11 +39,11 @@ contract DelegationManagerTest is BaseTest {
         super.setUp();
 
         _oneSingularMode = new ModeCode[](1);
-        _oneSingularMode[0] = ModeLib.encodeSimpleSingle();
+        _oneSingularMode[0] = singleDefaultMode;
 
         _twoSingularModes = new ModeCode[](2);
-        _twoSingularModes[0] = ModeLib.encodeSimpleSingle();
-        _twoSingularModes[1] = ModeLib.encodeSimpleSingle();
+        _twoSingularModes[0] = singleDefaultMode;
+        _twoSingularModes[1] = singleDefaultMode;
 
         counter = new Counter(users.alice.addr);
     }
@@ -70,7 +68,7 @@ contract DelegationManagerTest is BaseTest {
     // Should allow reading contract version
     function test_allow_contractVersionReads() public {
         string memory contractVersion_ = delegationManager.VERSION();
-        assertEq("1.2.0", contractVersion_);
+        assertEq("1.3.0", contractVersion_);
     }
 
     // Should allow reading contract version

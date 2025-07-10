@@ -32,7 +32,7 @@ contract MultiSigDeleGator is DeleGatorCore {
     string public constant DOMAIN_VERSION = "1";
 
     /// @dev The version of the contract
-    string public constant VERSION = "1.2.0";
+    string public constant VERSION = "1.3.0";
 
     /// @dev The storage slot for the MultiSig DeleGator
     /// @dev keccak256(abi.encode(uint256(keccak256("DeleGator.MultiSigDeleGator")) - 1)) & ~bytes32(uint256(0xff))

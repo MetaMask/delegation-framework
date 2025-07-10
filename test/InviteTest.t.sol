@@ -3,7 +3,6 @@ pragma solidity 0.8.23;
 
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import { BaseTest } from "./utils/BaseTest.t.sol";
@@ -20,7 +19,6 @@ import { UserOperationLib } from "./utils/UserOperationLib.t.sol";
 
 contract InviteTest is BaseTest {
     using MessageHashUtils for bytes32;
-    using ModeLib for ModeCode;
 
     constructor() {
         IMPLEMENTATION = Implementation.Hybrid;
@@ -84,7 +82,7 @@ contract InviteTest is BaseTest {
         // Create and Sign UserOp with Bob's key
         PackedUserOperation memory userOp_ =
             createUserOp(predictedAddr_, abi.encodeWithSignature(EXECUTE_SINGULAR_SIGNATURE, execution_), initcode_);
-        userOp_.signature = signHash(users.bob, getPackedUserOperationTypedDataHash(predictedAddr_, userOp_));
+        userOp_.signature = signHash(users.bob, getPackedUserOperationTypedDataHash(predictedAddr_, userOp_, address(entryPoint)));
 
         // Validate the contract hasn't been deployed yet
         assertEq(predictedAddr_.code, hex"");
@@ -183,14 +181,14 @@ contract InviteTest is BaseTest {
         executionCallDatas_[0] = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
         ModeCode[] memory modes_ = new ModeCode[](1);
-        modes_[0] = ModeLib.encodeSimpleSingle();
+        modes_[0] = singleDefaultMode;
 
         bytes memory userOpCallData_ =
             abi.encodeWithSelector(DeleGatorCore.redeemDelegations.selector, permissionContexts_, modes_, executionCallDatas_);
 
         PackedUserOperation memory userOp_ = createUserOp(predictedAddr_, userOpCallData_, initcode_);
 
-        userOp_.signature = signHash(users.bob, getPackedUserOperationTypedDataHash(predictedAddr_, userOp_));
+        userOp_.signature = signHash(users.bob, getPackedUserOperationTypedDataHash(predictedAddr_, userOp_, address(entryPoint)));
 
         submitUserOp_Bundler(userOp_);
 
@@ -206,9 +204,17 @@ contract InviteTest is BaseTest {
 
     ////////////////////////////// Helper Methods //////////////////////////////
 
-    function getPackedUserOperationTypedDataHash(address _contract, PackedUserOperation memory userOp_) public returns (bytes32) {
+    function getPackedUserOperationTypedDataHash(
+        address _contract,
+        PackedUserOperation memory userOp_,
+        address _entryPoint
+    )
+        internal
+        view
+        returns (bytes32)
+    {
         return UserOperationLib.getPackedUserOperationTypedDataHash(
-            multiSigDeleGatorImpl.NAME(), multiSigDeleGatorImpl.DOMAIN_VERSION(), block.chainid, _contract, userOp_
+            multiSigDeleGatorImpl.NAME(), multiSigDeleGatorImpl.DOMAIN_VERSION(), block.chainid, _contract, userOp_, _entryPoint
         );
     }
 }

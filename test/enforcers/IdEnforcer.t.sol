@@ -2,7 +2,6 @@
 pragma solidity 0.8.23;
 
 import "forge-std/Test.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
 import "../../src/utils/Types.sol";
@@ -16,16 +15,12 @@ import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 import { BasicERC20, IERC20 } from "../utils/BasicERC20.t.sol";
 
 contract IdEnforcerEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////////////// State //////////////////////////////
     IdEnforcer public idEnforcer;
     BasicERC20 public testFToken1;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
+    address public redeemer = address(users.bob.deleGator);
 
     ////////////////////////////// Events //////////////////////////////
-
-    event UsedId(address indexed sender, address indexed delegator, address indexed redeemer, uint256 id);
 
     ////////////////////// Set up //////////////////////
 
@@ -58,8 +53,8 @@ contract IdEnforcerEnforcerTest is CaveatEnforcerBaseTest {
 
         // First usage works well
         vm.expectEmit(true, true, true, true, address(idEnforcer));
-        emit UsedId(address(delegationManager), address(0), delegator_, id_);
-        idEnforcer.beforeHook(terms_, hex"", mode, executionCallData_, bytes32(0), delegator_, address(0));
+        emit IdEnforcer.UsedId(address(delegationManager), delegator_, redeemer, id_);
+        idEnforcer.beforeHook(terms_, hex"", singleDefaultMode, executionCallData_, bytes32(0), delegator_, redeemer);
 
         // After the first usage the enforcer marks the nonce as used.
         assertTrue(idEnforcer.getIsUsed(address(delegationManager), delegator_, id_));
@@ -67,7 +62,7 @@ contract IdEnforcerEnforcerTest is CaveatEnforcerBaseTest {
         // Second usage reverts, and returns false.
         vm.expectRevert("IdEnforcer:id-already-used");
 
-        idEnforcer.beforeHook(terms_, hex"", mode, executionCallData_, bytes32(0), delegator_, address(0));
+        idEnforcer.beforeHook(terms_, hex"", singleDefaultMode, executionCallData_, bytes32(0), delegator_, redeemer);
     }
 
     // should FAIL to INVOKE with invalid input terms
@@ -76,11 +71,18 @@ contract IdEnforcerEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
         bytes memory terms_ = abi.encodePacked(uint32(1));
         vm.expectRevert("IdEnforcer:invalid-terms-length");
-        idEnforcer.beforeHook(terms_, hex"", mode, executionCallData_, bytes32(0), address(0), address(0));
+        idEnforcer.beforeHook(terms_, hex"", singleDefaultMode, executionCallData_, bytes32(0), address(0), redeemer);
 
         terms_ = abi.encodePacked(uint256(1), uint256(1));
         vm.expectRevert("IdEnforcer:invalid-terms-length");
-        idEnforcer.beforeHook(terms_, hex"", mode, executionCallData_, bytes32(0), address(0), address(0));
+        idEnforcer.beforeHook(terms_, hex"", singleDefaultMode, executionCallData_, bytes32(0), address(0), redeemer);
+    }
+
+    // should fail with invalid call type mode (try instead of default)
+    function test_revertWithInvalidExecutionMode() public {
+        vm.prank(address(delegationManager));
+        vm.expectRevert("CaveatEnforcer:invalid-execution-type");
+        idEnforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
     }
 
     //////////////////////  Integration  //////////////////////

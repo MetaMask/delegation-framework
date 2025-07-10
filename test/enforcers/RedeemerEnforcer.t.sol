@@ -1,21 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.23;
 
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
-import { Execution, ModeCode } from "../../src/utils/Types.sol";
+import { Execution } from "../../src/utils/Types.sol";
 import { Counter } from "../utils/Counter.t.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { RedeemerEnforcer } from "../../src/enforcers/RedeemerEnforcer.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
 contract RedeemerEnforcerTest is CaveatEnforcerBaseTest {
-    using ModeLib for ModeCode;
-
     ////////////////////////////// State //////////////////////////////
     RedeemerEnforcer public redeemerEnforcer;
-    ModeCode public mode = ModeLib.encodeSimpleSingle();
 
     ////////////////////// Set up //////////////////////
 
@@ -47,7 +43,7 @@ contract RedeemerEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(address(users.bob.deleGator));
         vm.prank(address(delegationManager));
         redeemerEnforcer.beforeHook(
-            terms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(users.bob.deleGator)
+            terms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(users.bob.deleGator)
         );
     }
 
@@ -63,10 +59,10 @@ contract RedeemerEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(address(users.alice.deleGator), address(users.bob.deleGator));
         vm.startPrank(address(delegationManager));
         redeemerEnforcer.beforeHook(
-            terms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(users.alice.deleGator)
+            terms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(users.alice.deleGator)
         );
         redeemerEnforcer.beforeHook(
-            terms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(users.bob.deleGator)
+            terms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(users.bob.deleGator)
         );
     }
 
@@ -92,7 +88,7 @@ contract RedeemerEnforcerTest is CaveatEnforcerBaseTest {
         // Dave is not a valid redeemer
         vm.expectRevert("RedeemerEnforcer:unauthorized-redeemer");
         redeemerEnforcer.beforeHook(
-            terms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(users.dave.deleGator)
+            terms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(users.dave.deleGator)
         );
     }
 
@@ -109,8 +105,15 @@ contract RedeemerEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectRevert("RedeemerEnforcer:invalid-terms-length");
         redeemerEnforcer.beforeHook(
-            invalidTerms_, hex"", mode, executionCallData_, keccak256(""), address(0), address(users.bob.deleGator)
+            invalidTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(users.bob.deleGator)
         );
+    }
+
+    // should fail with invalid call type mode (try instead of default)
+    function test_revertWithInvalidExecutionMode() public {
+        vm.prank(address(delegationManager));
+        vm.expectRevert("CaveatEnforcer:invalid-execution-type");
+        redeemerEnforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
     }
 
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {

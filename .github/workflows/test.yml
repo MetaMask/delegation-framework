@@ -1,4 +1,4 @@
-name: Tests
+tabname: Tests
 
 on: [push, pull_request]
 
@@ -16,7 +16,20 @@ jobs:
         with:
           concurrent_skipping: same_content_newer
 
-  tests:
+  esccheck-ffi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+
+      - name: Search for 'ffi' in foundry.toml
+        run: |
+          if grep -q "ffi" "foundry.toml"; then
+            echo "Remove ffi configuration from the foundry.toml"
+            exit 1
+          fi
+
+  tabtests:
     needs: pre_job
     if: needs.pre_job.outputs.should_skip != 'true'
     runs-on: ubuntu-latest
