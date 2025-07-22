@@ -307,6 +307,14 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
 
+    // Reverts if amount is 0
+    function test_revertWithZeroAmount() public {
+        bytes memory terms_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(0));
+        vm.prank(address(dm));
+        vm.expectRevert("ERC1155TotalBalanceChangeEnforcer:zero-expected-change-amount");
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+    }
+
     ////////////////////// Multiple enforcer in delegation chain Functionality //////////////////////////////
 
     // Reverts if the total balance increase is insufficient with multiple enforcers.

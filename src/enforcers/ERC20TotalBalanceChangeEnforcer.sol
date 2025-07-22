@@ -74,7 +74,8 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
         override
         onlyDefaultExecutionMode(_mode)
     {
-        (bool enforceDecrease_, address token_, address recipient_, uint256 expected_) = getTermsInfo(_terms);
+        (bool enforceDecrease_, address token_, address recipient_, uint256 amount_) = getTermsInfo(_terms);
+        require(amount_ > 0, "ERC20TotalBalanceChangeEnforcer:zero-expected-change-amount");
 
         bytes32 hashKey_ = _getHashKey(msg.sender, token_, recipient_);
         BalanceTracker memory balanceTracker_ = balanceTracker[hashKey_];
@@ -88,14 +89,14 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
         }
 
         if (enforceDecrease_) {
-            balanceTracker_.expectedDecrease += expected_;
+            balanceTracker_.expectedDecrease += amount_;
         } else {
-            balanceTracker_.expectedIncrease += expected_;
+            balanceTracker_.expectedIncrease += amount_;
         }
 
         balanceTracker[hashKey_] = balanceTracker_;
 
-        emit UpdatedExpectedBalance(msg.sender, recipient_, token_, enforceDecrease_, expected_);
+        emit UpdatedExpectedBalance(msg.sender, recipient_, token_, enforceDecrease_, amount_);
     }
 
     /**
@@ -153,18 +154,19 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
      * @return enforceDecrease_ Boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00).
      * @return token_ The address of the token.
      * @return recipient_ The address of the recipient.
-     * @return expected_ The expected balance change amount.
+     * @return amount_ Balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
+     * enforceDecrease)
      */
     function getTermsInfo(bytes calldata _terms)
         public
         pure
-        returns (bool enforceDecrease_, address token_, address recipient_, uint256 expected_)
+        returns (bool enforceDecrease_, address token_, address recipient_, uint256 amount_)
     {
         require(_terms.length == 73, "ERC20TotalBalanceChangeEnforcer:invalid-terms-length");
         enforceDecrease_ = _terms[0] != 0;
         token_ = address(bytes20(_terms[1:21]));
         recipient_ = address(bytes20(_terms[21:41]));
-        expected_ = uint256(bytes32(_terms[41:]));
+        amount_ = uint256(bytes32(_terms[41:]));
     }
 
     /**

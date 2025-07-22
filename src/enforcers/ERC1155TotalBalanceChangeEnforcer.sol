@@ -96,6 +96,7 @@ contract ERC1155TotalBalanceChangeEnforcer is CaveatEnforcer {
         onlyDefaultExecutionMode(_mode)
     {
         TermsData memory terms_ = getTermsInfo(_terms);
+        require(terms_.amount > 0, "ERC1155TotalBalanceChangeEnforcer:zero-expected-change-amount");
         bytes32 hashKey_ = _getHashKey(msg.sender, terms_.token, terms_.recipient, terms_.tokenId);
         uint256 balance_ = IERC1155(terms_.token).balanceOf(terms_.recipient, terms_.tokenId);
         BalanceTracker memory balanceTracker_ = balanceTracker[hashKey_];

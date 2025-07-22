@@ -176,6 +176,15 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.beforeAllHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
     }
 
+    // Reverts if amount is 0
+    function test_revertWithZeroAmount() public {
+        address recipient_ = delegator;
+        bytes memory terms_ = abi.encodePacked(false, recipient_, uint256(0));
+        vm.prank(address(dm));
+        vm.expectRevert("NativeTokenTotalBalanceChangeEnforcer:zero-expected-change-amount");
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
+    }
+
     ////////////////////////////// Multiple Enforcers //////////////////////////////
 
     // Reverts if the total balance increase is insufficient with multiple enforcers.

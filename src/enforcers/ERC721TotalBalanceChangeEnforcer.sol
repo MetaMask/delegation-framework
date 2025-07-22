@@ -77,6 +77,7 @@ contract ERC721TotalBalanceChangeEnforcer is CaveatEnforcer {
         onlyDefaultExecutionMode(_mode)
     {
         (bool enforceDecrease_, address token_, address recipient_, uint256 amount_) = getTermsInfo(_terms);
+        require(amount_ > 0, "ERC721TotalBalanceChangeEnforcer:zero-expected-change-amount");
         bytes32 hashKey_ = _getHashKey(msg.sender, token_, recipient_);
 
         uint256 currentBalance_ = IERC721(token_).balanceOf(recipient_);

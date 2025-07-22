@@ -73,6 +73,7 @@ contract NativeTokenTotalBalanceChangeEnforcer is CaveatEnforcer {
         onlyDefaultExecutionMode(_mode)
     {
         (bool enforceDecrease_, address recipient_, uint256 amount_) = getTermsInfo(_terms);
+        require(amount_ > 0, "NativeTokenTotalBalanceChangeEnforcer:zero-expected-change-amount");
         bytes32 hashKey_ = _getHashKey(msg.sender, recipient_);
 
         BalanceTracker memory balanceTracker_ = balanceTracker[hashKey_];

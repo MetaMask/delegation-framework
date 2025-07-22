@@ -303,6 +303,14 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.beforeAllHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
     }
 
+    // Reverts if amount is 0
+    function test_revertWithZeroAmount() public {
+        bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(0));
+        vm.prank(address(dm));
+        vm.expectRevert("ERC20TotalBalanceChangeEnforcer:zero-expected-change-amount");
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+    }
+
     ////////////////////////////// Multiple enforcer in delegation chain Functionality //////////////////////////////
 
     // Reverts if the total balance increase is insufficient.
