@@ -32,6 +32,8 @@ CHAIN_IDS=(
   5115       # citrea-testnet
   57073      # ink
   763373     # ink-sepolia
+  1329       # sei
+  1328       # sei-testnet
 )
 
 ##########################################
@@ -71,6 +73,8 @@ get_chain_config() {
         5115)     config=("key" "blockscout" "$CITREA_TESTNET_RPC_URL" "https://explorer.testnet.citrea.xyz/api") ;; # citrea-testnet
         57073)    config=("key" "blockscout" "$INK_RPC_URL" "https://explorer.inkonchain.com/api") ;; # ink
         763373)   config=("key" "blockscout" "$INK_SEPOLIA_RPC_URL" "https://explorer-sepolia.inkonchain.com/api") ;; # ink-sepolia
+        1329)     config=("key" "custom" "$SEI_RPC_URL" "https://seitrace.com/pacific-1/api") ;; # sei
+        1328)     config=("key" "custom" "$SEI_TESTNET_RPC_URL" "https://seitrace.com/atlantic-2/api") ;; # sei-testnet
         *)
             echo "Unknown chain ID: $chain_id" >&2
             return 1
@@ -128,7 +132,7 @@ verify_across_chains() {
       fi
 
       # Only add etherscan-api-key if verifier is etherscan or custom
-      if [[ "$verifier" == "etherscan" ]] || [[ "$verifier" == "custom" ]]; then
+      if { [[ "$verifier" == "etherscan" ]] || [[ "$verifier" == "custom" ]]; } && [[ "$api_key" != "key" ]]; then
         cmd+=( --etherscan-api-key "$api_key" )
       fi
 
