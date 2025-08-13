@@ -85,8 +85,6 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
         if (balanceTracker_.expectedDecrease == 0 && balanceTracker_.expectedIncrease == 0) {
             balanceTracker_.balanceBefore = currentBalance_;
             emit TrackedBalance(msg.sender, recipient_, token_, currentBalance_);
-        } else {
-            require(balanceTracker_.balanceBefore == currentBalance_, "ERC20TotalBalanceChangeEnforcer:balance-changed");
         }
 
         if (enforceDecrease_) {
