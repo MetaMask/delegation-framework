@@ -9,12 +9,13 @@ import { ModeCode } from "../utils/Types.sol";
  * @title ERC20TotalBalanceChangeEnforcer
  * @notice Enforces that a recipient's token balance increases by at least the expected total amount across multiple delegations
  * or decreases by at most the expected total amount across multiple delegations. In a delegation chain, there can be a combination
- * of both increases and decreases and the enforcer will track the total expected change.
+ * of both increases and decreases and the enforcer will track the total expected change. Tracking start in the first beforeAllHook
+ * call and ends in the last afterAllHook call.
  * @dev Tracks initial balance and accumulates expected increases and decreases per recipient/token pair within a redemption
  * @dev Only operates in default execution mode
  * @dev Security considerations:
  * - State is shared between enforcers watching the same recipient/token pair. After transaction execution, the state is cleared.
- * - Balance changes are tracked by comparing beforeAll/afterAll balances.
+ * - Balance changes are tracked by comparing first beforeAll/last afterAll balances.
  * - If the delegate is an EOA and not a DeleGator in a situation with multiple delegations, an adapter contract can be used to
  * redeem delegations. An example of this is the src/helpers/DelegationMetaSwapAdapter.sol contract.
  */
@@ -53,6 +54,9 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
 
     /**
      * @notice This function caches the recipient's initial token balance and accumulates the expected increase and decrease.
+     * @dev For the first delegation, the delegator must equal the recipient. If there are multiple enforcers watching the same
+     * recipient/token pair only the first enforcer will cache the initial balance. Balance changes after the firest beforeAllHook
+     * will already be considered in the final state.
      * @param _terms 73 packed bytes where:
      * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
      * - next 20 bytes: address of the token
@@ -60,6 +64,7 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
      * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
      * enforceDecrease)
      * @param _mode The execution mode. (Must be Default execType)
+     * @param _delegator Address of the delegator.
      */
     function beforeAllHook(
         bytes calldata _terms,
@@ -124,7 +129,9 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
     }
 
     /**
-     * @notice This function validates that the recipient's token balance has changed by at least the total expected amount.
+     * @notice This function validates that the recipient's token balance has changed within expected limits.
+     * @dev If there are multiple enforcers watching the same recipient/token pair, the validation will only be performed
+     * once in the last enforcers afterAllHook call.
      * @param _terms 73 packed bytes where:
      * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
      * - next 20 bytes: address of the token
