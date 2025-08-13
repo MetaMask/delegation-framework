@@ -258,6 +258,58 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.getTermsInfo(terms_);
     }
 
+    // Validates that balance check happens in the last afterAllHook call
+    function test_balanceCheck_lastAfterAllHook() public {
+        // Terms: [flag=false, token, recipient, amount=100] - expecting balance increase
+        bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(100));
+        bytes32 hashKey_ = keccak256(abi.encode(address(dm), address(token), address(recipient)));
+
+        // First beforeAllHook call
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Check validationRemaining after first beforeAllHook
+        (,,, uint256 validationRemaining_) = enforcer.balanceTracker(hashKey_);
+        assertEq(validationRemaining_, 1, "validationRemaining should be 1 after first beforeAllHook");
+
+        // Second beforeAllHook call
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Check validationRemaining after second beforeAllHook
+        (,,, validationRemaining_) = enforcer.balanceTracker(hashKey_);
+        assertEq(validationRemaining_, 2, "validationRemaining should be 2 after second beforeAllHook");
+
+        // Mint tokens to recipient to satisfy the balance requirement (2 * 100 = 200)
+        vm.prank(delegator);
+        token.mint(recipient, 200);
+
+        // First afterAllHook call - should not trigger balance check yet
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Check validationRemaining after first afterAllHook
+        (,,, validationRemaining_) = enforcer.balanceTracker(hashKey_);
+        assertEq(validationRemaining_, 1, "validationRemaining should be 1 after first afterAllHook");
+
+        // Verify balance tracker still exists (not cleaned up yet)
+        (uint256 balanceBefore_, uint256 expectedIncrease_, uint256 expectedDecrease_,) = enforcer.balanceTracker(hashKey_);
+        assertEq(balanceBefore_, 0, "balanceBefore should still be tracked");
+        assertEq(expectedIncrease_, 200, "expectedIncrease should be 200 (100 + 100)");
+        assertEq(expectedDecrease_, 0, "expectedDecrease should be 0");
+
+        // Second afterAllHook call - should trigger balance check and cleanup
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Verify balance tracker is cleaned up (deleted)
+        (balanceBefore_, expectedIncrease_, expectedDecrease_, validationRemaining_) = enforcer.balanceTracker(hashKey_);
+        assertEq(balanceBefore_, 0, "balanceBefore should be 0 after cleanup");
+        assertEq(expectedIncrease_, 0, "expectedIncrease should be 0 after cleanup");
+        assertEq(expectedDecrease_, 0, "expectedDecrease should be 0 after cleanup");
+        assertEq(validationRemaining_, 0, "validationRemaining should be 0 after cleanup");
+    }
+
     // Validates that an invalid token address (address(0)) reverts when calling beforeAllHook.
     function test_invalid_tokenAddress() public {
         bytes memory terms_ = abi.encodePacked(false, address(0), address(recipient), uint256(100));
