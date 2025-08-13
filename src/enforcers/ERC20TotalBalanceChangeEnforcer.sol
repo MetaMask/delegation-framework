@@ -2,7 +2,6 @@
 pragma solidity 0.8.23;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";
 
@@ -68,7 +67,7 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
         ModeCode _mode,
         bytes calldata,
         bytes32,
-        address,
+        address _delegator,
         address
     )
         public
@@ -83,14 +82,38 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
 
         uint256 currentBalance_ = IERC20(token_).balanceOf(recipient_);
         if (balanceTracker_.expectedDecrease == 0 && balanceTracker_.expectedIncrease == 0) {
+            require(_delegator == recipient_, "ERC20TotalBalanceChangeEnforcer:invalid-delegator");
             balanceTracker_.balanceBefore = currentBalance_;
             emit TrackedBalance(msg.sender, recipient_, token_, currentBalance_);
         }
 
-        if (enforceDecrease_) {
-            balanceTracker_.expectedDecrease += amount_;
+        if (_delegator == recipient_) {
+            // Only the original delegator can aggregate changes
+            if (enforceDecrease_) {
+                balanceTracker_.expectedDecrease += amount_;
+            } else {
+                balanceTracker_.expectedIncrease += amount_;
+            }
         } else {
-            balanceTracker_.expectedIncrease += amount_;
+            // For redelegations, enforce that they can only make restrictions more restrictive
+            // This prevents the security vulnerability where redelegations could increase limits
+            if (enforceDecrease_) {
+                // For decreases: new amount must be <= existing amount (more restrictive)
+                require(
+                    amount_ <= balanceTracker_.expectedDecrease,
+                    "ERC20TotalBalanceChangeEnforcer:redelegation-must-be-more-restrictive"
+                );
+                // Override instead of aggregate
+                balanceTracker_.expectedDecrease = amount_;
+            } else {
+                // For increases: new amount must be >= existing amount (more restrictive)
+                require(
+                    amount_ >= balanceTracker_.expectedIncrease,
+                    "ERC20TotalBalanceChangeEnforcer:redelegation-must-be-more-restrictive"
+                );
+                // Override instead of aggregate
+                balanceTracker_.expectedIncrease = amount_;
+            }
         }
 
         balanceTracker_.validationRemaining++;
