@@ -96,46 +96,59 @@ This includes:
 - `ERC1155TotalBalanceChangeEnforcer`
 - `NativeTokenTotalBalanceChangeEnforcer`
 
-These enforcers are introduced in parallel to the normal `Balance Change enforcers` for scenarios where we have a delegation chain where multiple instances of the same enforcer can be present. 
+Use these when multiple total-balance constraints may apply to the same recipient and token within a single redemption, and you need a single, coherent end-of-redemption check.
 
-#### Key Differences from Regular Balance Change Enforcers
+#### Key differences from Regular Balance Change Enforcers
 
-**Regular Balance Change Enforcers** (e.g., `NativeBalanceChangeEnforcer`) track balance changes by comparing the recipient's balance before and after execution using `beforeHook` and `afterHook`. Since enforcers watching the same recipient and token share state, a single balance modification may satisfy multiple enforcers simultaneously, which can lead to unintended behavior in delegation chains.
+**Regular Balance Change Enforcers** (e.g., `NativeBalanceChangeEnforcer`) check deltas around one execution using `beforeHook`/`afterHook`. Because multiple enforcers watching the same recipient can be satisfied by the same balance movement, they are best for independent, per-delegation constraints.
 
-**Total Balance Change Enforcers** address this issue by:
+**Total Balance Change Enforcers** are designed for coordinated multi-step flows and now behave as follows:
 
-1. **Using `beforeAllHook` and `afterAllHook`**: These hooks enable proper handling of inner delegations and ensure all enforcers in the chain are processed together.
+1. **Redemption-wide tracking**: Balance is tracked from the first `beforeAllHook` to the last `afterAllHook` for a given state key. The state key is defined by the recipient; for token-based variants it also includes the token address, and for ERC1155 it additionally includes the token ID. The state is scoped to the current `DelegationManager`. Any balance changes caused between those points (including by other enforcers, even those that modify state in `afterAllHook`, such as `NativeTokenPaymentEnforcer` even tho mixing with `NativeTokenPaymentEnforcer` is not recomended) are included in the final check.
+2. **Initialization rule**: The first enforcer that starts tracking must be created by the account whose balance is being constrained. In other words, for the first `beforeAllHook` on a state key, the delegator must equal the recipient. If this is not true, the enforcer reverts.
+3. **Aggregation vs redelegation**:
+   - **Aggregation only when the delegator must equal the recipient**: Multiple total enforcers created by the owner for the same state key will aggregate their expected amounts.
+   - **Redelegations must be strictly more restrictive**: When the delegator does not equal the recipient, the new terms must tighten the requirement and they replace (do not add to) the aggregated value:
+     - For decreases (max loss), the new amount must be less than or equal to the existing amount.
+     - For increases (min gain), the new amount must be greater than or equal to the existing amount.
+   - This ensures the final required end balance is never lower than before; redelegations can only make the constraint stricter.
+4. **State scope and keying**: State is defined by the `DelegationManager` and the recipient; for ERC20/721 it also includes the token address; for ERC1155 it additionally includes the token ID. The state key does not include the delegation hash. Within a single redemption that performs multiple executions, different total enforcers that target the same state key will share and coordinate on the same state. State is cleared when the final `afterAllHook` for that state key runs.
+5. **Single final validation**: At the last `afterAllHook`, the net expected change is computed and validated against the actual end balance.
 
-2. **Accumulating Expected Changes**: Each enforcer maintains a `BalanceTracker` struct that accumulates the expected increases and decreases for a specific recipient + token combination across all enforcers in the delegation chain.
+#### How it works (concise)
 
-3. **State Isolation**: The hash key is generated using the delegation manager address and recipient (plus token address and token ID for ERC1155), ensuring that different delegation managers don't interfere with each other.
+1. First owner-created total enforcer (the delegator must equal the recipient) caches the initial balance for the state key.
+2. Owner-created total enforcers accumulate expected amounts. Redelegations override with stricter terms only.
+3. After the last `afterAllHook` for the key, the final balance is checked against the net expected change and state is cleared.
 
-4. **Aggregated Validation**: The final validation in `afterAllHook` combines all expected changes and validates the total net change against the actual balance change.
+#### Choosing between Regular vs Total balance enforcers
 
-#### How It Works
+- **Independent security constraints (per-delegation limits)**: Use Regular Balance Change Enforcers. Example: progressively stricter risk caps.
+  - Alice → Bob: “Treasury can lose max 100 ETH”
+  - Bob → Dave: “Treasury can lose max 50 ETH” (stricter)
+  - With Regular enforcers, each delegation enforces its own limit, so the effective cap is 50 ETH.
+- **Coordinated multi-operation transactions (one complex flow with multiple steps)**: Use Total Balance Change Enforcers. Example: a swap + fee + settlement that together must result in a minimum net profit for a recipient, or must not exceed a net loss cap across the whole flow. The owner may aggregate multiple requirements; redelegations can only make them stricter.
 
-1. **Initialization**: When the first enforcer in a chain calls `beforeAllHook`, it records the initial balance and starts tracking expected changes.
+Why accumulation is appropriate in coordinated flows: the intention is to verify the final end state of the recipient after all steps complete, not to enforce separate independent limits. In contrast, for independent limits, prefer Regular enforcers so each delegation remains self-contained.
 
-2. **Accumulation**: Subsequent enforcers in the chain add their expected increases or decreases to the running totals.
+#### Example: coordinated accumulation
 
-3. **Validation**: In `afterAllHook`, the enforcer calculates the net expected change (total increases minus total decreases) and validates that the actual balance change meets this requirement.
+Owner sets three total constraints on the same key during one redemption:
+- Min increase: 1000 tokens
+- Min increase: 200 tokens
+- Max decrease: 300 tokens
 
-4. **Cleanup**: The balance tracker is deleted after validation to prevent state pollution.
+Net requirement: +1000 + 200 − 300 = +900. The final recipient balance must be at least initial + 900.
 
-#### Example Scenario
+If a redelegation introduces a new term on the same key, it must be more restrictive and will override the accumulated value rather than add to it (e.g., a new max decrease of 250 replaces 300; a new min increase of 1200 replaces 1000).
 
-Consider a delegation chain with 3 instances of `ERC20TotalBalanceChangeEnforcer`:
-- Enforcer 1: Expects an increase of at least 1000 tokens
-- Enforcer 2: Expects an increase of at least 200 tokens  
-- Enforcer 3: Expects a decrease of at most 300 tokens
+#### Batch execution and shared state
 
-The total balance enforcer will:
-1. Track the initial balance
-2. Accumulate expected changes: +1000 + 200 - 300 = +900
-3. Validate that the final balance has increased by at least 900 tokens
+- Multiple executions within the same redemption that reference the same state key share one `BalanceTracker` and coordinate via `validationRemaining`.
+- Because the state key does not include the delegation hash, separate delegations in the same redemption that target the same state key will share state. Group related steps together; avoid mixing unrelated flows that target the same state key in one redemption if that could cause confusion.
 
-This ensures that the combined effect of all enforcers is properly validated, preventing scenarios where individual enforcers might be satisfied by the same balance change.  
+#### Delegating to EOAs
 
-#### Delegating to EOA
-
-If you are delegating to an EOA a delegation chain the EOA cannot execute directly since it cannot redeem inner delegations. EOA can become a deleGator by using EIP7702 or it can use an adapter contract to execute the delegation. An example for that is available in `./src/helpers/DelegationMetaSwapAdapter.sol`.
+If you delegate to an EOA in a delegation chain, the EOA cannot redeem inner delegations directly. The EOA can:
+- Become a deleGator via EIP-7702, or
+- Use an adapter contract to execute the delegation (see `src/helpers/DelegationMetaSwapAdapter.sol`).
