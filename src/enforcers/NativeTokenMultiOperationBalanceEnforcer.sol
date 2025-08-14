@@ -1,40 +1,39 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";
 
 /**
- * @title ERC20TotalBalanceChangeEnforcer
- * @notice Enforces that a recipient's token balance changes within expected limits across multiple delegations.
+ * @title NativeTokenMultiOperationBalanceEnforcer
+ * @notice Enforces that a recipient's native token balance changes within expected limits across multiple delegations.
  * Tracks balance changes from the first beforeAllHook call to the last afterAllHook call within a redemption.
- * 
+ *
  * For balance increases: ensures the final balance is at least the initial balance plus the expected increase.
  * For balance decreases: ensures the final balance is at least the initial balance minus the expected decrease.
- * 
- * @dev This enforcer operates in delegation chains where multiple delegations may affect the same recipient/token pair.
- * State is shared between enforcers watching the same recipient/token pair and is cleared after transaction execution.
- * 
+ *
+ * @dev This enforcer operates in delegation chains where multiple delegations may affect the same recipient.
+ * State is shared between enforcers watching the same recipient and is cleared after transaction execution.
+ *
  * @dev Only operates in default execution mode (ModeCode 0).
- * 
+ *
  * @dev Security considerations:
- * - State is shared between enforcers watching the same recipient/token pair
+ * - State is shared between enforcers watching the same recipient
  * - Balance changes are tracked by comparing first beforeAll/last afterAll balances in batch delegations
  * - If the delegate is an EOA and not a DeleGator in multi-delegation scenarios, use an adapter contract
  *   like DelegationMetaSwapAdapter.sol to redeem delegations
  * - Redelegations can only make restrictions more restrictive (cannot increase limits)
  * - Delegator must equal recipient for first delegation in a chain of delegations
- * - Only if delegator is equal to recipient do the amount aggragate
+ * - Only if delegator is equal to recipient do the amounts aggregate
  */
-contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
+contract NativeTokenMultiOperationBalanceEnforcer is CaveatEnforcer {
     ////////////////////////////// Events //////////////////////////////
 
-    event TrackedBalance(address indexed delegationManager, address indexed recipient, address indexed token, uint256 balance);
+    event TrackedBalance(address indexed delegationManager, address indexed recipient, uint256 balance);
     event UpdatedExpectedBalance(
-        address indexed delegationManager, address indexed recipient, address indexed token, bool enforceDecrease, uint256 expected
+        address indexed delegationManager, address indexed recipient, bool enforceDecrease, uint256 expected
     );
-    event ValidatedBalance(address indexed delegationManager, address indexed recipient, address indexed token, uint256 expected);
+    event ValidatedBalance(address indexed delegationManager, address indexed recipient, uint256 expected);
 
     ////////////////////////////// State //////////////////////////////
 
@@ -50,24 +49,21 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
     ////////////////////////////// External Methods //////////////////////////////
 
     /**
-     * @notice Generates the key that identifies the run. Produced by the hash of the values used.
+     * @notice Generates the key that identifies the run, produced by hashing the provided values.
      * @param _caller Address of the sender calling the enforcer.
-     * @param _token Token being compared in the beforeAllHook and afterAllHook.
-     * @param _recipient Address of the recipient whose balance is being tracked.
+     * @param _recipient Address of the recipient.
      * @return The hash to be used as key of the mapping.
      */
-    function getHashKey(address _caller, address _token, address _recipient) external pure returns (bytes32) {
-        return _getHashKey(_caller, _token, _recipient);
+    function getHashKey(address _caller, address _recipient) external pure returns (bytes32) {
+        return _getHashKey(_caller, _recipient);
     }
 
+    ////////////////////////////// Public Methods //////////////////////////////
+
     /**
-     * @notice This function caches the recipient's initial token balance and accumulates the expected increase and decrease.
-     * @dev For the first delegation, the delegator must equal the recipient. If there are multiple enforcers watching the same
-     * recipient/token pair only the first enforcer will cache the initial balance. Balance changes after the firest beforeAllHook
-     * will already be considered in the final state.
-     * @param _terms 73 packed bytes where:
+     * @notice This function caches the delegator's native token balance before the delegation is executed.
+     * @param _terms 53 packed bytes where:
      * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
-     * - next 20 bytes: address of the token
      * - next 20 bytes: address of the recipient
      * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
      * enforceDecrease)
@@ -87,21 +83,19 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
         override
         onlyDefaultExecutionMode(_mode)
     {
-        (bool enforceDecrease_, address token_, address recipient_, uint256 amount_) = getTermsInfo(_terms);
-        require(amount_ > 0, "ERC20TotalBalanceChangeEnforcer:zero-expected-change-amount");
+        (bool enforceDecrease_, address recipient_, uint256 amount_) = getTermsInfo(_terms);
+        require(amount_ > 0, "NativeTokenMultiOperationBalanceEnforcer:zero-expected-change-amount");
+        bytes32 hashKey_ = _getHashKey(msg.sender, recipient_);
 
-        bytes32 hashKey_ = _getHashKey(msg.sender, token_, recipient_);
         BalanceTracker memory balanceTracker_ = balanceTracker[hashKey_];
 
-        uint256 currentBalance_ = IERC20(token_).balanceOf(recipient_);
-        if (balanceTracker_.expectedDecrease == 0 && balanceTracker_.expectedIncrease == 0) {
-            require(_delegator == recipient_, "ERC20TotalBalanceChangeEnforcer:invalid-delegator");
-            balanceTracker_.balanceBefore = currentBalance_;
-            emit TrackedBalance(msg.sender, recipient_, token_, currentBalance_);
+        if (balanceTracker_.expectedIncrease == 0 && balanceTracker_.expectedDecrease == 0) {
+            require(_delegator == recipient_, "NativeTokenMultiOperationBalanceEnforcer:invalid-delegator");
+            balanceTracker_.balanceBefore = recipient_.balance;
+            emit TrackedBalance(msg.sender, recipient_, recipient_.balance);
         }
 
         if (_delegator == recipient_) {
-            // Only the original delegator can aggregate changes
             if (enforceDecrease_) {
                 balanceTracker_.expectedDecrease += amount_;
             } else {
@@ -114,7 +108,7 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
                 // For decreases: new amount must be <= existing amount (more restrictive)
                 require(
                     amount_ <= balanceTracker_.expectedDecrease,
-                    "ERC20TotalBalanceChangeEnforcer:decrease-must-be-more-restrictive"
+                    "NativeTokenMultiOperationBalanceEnforcer:decrease-must-be-more-restrictive"
                 );
                 // Override instead of aggregate
                 balanceTracker_.expectedDecrease = amount_;
@@ -122,7 +116,7 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
                 // For increases: new amount must be >= existing amount (more restrictive)
                 require(
                     amount_ >= balanceTracker_.expectedIncrease,
-                    "ERC20TotalBalanceChangeEnforcer:increase-must-be-more-restrictive"
+                    "NativeTokenMultiOperationBalanceEnforcer:increase-must-be-more-restrictive"
                 );
                 // Override instead of aggregate
                 balanceTracker_.expectedIncrease = amount_;
@@ -133,16 +127,13 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
 
         balanceTracker[hashKey_] = balanceTracker_;
 
-        emit UpdatedExpectedBalance(msg.sender, recipient_, token_, enforceDecrease_, amount_);
+        emit UpdatedExpectedBalance(msg.sender, recipient_, enforceDecrease_, amount_);
     }
 
     /**
      * @notice This function validates that the recipient's token balance has changed within expected limits.
-     * @dev If there are multiple enforcers watching the same recipient/token pair, the validation will only be performed
-     * once in the last enforcers afterAllHook call.
-     * @param _terms 73 packed bytes where:
+     * @param _terms 53 packed bytes where:
      * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
-     * - next 20 bytes: address of the token
      * - next 20 bytes: address of the recipient
      * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
      * enforceDecrease)
@@ -159,60 +150,59 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
         public
         override
     {
-        (, address token_, address recipient_,) = getTermsInfo(_terms);
-        bytes32 hashKey_ = _getHashKey(msg.sender, token_, recipient_);
+        (, address recipient_,) = getTermsInfo(_terms);
+        bytes32 hashKey_ = _getHashKey(msg.sender, recipient_);
 
         balanceTracker[hashKey_].validationRemaining--;
-
         if (balanceTracker[hashKey_].validationRemaining > 0) return;
 
         BalanceTracker memory balanceTracker_ = balanceTracker[hashKey_];
 
-        uint256 currentBalance_ = IERC20(token_).balanceOf(recipient_);
         uint256 expected_;
         if (balanceTracker_.expectedIncrease >= balanceTracker_.expectedDecrease) {
             expected_ = balanceTracker_.expectedIncrease - balanceTracker_.expectedDecrease;
             require(
-                currentBalance_ >= balanceTracker_.balanceBefore + expected_,
-                "ERC20TotalBalanceChangeEnforcer:insufficient-balance-increase"
+                recipient_.balance >= balanceTracker_.balanceBefore + expected_,
+                "NativeTokenMultiOperationBalanceEnforcer:insufficient-balance-increase"
             );
         } else {
             expected_ = balanceTracker_.expectedDecrease - balanceTracker_.expectedIncrease;
             require(
-                currentBalance_ >= balanceTracker_.balanceBefore - expected_,
-                "ERC20TotalBalanceChangeEnforcer:exceeded-balance-decrease"
+                recipient_.balance >= balanceTracker_.balanceBefore - expected_,
+                "NativeTokenMultiOperationBalanceEnforcer:exceeded-balance-decrease"
             );
         }
 
         delete balanceTracker[hashKey_];
-        emit ValidatedBalance(msg.sender, recipient_, token_, expected_);
+
+        emit ValidatedBalance(msg.sender, recipient_, expected_);
     }
 
     /**
      * @notice Decodes the terms used in this CaveatEnforcer.
-     * @param _terms encoded data that is used during the execution hooks.
-     * @return enforceDecrease_ Boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00).
-     * @return token_ The address of the token.
-     * @return recipient_ The address of the recipient.
+     * @param _terms 53 packed bytes where:
+     * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
+     * - next 20 bytes: address of the recipient
+     * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
+     * enforceDecrease)
+     * @return enforceDecrease_ Boolean indicating if the balance should decrease (true) or increase (false).
+     * @return recipient_ The address of the recipient whose balance will change.
      * @return amount_ Balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
      * enforceDecrease)
      */
-    function getTermsInfo(bytes calldata _terms)
-        public
-        pure
-        returns (bool enforceDecrease_, address token_, address recipient_, uint256 amount_)
-    {
-        require(_terms.length == 73, "ERC20TotalBalanceChangeEnforcer:invalid-terms-length");
+    function getTermsInfo(bytes calldata _terms) public pure returns (bool enforceDecrease_, address recipient_, uint256 amount_) {
+        require(_terms.length == 53, "NativeTokenMultiOperationBalanceEnforcer:invalid-terms-length");
         enforceDecrease_ = _terms[0] != 0;
-        token_ = address(bytes20(_terms[1:21]));
-        recipient_ = address(bytes20(_terms[21:41]));
-        amount_ = uint256(bytes32(_terms[41:]));
+        recipient_ = address(bytes20(_terms[1:21]));
+        amount_ = uint256(bytes32(_terms[21:]));
     }
 
+    ////////////////////////////// Internal Methods //////////////////////////////
+
     /**
-     * @notice Generates the key that identifies the run. Produced by the hash of the values used.
+     * @notice Generates the key that identifies the run, produced by hashing the provided values.
      */
-    function _getHashKey(address _caller, address _token, address _recipient) private pure returns (bytes32) {
-        return keccak256(abi.encode(_caller, _token, _recipient));
+    function _getHashKey(address _caller, address _recipient) private pure returns (bytes32) {
+        return keccak256(abi.encode(_caller, _recipient));
     }
 }

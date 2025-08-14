@@ -83,18 +83,18 @@ Balance Change Enforcers are ideal for:
 2. **No Aggregation**: Each enforcer operates independently and doesn't consider other enforcers in the chain
 3. **Delegation Chain Issues**: In complex delegation chains, the same balance change might satisfy multiple enforcers, potentially bypassing intended security measures
 
-**When to Use Regular vs Total Balance Enforcers**:
+**When to Use Regular vs Multi Operation Balance Enforcers**:
 - Use **Regular Balance Enforcers** for simple, single-enforcer scenarios
-- Use **Total Balance Enforcers** when multiple enforcers might track the same recipient in a delegation chain
+- Use **Multi Operation Balance Enforcers** when multiple enforcers might track the same recipient in a delegation chain
 
 
-### Total Balance Change Enforcers
+### Multi Operation Balance Enforcers
 
 This includes: 
-- `ERC20TotalBalanceChangeEnforcer`
-- `ERC721TotalBalanceChangeEnforcer`
-- `ERC1155TotalBalanceChangeEnforcer`
-- `NativeTokenTotalBalanceChangeEnforcer`
+- `ERC20MultiOperationBalanceEnforcer`
+- `ERC721MultiOperationBalanceEnforcer`
+- `ERC1155MultiOperationBalanceEnforcer`
+- `NativeTokenMultiOperationBalanceEnforcer`
 
 Use these when multiple total-balance constraints may apply to the same recipient and token within a single redemption, and you need a single, coherent end-of-redemption check.
 
@@ -102,7 +102,7 @@ Use these when multiple total-balance constraints may apply to the same recipien
 
 **Regular Balance Change Enforcers** (e.g., `NativeBalanceChangeEnforcer`) check deltas around one execution using `beforeHook`/`afterHook`. Because multiple enforcers watching the same recipient can be satisfied by the same balance movement, they are best for independent, per-delegation constraints.
 
-**Total Balance Change Enforcers** are designed for coordinated multi-step flows and now behave as follows:
+**Multi Operation Balance Enforcers** are designed for coordinated multi-step flows and now behave as follows:
 
 1. **Redemption-wide tracking**: Balance is tracked from the first `beforeAllHook` to the last `afterAllHook` for a given state key. The state key is defined by the recipient; for token-based variants it also includes the token address, and for ERC1155 it additionally includes the token ID. The state is scoped to the current `DelegationManager`. Any balance changes caused between those points (including by other enforcers, even those that modify state in `afterAllHook`, such as `NativeTokenPaymentEnforcer` even tho mixing with `NativeTokenPaymentEnforcer` is not recomended) are included in the final check.
 2. **Initialization rule**: The first enforcer that starts tracking must be created by the account whose balance is being constrained. In other words, for the first `beforeAllHook` on a state key, the delegator must equal the recipient. If this is not true, the enforcer reverts.
@@ -127,7 +127,7 @@ Use these when multiple total-balance constraints may apply to the same recipien
   - Alice → Bob: “Treasury can lose max 100 ETH”
   - Bob → Dave: “Treasury can lose max 50 ETH” (stricter)
   - With Regular enforcers, each delegation enforces its own limit, so the effective cap is 50 ETH.
-- **Coordinated multi-operation transactions (one complex flow with multiple steps)**: Use Total Balance Change Enforcers. Example: a swap + fee + settlement that together must result in a minimum net profit for a recipient, or must not exceed a net loss cap across the whole flow. The owner may aggregate multiple requirements; redelegations can only make them stricter.
+- **Coordinated multi-operation transactions (one complex flow with multiple steps)**: Use Multi Operation Balance Enforcers. Example: a swap + fee + settlement that together must result in a minimum net profit for a recipient, or must not exceed a net loss cap across the whole flow. The owner may aggregate multiple requirements; redelegations can only make them stricter.
 
 Why accumulation is appropriate in coordinated flows: the intention is to verify the final end state of the recipient after all steps complete, not to enforce separate independent limits. In contrast, for independent limits, prefer Regular enforcers so each delegation remains self-contained.
 

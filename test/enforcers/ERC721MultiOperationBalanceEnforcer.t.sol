@@ -8,7 +8,7 @@ import { Execution, Caveat, Delegation, ModeCode, CallType, ExecType } from "../
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
-import { ERC721TotalBalanceChangeEnforcer } from "../../src/enforcers/ERC721TotalBalanceChangeEnforcer.sol";
+import { ERC721MultiOperationBalanceEnforcer } from "../../src/enforcers/ERC721MultiOperationBalanceEnforcer.sol";
 import { ExactCalldataEnforcer } from "../../src/enforcers/ExactCalldataEnforcer.sol";
 import { AllowedTargetsEnforcer } from "../../src/enforcers/AllowedTargetsEnforcer.sol";
 import { ValueLteEnforcer } from "../../src/enforcers/ValueLteEnforcer.sol";
@@ -17,9 +17,9 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 import { ExecutionHelper } from "@erc7579/core/ExecutionHelper.sol";
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
 
-contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
+contract ERC721MultiOperationBalanceEnforcerTest is CaveatEnforcerBaseTest {
     ////////////////////////////// State //////////////////////////////
-    ERC721TotalBalanceChangeEnforcer public enforcer;
+    ERC721MultiOperationBalanceEnforcer public enforcer;
     ExactCalldataEnforcer public exactCalldataEnforcer;
     AllowedTargetsEnforcer public allowedTargetsEnforcer;
     ValueLteEnforcer public valueLteEnforcer;
@@ -52,7 +52,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         mintExecutionCallData = abi.encode(mintExecution);
 
         // deploy enforcers
-        enforcer = new ERC721TotalBalanceChangeEnforcer();
+        enforcer = new ERC721MultiOperationBalanceEnforcer();
         exactCalldataEnforcer = new ExactCalldataEnforcer();
         allowedTargetsEnforcer = new AllowedTargetsEnforcer();
         valueLteEnforcer = new ValueLteEnforcer();
@@ -189,7 +189,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         token.transferFrom(recipient, delegator, tokenId2);
 
         vm.prank(dm);
-        vm.expectRevert("ERC721TotalBalanceChangeEnforcer:exceeded-balance-decrease");
+        vm.expectRevert("ERC721MultiOperationBalanceEnforcer:exceeded-balance-decrease");
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), recipient, delegate);
     }
 
@@ -202,7 +202,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), recipient, delegate);
         vm.prank(dm);
-        vm.expectRevert("ERC721TotalBalanceChangeEnforcer:insufficient-balance-increase");
+        vm.expectRevert("ERC721MultiOperationBalanceEnforcer:insufficient-balance-increase");
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), recipient, delegate);
     }
 
@@ -216,7 +216,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // Do not modify recipient's balance.
         vm.prank(dm);
-        vm.expectRevert("ERC721TotalBalanceChangeEnforcer:insufficient-balance-increase");
+        vm.expectRevert("ERC721MultiOperationBalanceEnforcer:insufficient-balance-increase");
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), recipient, delegate);
     }
 
@@ -313,12 +313,12 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // Too small: missing required bytes (should be 73 bytes)
         terms_ = abi.encodePacked(false, address(token), address(recipient), uint8(1));
-        vm.expectRevert(bytes("ERC721TotalBalanceChangeEnforcer:invalid-terms-length"));
+        vm.expectRevert(bytes("ERC721MultiOperationBalanceEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
 
         // Too large: extra bytes beyond 73.
         terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(1), uint256(1));
-        vm.expectRevert(bytes("ERC721TotalBalanceChangeEnforcer:invalid-terms-length"));
+        vm.expectRevert(bytes("ERC721MultiOperationBalanceEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
     }
 
@@ -370,7 +370,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     function test_revertWithZeroAmount() public {
         bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(0));
         vm.prank(address(dm));
-        vm.expectRevert("ERC721TotalBalanceChangeEnforcer:zero-expected-change-amount");
+        vm.expectRevert("ERC721MultiOperationBalanceEnforcer:zero-expected-change-amount");
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
@@ -395,7 +395,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(dm);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), recipient, delegate);
         vm.prank(dm);
-        vm.expectRevert("ERC721TotalBalanceChangeEnforcer:insufficient-balance-increase");
+        vm.expectRevert("ERC721MultiOperationBalanceEnforcer:insufficient-balance-increase");
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), recipient, delegate);
     }
 
@@ -454,7 +454,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(dm);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), recipient, delegate);
         vm.prank(dm);
-        vm.expectRevert("ERC721TotalBalanceChangeEnforcer:exceeded-balance-decrease");
+        vm.expectRevert("ERC721MultiOperationBalanceEnforcer:exceeded-balance-decrease");
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), recipient, delegate);
     }
 
@@ -524,7 +524,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // Then call afterAllHook for the decrease terms (should fail due to insufficient increase)
         vm.prank(dm);
-        vm.expectRevert("ERC721TotalBalanceChangeEnforcer:insufficient-balance-increase");
+        vm.expectRevert("ERC721MultiOperationBalanceEnforcer:insufficient-balance-increase");
         enforcer.afterAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), recipient, delegate);
     }
 
@@ -560,7 +560,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // Then call afterAllHook for the decrease terms (should fail due to excessive decrease)
         vm.prank(dm);
-        vm.expectRevert("ERC721TotalBalanceChangeEnforcer:exceeded-balance-decrease");
+        vm.expectRevert("ERC721MultiOperationBalanceEnforcer:exceeded-balance-decrease");
         enforcer.afterAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), recipient, delegate);
     }
 
@@ -572,9 +572,9 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // First beforeAllHook - should emit both TrackedBalance and UpdatedExpectedBalance
         vm.expectEmit(true, true, true, true);
-        emit ERC721TotalBalanceChangeEnforcer.TrackedBalance(dm, recipient, address(token), 0);
+        emit ERC721MultiOperationBalanceEnforcer.TrackedBalance(dm, recipient, address(token), 0);
         vm.expectEmit(true, true, true, true);
-        emit ERC721TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, recipient, address(token), false, 1);
+        emit ERC721MultiOperationBalanceEnforcer.UpdatedExpectedBalance(dm, recipient, address(token), false, 1);
 
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), recipient, delegate);
@@ -606,7 +606,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // Second afterAllHook - should emit ValidatedBalance
         vm.prank(dm);
         vm.expectEmit(true, true, true, true);
-        emit ERC721TotalBalanceChangeEnforcer.ValidatedBalance(dm, recipient, address(token), 2);
+        emit ERC721MultiOperationBalanceEnforcer.ValidatedBalance(dm, recipient, address(token), 2);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), recipient, delegate);
     }
 
@@ -619,9 +619,9 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // Test TrackedBalance and UpdatedExpectedBalance events for decrease
         vm.expectEmit(true, true, true, true);
-        emit ERC721TotalBalanceChangeEnforcer.TrackedBalance(dm, recipient, address(token), 2);
+        emit ERC721MultiOperationBalanceEnforcer.TrackedBalance(dm, recipient, address(token), 2);
         vm.expectEmit(true, true, true, true);
-        emit ERC721TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, recipient, address(token), true, 1);
+        emit ERC721MultiOperationBalanceEnforcer.UpdatedExpectedBalance(dm, recipient, address(token), true, 1);
 
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), recipient, delegate);
@@ -634,7 +634,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // Test ValidatedBalance event for decrease
         vm.prank(dm);
         vm.expectEmit(true, true, true, true);
-        emit ERC721TotalBalanceChangeEnforcer.ValidatedBalance(dm, recipient, address(token), 1);
+        emit ERC721MultiOperationBalanceEnforcer.ValidatedBalance(dm, recipient, address(token), 1);
 
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), recipient, delegate);
     }
@@ -659,7 +659,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // Bob tries to redelegate with same type but larger amount (should fail)
         bytes memory bobTerms = abi.encodePacked(true, address(token), address(delegator), uint256(12));
         vm.prank(dm);
-        vm.expectRevert("ERC721TotalBalanceChangeEnforcer:decrease-must-be-more-restrictive");
+        vm.expectRevert("ERC721MultiOperationBalanceEnforcer:decrease-must-be-more-restrictive");
         enforcer.beforeAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
 
         // Bob tries to redelegate with same type and smaller amount (should pass)
@@ -703,7 +703,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // Bob tries to redelegate with same type but smaller amount (should fail)
         bytes memory bobTerms = abi.encodePacked(false, address(token), address(delegator), uint256(3));
         vm.prank(dm);
-        vm.expectRevert("ERC721TotalBalanceChangeEnforcer:increase-must-be-more-restrictive");
+        vm.expectRevert("ERC721MultiOperationBalanceEnforcer:increase-must-be-more-restrictive");
         enforcer.beforeAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
 
         // Bob tries to redelegate with same type and larger amount (should pass)
@@ -757,7 +757,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // Charlie tries to redelegate back to decrease with amount > original (should fail)
         bytes memory charlieTermsInvalid = abi.encodePacked(true, address(token), address(delegator), uint256(12));
         vm.prank(dm);
-        vm.expectRevert("ERC721TotalBalanceChangeEnforcer:decrease-must-be-more-restrictive");
+        vm.expectRevert("ERC721MultiOperationBalanceEnforcer:decrease-must-be-more-restrictive");
         enforcer.beforeAllHook(charlieTermsInvalid, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
 
         // Charlie redelegates back to decrease with amount <= original (should pass)
@@ -854,7 +854,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // Bob tries to create first delegation with delegator != recipient (should fail)
         bytes memory bobTerms = abi.encodePacked(true, address(token), someUser, uint256(10));
         vm.prank(dm);
-        vm.expectRevert("ERC721TotalBalanceChangeEnforcer:invalid-delegator");
+        vm.expectRevert("ERC721MultiOperationBalanceEnforcer:invalid-delegator");
         enforcer.beforeAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
 
         // Alice creates first delegation with delegator == recipient (should pass)
