@@ -659,7 +659,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // Bob tries to redelegate with same type but larger amount (should fail)
         bytes memory bobTerms = abi.encodePacked(true, address(token), address(delegator), uint256(12));
         vm.prank(dm);
-        vm.expectRevert("ERC721TotalBalanceChangeEnforcer:redelegation-must-be-more-restrictive");
+        vm.expectRevert("ERC721TotalBalanceChangeEnforcer:decrease-must-be-more-restrictive");
         enforcer.beforeAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
 
         // Bob tries to redelegate with same type and smaller amount (should pass)
@@ -703,7 +703,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // Bob tries to redelegate with same type but smaller amount (should fail)
         bytes memory bobTerms = abi.encodePacked(false, address(token), address(delegator), uint256(3));
         vm.prank(dm);
-        vm.expectRevert("ERC721TotalBalanceChangeEnforcer:redelegation-must-be-more-restrictive");
+        vm.expectRevert("ERC721TotalBalanceChangeEnforcer:increase-must-be-more-restrictive");
         enforcer.beforeAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
 
         // Bob tries to redelegate with same type and larger amount (should pass)
@@ -757,7 +757,7 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // Charlie tries to redelegate back to decrease with amount > original (should fail)
         bytes memory charlieTermsInvalid = abi.encodePacked(true, address(token), address(delegator), uint256(12));
         vm.prank(dm);
-        vm.expectRevert("ERC721TotalBalanceChangeEnforcer:redelegation-must-be-more-restrictive");
+        vm.expectRevert("ERC721TotalBalanceChangeEnforcer:decrease-must-be-more-restrictive");
         enforcer.beforeAllHook(charlieTermsInvalid, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
 
         // Charlie redelegates back to decrease with amount <= original (should pass)

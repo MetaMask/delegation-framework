@@ -6,16 +6,25 @@ import { ModeCode } from "../utils/Types.sol";
 
 /**
  * @title NativeTokenTotalBalanceChangeEnforcer
- * @notice Enforces that a recipient's native token balance increases by at least the expected total amount across multiple
- * delegations or decreases by at most the expected total amount across multiple delegations. In a delegation chain,
- * there can be a combination of both increases and decreases, and the enforcer will track the total expected change.
- * @dev Tracks initial balance and accumulates expected increases and decreases per recipient within a redemption
- * @dev This enforcer operates only in default execution mode.
+ * @notice Enforces that a recipient's native token balance changes within expected limits across multiple delegations.
+ * Tracks balance changes from the first beforeAllHook call to the last afterAllHook call within a redemption.
+ * 
+ * For balance increases: ensures the final balance is at least the initial balance plus the expected increase.
+ * For balance decreases: ensures the final balance is at least the initial balance minus the expected decrease.
+ * 
+ * @dev This enforcer operates in delegation chains where multiple delegations may affect the same recipient.
+ * State is shared between enforcers watching the same recipient and is cleared after transaction execution.
+ * 
+ * @dev Only operates in default execution mode (ModeCode 0).
+ * 
  * @dev Security considerations:
- * - State is shared between enforcers watching the same recipient pair. After transaction execution the state is cleared.
- * - Balance changes are tracked by comparing beforeAll/afterAll balances.
- * - If the delegate is an EOA and not a DeleGator in a situation with multiple delegations, an adapter contract can be used to
- * redeem delegations. An example of this is the src/helpers/DelegationMetaSwapAdapter.sol contract.
+ * - State is shared between enforcers watching the same recipient
+ * - Balance changes are tracked by comparing first beforeAll/last afterAll balances in batch delegations
+ * - If the delegate is an EOA and not a DeleGator in multi-delegation scenarios, use an adapter contract
+ *   like DelegationMetaSwapAdapter.sol to redeem delegations
+ * - Redelegations can only make restrictions more restrictive (cannot increase limits)
+ * - Delegator must equal recipient for first delegation in a chain of delegations
+ * - Only if delegator is equal to recipient do the amounts aggregate
  */
 contract NativeTokenTotalBalanceChangeEnforcer is CaveatEnforcer {
     ////////////////////////////// Events //////////////////////////////
@@ -99,7 +108,7 @@ contract NativeTokenTotalBalanceChangeEnforcer is CaveatEnforcer {
                 // For decreases: new amount must be <= existing amount (more restrictive)
                 require(
                     amount_ <= balanceTracker_.expectedDecrease,
-                    "NativeTokenTotalBalanceChangeEnforcer:redelegation-must-be-more-restrictive"
+                    "NativeTokenTotalBalanceChangeEnforcer:decrease-must-be-more-restrictive"
                 );
                 // Override instead of aggregate
                 balanceTracker_.expectedDecrease = amount_;
@@ -107,7 +116,7 @@ contract NativeTokenTotalBalanceChangeEnforcer is CaveatEnforcer {
                 // For increases: new amount must be >= existing amount (more restrictive)
                 require(
                     amount_ >= balanceTracker_.expectedIncrease,
-                    "NativeTokenTotalBalanceChangeEnforcer:redelegation-must-be-more-restrictive"
+                    "NativeTokenTotalBalanceChangeEnforcer:increase-must-be-more-restrictive"
                 );
                 // Override instead of aggregate
                 balanceTracker_.expectedIncrease = amount_;
@@ -122,7 +131,7 @@ contract NativeTokenTotalBalanceChangeEnforcer is CaveatEnforcer {
     }
 
     /**
-     * @notice This function enforces that the delegator's native token balance has changed by the expected amount.
+     * @notice This function validates that the recipient's token balance has changed within expected limits.
      * @param _terms 53 packed bytes where:
      * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
      * - next 20 bytes: address of the recipient
