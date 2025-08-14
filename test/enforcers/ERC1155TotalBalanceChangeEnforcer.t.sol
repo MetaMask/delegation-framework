@@ -15,6 +15,7 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     address delegator;
     address delegate;
     address dm;
+    address someUser;
     Execution mintExecution;
     bytes mintExecutionCallData;
 
@@ -25,6 +26,7 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         super.setUp();
         delegator = address(users.alice.deleGator);
         delegate = address(users.bob.deleGator);
+        someUser = address(users.dave.deleGator);
         dm = address(delegationManager);
         enforcer = new ERC1155TotalBalanceChangeEnforcer();
         vm.label(address(enforcer), "ERC1155 Balance Change Enforcer");
@@ -72,21 +74,21 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // Expect increase by at least 100.
         bytes memory terms_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(100));
 
-        // Increase by 100.
+        // Increase by 100 - First delegation: delegator == recipient
         vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(delegator);
         token.mint(delegator, tokenId, 100, "");
         vm.prank(dm);
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
-        // Increase by 1000.
+        // Increase by 1000 - Subsequent delegation: delegator == recipient (aggregation)
         vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(delegator);
         token.mint(delegator, tokenId, 1000, "");
         vm.prank(dm);
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     ////////////////////// Errors //////////////////////
@@ -98,12 +100,12 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // Increase by 10 only, expect revert.
         vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(delegator);
         token.mint(delegator, tokenId, 10, "");
         vm.prank(dm);
         vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:insufficient-balance-increase"));
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Reverts if a balance decreases in between the hooks.
@@ -116,7 +118,7 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(100));
 
         vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
         // Decrease balance by transferring tokens away.
         vm.prank(delegator);
@@ -124,7 +126,7 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(dm);
         vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:insufficient-balance-increase"));
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Allows checking the balance of different recipients.
@@ -139,11 +141,11 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
             // Increase by 100 for each recipient.
             vm.prank(dm);
-            enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(i), address(0), delegate);
+            enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(i), currentRecipient_, delegate);
             vm.prank(delegator);
             token.mint(currentRecipient_, tokenId, 100, "");
             vm.prank(dm);
-            enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(i), address(0), delegate);
+            enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(i), currentRecipient_, delegate);
         }
     }
 
@@ -157,7 +159,7 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(100));
 
         vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
         // Increase balance by 50 only.
         vm.prank(delegator);
@@ -165,25 +167,45 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(dm);
         vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:insufficient-balance-increase"));
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
-    // Reverts if balance changes between beforeAllHook calls for the same recipient/token pair
-    function test_notAllow_balanceChangedBetweenBeforeAllHookCalls() public {
+    // Validates that balance changes between beforeAllHook calls are allowed and validated in the last afterAllHook call
+    function test_allow_balanceChangedBetweenBeforeAllHookCalls() public {
         bytes memory terms_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(100));
 
-        // First beforeAllHook call - caches the initial balance
+        // First beforeAllHook call - caches the initial balance - First delegation: delegator == recipient
         vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
-        // Modify the recipient's balance between beforeAllHook calls
+        // Modify the recipient's balance between beforeAllHook calls - this should be allowed
         vm.prank(delegator);
         token.mint(delegator, tokenId, 50, "");
 
-        // Second beforeAllHook call - should revert because balance changed
+        // Second beforeAllHook call - should now succeed and track the new balance (delegator == recipient for aggregation)
         vm.prank(dm);
-        vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:balance-changed"));
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Verify that the balance tracker is properly updated
+        bytes32 hashKey_ = keccak256(abi.encode(address(dm), address(token), address(delegator), tokenId));
+        (uint256 balanceBefore_, uint256 expectedIncrease_, uint256 expectedDecrease_, uint256 validationRemaining_) =
+            enforcer.balanceTracker(hashKey_);
+        assertEq(balanceBefore_, 0, "balanceBefore should be same as initial balance");
+        assertEq(expectedIncrease_, 200, "expectedIncrease should be 200 (100 + 100)");
+        assertEq(expectedDecrease_, 0, "expectedDecrease should be 0");
+        assertEq(validationRemaining_, 2, "validationRemaining should be 2");
+
+        // Mint additional tokens to satisfy the total requirement (already have 50, need 150 more)
+        vm.prank(delegator);
+        token.mint(delegator, tokenId, 150, "");
+
+        // First afterAllHook call - should not trigger balance check yet
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Second afterAllHook call - should trigger balance check and cleanup
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Differentiates delegation hash with different recipients.
@@ -195,10 +217,10 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms2_ = abi.encodePacked(false, address(token), recipient2_, uint256(tokenId), uint256(100));
 
         vm.prank(dm);
-        enforcer.beforeAllHook(terms1_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.beforeAllHook(terms1_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, delegator, delegate);
 
         vm.prank(dm);
-        enforcer.beforeAllHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.beforeAllHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, recipient2_, delegate);
 
         // Increase balance by 100 only for recipient1.
         vm.prank(delegator);
@@ -206,12 +228,12 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // Recipient1 passes.
         vm.prank(dm);
-        enforcer.afterAllHook(terms1_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.afterAllHook(terms1_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, recipient2_, delegate);
 
         // Recipient2 did not receive tokens, so it should revert.
         vm.prank(dm);
         vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:insufficient-balance-increase"));
-        enforcer.afterAllHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.afterAllHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, delegator, delegate);
 
         // Increase balance for recipient2.
         vm.prank(delegator);
@@ -219,7 +241,7 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // Recipient2 now passes.
         vm.prank(dm);
-        enforcer.afterAllHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
+        enforcer.afterAllHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, delegator, delegate);
     }
 
     ////////////////////// Decrease Tests //////////////////////
@@ -238,14 +260,14 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(20));
 
         vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
         // Remove 10 tokens: final balance becomes 90, which is >= 100 - 20 = 80.
         vm.prank(delegator);
         token.safeTransferFrom(delegator, address(2), tokenId, 10, "");
 
         vm.prank(dm);
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Reverts if the balance decreases too much (i.e. final balance falls below cached balance - allowed amount).
@@ -260,7 +282,7 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(20));
 
         vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
         // Remove 30 tokens: final balance becomes 70, which is below 100 - 20 = 80.
         vm.prank(delegator);
@@ -268,7 +290,7 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(dm);
         vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:exceeded-balance-decrease"));
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     ////////////////////// Invalid Terms Tests //////////////////////
@@ -300,11 +322,11 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), type(uint256).max);
 
         vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
         vm.prank(dm);
         vm.expectRevert();
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Reverts if amount is 0
@@ -312,7 +334,7 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(0));
         vm.prank(address(dm));
         vm.expectRevert("ERC1155TotalBalanceChangeEnforcer:zero-expected-change-amount");
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     ////////////////////// Multiple enforcer in delegation chain Functionality //////////////////////////////
@@ -325,16 +347,18 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(100));
 
         vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
         vm.prank(delegator);
         token.mint(delegator, tokenId, 199, "");
 
         vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        vm.prank(dm);
         vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:insufficient-balance-increase"));
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Reverts if the total balance decrease is excessive with multiple enforcers.
@@ -348,17 +372,19 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(100));
 
         vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
-        // decrease by more then 200
+        // Decrease by more than allowed (201 instead of 200)
         vm.prank(delegator);
         token.safeTransferFrom(delegator, address(2), tokenId, 201, "");
 
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:exceeded-balance-decrease"));
         vm.prank(dm);
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Reverts if the total balance increase is insufficient with multiple enforcers.
@@ -371,18 +397,22 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory termsIncrease_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(100));
 
         vm.prank(dm);
-        enforcer.beforeAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(dm);
-        enforcer.beforeAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(dm);
-        enforcer.beforeAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
-        vm.prank(delegator);
-        token.mint(delegator, tokenId, 99, "");
-
-        vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:insufficient-balance-increase"));
+        // Net expected increase is 100; don't mint any tokens
         vm.prank(dm);
-        enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        vm.prank(dm);
+        enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        vm.prank(dm);
+        vm.expectRevert("ERC1155TotalBalanceChangeEnforcer:insufficient-balance-increase");
+        enforcer.afterAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Reverts if the total balance decrease is excessive with multiple enforcers.
@@ -398,18 +428,25 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory termsIncrease_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(100));
 
         vm.prank(dm);
-        enforcer.beforeAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(dm);
-        enforcer.beforeAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(dm);
-        enforcer.beforeAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
+        // Transfer out more than allowed (101 tokens)
         vm.prank(delegator);
         token.safeTransferFrom(delegator, address(2), tokenId, 101, "");
 
-        vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:exceeded-balance-decrease"));
         vm.prank(dm);
-        enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        vm.prank(dm);
+        enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        vm.prank(dm);
+        vm.expectRevert("ERC1155TotalBalanceChangeEnforcer:exceeded-balance-decrease");
+        enforcer.afterAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     ////////////////////////////// Check events //////////////////////////////
@@ -425,12 +462,12 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.expectEmit(true, true, true, true);
         emit ERC1155TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, delegator, address(token), tokenId, false, 100);
         vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
         // Second beforeAllHook should ONLY emit UpdatedExpectedBalance
         vm.recordLogs();
         vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         Vm.Log[] memory logs = vm.getRecordedLogs();
         assertEq(logs.length, 1, "Should only emit one event");
 
@@ -440,22 +477,21 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(logs[0].topics[2], bytes32(uint256(uint160(address(delegator))))); // recipient
         assertEq(logs[0].topics[3], bytes32(uint256(uint160(address(token))))); // token
 
-        // mint 2 tokens
         vm.prank(delegator);
         token.mint(delegator, tokenId, 200, "");
 
-        // First afterAllHook - should emit ValidatedBalance
+        // First afterAllHook should not emit anything
+        vm.recordLogs();
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        logs = vm.getRecordedLogs();
+        assertEq(logs.length, 0, "Should not emit any events");
+
+        // Second afterAllHook - should emit ValidatedBalance
         vm.expectEmit(true, true, true, true);
         emit ERC1155TotalBalanceChangeEnforcer.ValidatedBalance(dm, delegator, address(token), tokenId, 200);
         vm.prank(dm);
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-
-        // Second afterAllHook should not emit anything
-        vm.recordLogs();
-        vm.prank(dm);
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-        logs = vm.getRecordedLogs();
-        assertEq(logs.length, 0, "Should not emit any events");
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Validates that the events are emitted correctly for a decrease scenario.
@@ -473,7 +509,7 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.expectEmit(true, true, true, true);
         emit ERC1155TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, delegator, address(token), tokenId, true, 100);
         vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
         vm.prank(delegator);
         token.safeTransferFrom(delegator, address(2), tokenId, 50, "");
@@ -482,7 +518,7 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.expectEmit(true, true, true, true);
         emit ERC1155TotalBalanceChangeEnforcer.ValidatedBalance(dm, delegator, address(token), tokenId, 100);
         vm.prank(dm);
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Fails with an invalid execution mode (non-default).
@@ -490,6 +526,296 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectRevert("CaveatEnforcer:invalid-execution-type");
         enforcer.beforeAllHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
+    }
+
+    ////////////////////////////// Redelegation Tests //////////////////////////////
+
+    /**
+     * @notice Test that redelegations with same type (decrease) are always more restrictive
+     * @dev Verifies that each redelegation must have amount <= previous amount
+     */
+    function test_redelegation_decreaseType_alwaysMoreRestrictive() public {
+        // Alice creates initial delegation allowing decrease by 1000
+        bytes memory initialTerms = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(1000));
+
+        // Ensure initial balance is sufficient to avoid underflow when validating decrease
+        vm.prank(delegator);
+        token.mint(delegator, tokenId, 1000, "");
+
+        // Simulate Alice's initial delegation (delegator must equal recipient for first delegation)
+        vm.prank(dm);
+        enforcer.beforeAllHook(initialTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+
+        // Bob tries to redelegate with same type but larger amount (should fail)
+        bytes memory bobTerms = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(1200));
+        vm.prank(dm);
+        vm.expectRevert("ERC1155TotalBalanceChangeEnforcer:redelegation-must-be-more-restrictive");
+        enforcer.beforeAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+
+        // Bob tries to redelegate with same type and smaller amount (should pass)
+        bytes memory bobTermsRestrictive = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(800));
+        vm.prank(dm);
+        enforcer.beforeAllHook(bobTermsRestrictive, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+
+        // Charlie tries to redelegate with even smaller amount (should pass)
+        bytes memory charlieTerms = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(500));
+        vm.prank(dm);
+        enforcer.beforeAllHook(charlieTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
+
+        // Verify final state: expectedDecrease should be 500 (most restrictive)
+        bytes32 hashKey = enforcer.getHashKey(dm, address(token), address(delegator), tokenId);
+        (, uint256 expectedIncrease, uint256 expectedDecrease,) = enforcer.balanceTracker(hashKey);
+
+        assertEq(expectedDecrease, 500, "Expected decrease should be most restrictive amount");
+        assertEq(expectedIncrease, 0, "Expected increase should remain 0");
+
+        // Clean up: run afterAll for each successful beforeAll
+        vm.prank(dm);
+        enforcer.afterAllHook(charlieTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
+        vm.prank(dm);
+        enforcer.afterAllHook(bobTermsRestrictive, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        vm.prank(dm);
+        enforcer.afterAllHook(initialTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+    }
+
+    /**
+     * @notice Test that redelegations with same type (increase) are always more restrictive
+     * @dev Verifies that each redelegation must have amount >= previous amount
+     */
+    function test_redelegation_increaseType_alwaysMoreRestrictive() public {
+        // Alice creates initial delegation requiring increase by 5
+        bytes memory initialTerms = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(500));
+
+        // Simulate Alice's initial delegation
+        vm.prank(dm);
+        enforcer.beforeAllHook(initialTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+
+        // Bob tries to redelegate with same type but smaller amount (should fail)
+        bytes memory bobTerms = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(300));
+        vm.prank(dm);
+        vm.expectRevert("ERC1155TotalBalanceChangeEnforcer:redelegation-must-be-more-restrictive");
+        enforcer.beforeAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+
+        // Bob tries to redelegate with same type and larger amount (should pass)
+        bytes memory bobTermsRestrictive = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(800));
+        vm.prank(dm);
+        enforcer.beforeAllHook(bobTermsRestrictive, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+
+        // Charlie tries to redelegate with even larger amount (should pass)
+        bytes memory charlieTerms = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(1200));
+        vm.prank(dm);
+        enforcer.beforeAllHook(charlieTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
+
+        // Verify final state: expectedIncrease should be 1200 (most restrictive)
+        bytes32 hashKey = enforcer.getHashKey(dm, address(token), address(delegator), tokenId);
+        (, uint256 expectedIncrease, uint256 expectedDecrease,) = enforcer.balanceTracker(hashKey);
+
+        assertEq(expectedIncrease, 1200, "Expected increase should be most restrictive amount");
+        assertEq(expectedDecrease, 0, "Expected decrease should remain 0");
+
+        // Satisfy net expected increase and clean up
+        vm.prank(delegator);
+        token.mint(delegator, tokenId, 1200, "");
+
+        vm.prank(dm);
+        enforcer.afterAllHook(charlieTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
+        vm.prank(dm);
+        enforcer.afterAllHook(bobTermsRestrictive, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        vm.prank(dm);
+        enforcer.afterAllHook(initialTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+    }
+
+    /**
+     * @notice Test that redelegations with type switching are always more restrictive
+     * @dev Verifies that switching from decrease to increase or vice versa maintains restrictiveness
+     */
+    function test_redelegation_typeSwitching_alwaysMoreRestrictive() public {
+        // Alice creates initial delegation allowing decrease by 10
+        bytes memory initialTerms = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(1000));
+
+        // Simulate Alice's initial delegation
+        // Ensure initial balance is sufficient for decrease validation
+        vm.prank(delegator);
+        token.mint(delegator, tokenId, 1000, "");
+
+        vm.prank(dm);
+        enforcer.beforeAllHook(initialTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+
+        // Bob redelegates with type switch to increase (should pass - more restrictive)
+        bytes memory bobTerms = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(800));
+        vm.prank(dm);
+        enforcer.beforeAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+
+        // Charlie tries to redelegate back to decrease with amount > original (should fail)
+        bytes memory charlieTermsInvalid = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(1200));
+        vm.prank(dm);
+        vm.expectRevert("ERC1155TotalBalanceChangeEnforcer:redelegation-must-be-more-restrictive");
+        enforcer.beforeAllHook(charlieTermsInvalid, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
+
+        // Charlie redelegates back to decrease with amount <= original (should pass)
+        bytes memory charlieTermsValid = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(600));
+        vm.prank(dm);
+        enforcer.beforeAllHook(charlieTermsValid, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
+
+        // Verify final state: should have both constraints
+        bytes32 hashKey = enforcer.getHashKey(dm, address(token), address(delegator), tokenId);
+        (, uint256 expectedIncrease, uint256 expectedDecrease,) = enforcer.balanceTracker(hashKey);
+
+        assertEq(expectedIncrease, 800, "Expected increase should be preserved");
+        assertEq(expectedDecrease, 600, "Expected decrease should be most restrictive");
+
+        // Net expected increase is 2; satisfy and clean up
+        vm.prank(delegator);
+        token.mint(delegator, tokenId, 200, "");
+
+        vm.prank(dm);
+        enforcer.afterAllHook(charlieTermsValid, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
+        vm.prank(dm);
+        enforcer.afterAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        vm.prank(dm);
+        enforcer.afterAllHook(initialTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+    }
+
+    /**
+     * @notice Test complex redelegation chain to ensure restrictiveness is maintained
+     * @dev Verifies that multiple redelegations with type switching maintain security
+     */
+    function test_redelegation_complexChain_alwaysMoreRestrictive() public {
+        // Alice creates initial delegation allowing decrease by 10
+        bytes memory initialTerms = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(1000));
+
+        // Simulate Alice's initial delegation
+        vm.prank(delegator);
+        token.mint(delegator, tokenId, 1000, "");
+
+        vm.prank(dm);
+        enforcer.beforeAllHook(initialTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+
+        // Chain of redelegations: decrease -> increase -> decrease -> increase
+        // Each should make constraints more restrictive
+
+        // 1. Bob: decrease to 800 (more restrictive)
+        bytes memory bobTerms = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(800));
+        vm.prank(dm);
+        enforcer.beforeAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+
+        // 2. Charlie: switch to increase of 600 (more restrictive)
+        bytes memory charlieTerms = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(600));
+        vm.prank(dm);
+        enforcer.beforeAllHook(charlieTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
+
+        // 3. David: switch back to decrease of 400 (more restrictive)
+        bytes memory davidTerms = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(400));
+        vm.prank(dm);
+        enforcer.beforeAllHook(davidTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x456), address(0));
+
+        // 4. Eve: switch to increase of 1000 (more restrictive)
+        bytes memory eveTerms = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(1000));
+        vm.prank(dm);
+        enforcer.beforeAllHook(eveTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x789), address(0));
+
+        // Verify final state: should have most restrictive constraints
+        bytes32 hashKey = enforcer.getHashKey(dm, address(token), address(delegator), tokenId);
+        (, uint256 expectedIncrease, uint256 expectedDecrease,) = enforcer.balanceTracker(hashKey);
+
+        assertEq(expectedIncrease, 1000, "Expected increase should be most restrictive");
+        assertEq(expectedDecrease, 400, "Expected decrease should be most restrictive");
+
+        // Net expected increase is 600; satisfy before running afterAlls
+        vm.prank(delegator);
+        token.mint(delegator, tokenId, 600, "");
+
+        vm.prank(dm);
+        enforcer.afterAllHook(eveTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x789), address(0));
+
+        vm.prank(dm);
+        enforcer.afterAllHook(davidTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x456), address(0));
+
+        vm.prank(dm);
+        enforcer.afterAllHook(charlieTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
+
+        vm.prank(dm);
+        enforcer.afterAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+
+        vm.prank(dm);
+        enforcer.afterAllHook(initialTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+    }
+
+    /**
+     * @notice Test that first delegation requires delegator == recipient
+     * @dev Verifies the security fix that prevents delegation hijacking
+     */
+    function test_firstDelegation_requiresDelegatorEqualsRecipient() public {
+        // Bob tries to create first delegation with delegator != recipient (should fail)
+        bytes memory bobTerms = abi.encodePacked(true, address(token), address(someUser), uint256(tokenId), uint256(1000));
+        vm.prank(dm);
+        vm.expectRevert("ERC1155TotalBalanceChangeEnforcer:invalid-delegator");
+        enforcer.beforeAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+
+        // Alice creates first delegation with delegator == recipient (should pass)
+        bytes memory aliceTerms = abi.encodePacked(true, address(token), address(someUser), uint256(tokenId), uint256(1000));
+        // Ensure initial balance is sufficient to validate decreases later
+        vm.prank(delegator);
+        token.mint(someUser, tokenId, 1000, "");
+
+        vm.prank(dm);
+        enforcer.beforeAllHook(aliceTerms, hex"", singleDefaultMode, hex"", keccak256(""), someUser, address(0));
+
+        // Now Bob can redelegate with more restrictive constraints
+        bytes memory bobRedelegationTerms = abi.encodePacked(true, address(token), address(someUser), uint256(tokenId), uint256(500));
+        vm.prank(dm);
+        enforcer.beforeAllHook(bobRedelegationTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+
+        // Verify final state
+        bytes32 hashKey = enforcer.getHashKey(dm, address(token), someUser, tokenId);
+        (,, uint256 expectedDecrease,) = enforcer.balanceTracker(hashKey);
+
+        assertEq(expectedDecrease, 500, "Expected decrease should be most restrictive amount");
+
+        vm.prank(dm);
+        enforcer.afterAllHook(bobRedelegationTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+
+        vm.prank(dm);
+        enforcer.afterAllHook(aliceTerms, hex"", singleDefaultMode, hex"", keccak256(""), someUser, address(0));
+    }
+
+    /**
+     * @notice Test that aggregations only happen when delegator == recipient
+     * @dev Verifies that constraint aggregation is restricted to the resource owner
+     */
+    function test_aggregation_onlyWhenDelegatorEqualsRecipient() public {
+        // Alice creates first delegation with delegator == recipient
+        bytes memory aliceTerms = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(1000));
+        vm.prank(dm);
+        enforcer.beforeAllHook(aliceTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+
+        // Alice creates another delegation with delegator == recipient (should aggregate)
+        bytes memory aliceTerms2 = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(500));
+        vm.prank(dm);
+        enforcer.beforeAllHook(aliceTerms2, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+
+        // Bob tries to redelegate with delegator != recipient (should be more restrictive, not aggregate)
+        bytes memory bobTerms = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(300));
+        vm.prank(dm);
+        enforcer.beforeAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+
+        // Verify final state: should have both constraints from Alice + Bob's restrictive constraint
+        bytes32 hashKey = enforcer.getHashKey(dm, address(token), address(delegator), tokenId);
+        (, uint256 expectedIncrease, uint256 expectedDecrease,) = enforcer.balanceTracker(hashKey);
+
+        assertEq(expectedIncrease, 500, "Expected increase should be from Alice's delegation");
+        assertEq(expectedDecrease, 300, "Expected decrease should be Bob's restrictive constraint");
+
+        // Net expected increase is 2; satisfy and clean up
+        vm.prank(delegator);
+        token.mint(delegator, tokenId, 200, "");
+
+        vm.prank(dm);
+        enforcer.afterAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        vm.prank(dm);
+        enforcer.afterAllHook(aliceTerms2, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+        vm.prank(dm);
+        enforcer.afterAllHook(aliceTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
     }
 
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {

@@ -43,6 +43,7 @@ contract ERC1155TotalBalanceChangeEnforcer is CaveatEnforcer {
         uint256 balanceBefore;
         uint256 expectedIncrease;
         uint256 expectedDecrease;
+        uint256 validationRemaining;
     }
 
     struct TermsData {
@@ -81,6 +82,7 @@ contract ERC1155TotalBalanceChangeEnforcer is CaveatEnforcer {
      * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
      * enforceDecrease)
      * @param _mode The execution mode. (Must be Default execType)
+     * @param _delegator Address of the delegator.
      */
     function beforeAllHook(
         bytes calldata _terms,
@@ -88,7 +90,7 @@ contract ERC1155TotalBalanceChangeEnforcer is CaveatEnforcer {
         ModeCode _mode,
         bytes calldata,
         bytes32,
-        address,
+        address _delegator,
         address
     )
         public
@@ -102,17 +104,40 @@ contract ERC1155TotalBalanceChangeEnforcer is CaveatEnforcer {
         BalanceTracker memory balanceTracker_ = balanceTracker[hashKey_];
 
         if (balanceTracker_.expectedIncrease == 0 && balanceTracker_.expectedDecrease == 0) {
+            require(terms_.recipient == _delegator, "ERC1155TotalBalanceChangeEnforcer:invalid-delegator");
             balanceTracker_.balanceBefore = balance_;
             emit TrackedBalance(msg.sender, terms_.recipient, terms_.token, terms_.tokenId, balance_);
-        } else {
-            require(balanceTracker_.balanceBefore == balance_, "ERC1155TotalBalanceChangeEnforcer:balance-changed");
         }
 
-        if (terms_.enforceDecrease) {
-            balanceTracker_.expectedDecrease += terms_.amount;
+        if (_delegator == terms_.recipient) {
+            if (terms_.enforceDecrease) {
+                balanceTracker_.expectedDecrease += terms_.amount;
+            } else {
+                balanceTracker_.expectedIncrease += terms_.amount;
+            }
         } else {
-            balanceTracker_.expectedIncrease += terms_.amount;
+            // For redelegations, enforce that they can only make restrictions more restrictive
+            // This prevents the security vulnerability where redelegations could increase limits
+            if (terms_.enforceDecrease) {
+                // For decreases: new amount must be <= existing amount (more restrictive)
+                require(
+                    terms_.amount <= balanceTracker_.expectedDecrease,
+                    "ERC1155TotalBalanceChangeEnforcer:redelegation-must-be-more-restrictive"
+                );
+                // Override instead of aggregate
+                balanceTracker_.expectedDecrease = terms_.amount;
+            } else {
+                // For increases: new amount must be >= existing amount (more restrictive)
+                require(
+                    terms_.amount >= balanceTracker_.expectedIncrease,
+                    "ERC1155TotalBalanceChangeEnforcer:redelegation-must-be-more-restrictive"
+                );
+                // Override instead of aggregate
+                balanceTracker_.expectedIncrease = terms_.amount;
+            }
         }
+
+        balanceTracker_.validationRemaining++;
 
         balanceTracker[hashKey_] = balanceTracker_;
 
@@ -146,10 +171,11 @@ contract ERC1155TotalBalanceChangeEnforcer is CaveatEnforcer {
         TermsData memory terms_ = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, terms_.token, terms_.recipient, terms_.tokenId);
 
-        BalanceTracker memory balanceTracker_ = balanceTracker[hashKey_];
+        balanceTracker[hashKey_].validationRemaining--;
 
-        // already validated
-        if (balanceTracker_.expectedIncrease == 0 && balanceTracker_.expectedDecrease == 0) return;
+        if (balanceTracker[hashKey_].validationRemaining > 0) return;
+
+        BalanceTracker memory balanceTracker_ = balanceTracker[hashKey_];
 
         uint256 balance_ = IERC1155(terms_.token).balanceOf(terms_.recipient, terms_.tokenId);
 
