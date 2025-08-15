@@ -637,7 +637,7 @@ contract ERC20MultiOperationBalanceEnforcerTest is CaveatEnforcerBaseTest {
      */
     function test_redelegation_decreaseType_alwaysMoreRestrictive() public {
         // Alice creates initial delegation allowing decrease by 1000
-        bytes memory initialTerms = abi.encodePacked(true, address(token), address(delegator), uint256(1000));
+        bytes memory initialTerms_ = abi.encodePacked(true, address(token), address(delegator), uint256(1000));
 
         // Ensure initial balance is sufficient to avoid underflow when validating decrease
         vm.prank(delegator);
@@ -645,38 +645,38 @@ contract ERC20MultiOperationBalanceEnforcerTest is CaveatEnforcerBaseTest {
 
         // Simulate Alice's initial delegation (delegator must equal recipient for first delegation)
         vm.prank(dm);
-        enforcer.beforeAllHook(initialTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+        enforcer.beforeAllHook(initialTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
 
         // Bob tries to redelegate with same type but larger amount (should fail)
-        bytes memory bobTerms = abi.encodePacked(true, address(token), address(delegator), uint256(1200));
+        bytes memory bobTerms_ = abi.encodePacked(true, address(token), address(delegator), uint256(1200));
         vm.prank(dm);
         vm.expectRevert("ERC20MultiOperationBalanceEnforcer:decrease-must-be-more-restrictive");
-        enforcer.beforeAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        enforcer.beforeAllHook(bobTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
 
         // Bob tries to redelegate with same type and smaller amount (should pass)
-        bytes memory bobTermsRestrictive = abi.encodePacked(true, address(token), address(delegator), uint256(800));
+        bytes memory bobTermsRestrictive_ = abi.encodePacked(true, address(token), address(delegator), uint256(800));
         vm.prank(dm);
-        enforcer.beforeAllHook(bobTermsRestrictive, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        enforcer.beforeAllHook(bobTermsRestrictive_, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
 
         // Charlie tries to redelegate with even smaller amount (should pass)
-        bytes memory charlieTerms = abi.encodePacked(true, address(token), address(delegator), uint256(500));
+        bytes memory charlieTerms_ = abi.encodePacked(true, address(token), address(delegator), uint256(500));
         vm.prank(dm);
-        enforcer.beforeAllHook(charlieTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
+        enforcer.beforeAllHook(charlieTerms_, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
 
         // Verify final state: expectedDecrease should be 500 (most restrictive)
-        bytes32 hashKey = enforcer.getHashKey(dm, address(token), address(delegator));
-        (, uint256 expectedIncrease, uint256 expectedDecrease,) = enforcer.balanceTracker(hashKey);
+        bytes32 hashKey_ = enforcer.getHashKey(dm, address(token), address(delegator));
+        (, uint256 expectedIncrease_, uint256 expectedDecrease_,) = enforcer.balanceTracker(hashKey_);
 
-        assertEq(expectedDecrease, 500, "Expected decrease should be most restrictive amount");
-        assertEq(expectedIncrease, 0, "Expected increase should remain 0");
+        assertEq(expectedDecrease_, 500, "Expected decrease should be most restrictive amount");
+        assertEq(expectedIncrease_, 0, "Expected increase should remain 0");
 
         // Clean up: run afterAll for each successful beforeAll
         vm.prank(dm);
-        enforcer.afterAllHook(charlieTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
+        enforcer.afterAllHook(charlieTerms_, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
         vm.prank(dm);
-        enforcer.afterAllHook(bobTermsRestrictive, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        enforcer.afterAllHook(bobTermsRestrictive_, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
         vm.prank(dm);
-        enforcer.afterAllHook(initialTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+        enforcer.afterAllHook(initialTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
     }
 
     /**
@@ -685,44 +685,44 @@ contract ERC20MultiOperationBalanceEnforcerTest is CaveatEnforcerBaseTest {
      */
     function test_redelegation_increaseType_alwaysMoreRestrictive() public {
         // Alice creates initial delegation requiring increase by 500
-        bytes memory initialTerms = abi.encodePacked(false, address(token), address(delegator), uint256(500));
+        bytes memory initialTerms_ = abi.encodePacked(false, address(token), address(delegator), uint256(500));
 
         // Simulate Alice's initial delegation
         vm.prank(dm);
-        enforcer.beforeAllHook(initialTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+        enforcer.beforeAllHook(initialTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
 
         // Bob tries to redelegate with same type but smaller amount (should fail)
-        bytes memory bobTerms = abi.encodePacked(false, address(token), address(delegator), uint256(300));
+        bytes memory bobTerms_ = abi.encodePacked(false, address(token), address(delegator), uint256(300));
         vm.prank(dm);
         vm.expectRevert("ERC20MultiOperationBalanceEnforcer:increase-must-be-more-restrictive");
-        enforcer.beforeAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        enforcer.beforeAllHook(bobTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
 
         // Bob tries to redelegate with same type and larger amount (should pass)
-        bytes memory bobTermsRestrictive = abi.encodePacked(false, address(token), address(delegator), uint256(800));
+        bytes memory bobTermsRestrictive_ = abi.encodePacked(false, address(token), address(delegator), uint256(800));
         vm.prank(dm);
-        enforcer.beforeAllHook(bobTermsRestrictive, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        enforcer.beforeAllHook(bobTermsRestrictive_, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
 
         // Charlie tries to redelegate with even larger amount (should pass)
-        bytes memory charlieTerms = abi.encodePacked(false, address(token), address(delegator), uint256(1200));
+        bytes memory charlieTerms_ = abi.encodePacked(false, address(token), address(delegator), uint256(1200));
         vm.prank(dm);
-        enforcer.beforeAllHook(charlieTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
+        enforcer.beforeAllHook(charlieTerms_, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
 
         // Verify final state: expectedIncrease should be 1200 (most restrictive)
-        bytes32 hashKey = enforcer.getHashKey(dm, address(token), address(delegator));
-        (, uint256 expectedIncrease, uint256 expectedDecrease,) = enforcer.balanceTracker(hashKey);
+        bytes32 hashKey_ = enforcer.getHashKey(dm, address(token), address(delegator));
+        (, uint256 expectedIncrease_, uint256 expectedDecrease_,) = enforcer.balanceTracker(hashKey_);
 
-        assertEq(expectedIncrease, 1200, "Expected increase should be most restrictive amount");
-        assertEq(expectedDecrease, 0, "Expected decrease should remain 0");
+        assertEq(expectedIncrease_, 1200, "Expected increase should be most restrictive amount");
+        assertEq(expectedDecrease_, 0, "Expected decrease should remain 0");
 
         // Satisfy net expected increase and clean up
         vm.prank(delegator);
         token.mint(delegator, 1200);
         vm.prank(dm);
-        enforcer.afterAllHook(charlieTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
+        enforcer.afterAllHook(charlieTerms_, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
         vm.prank(dm);
-        enforcer.afterAllHook(bobTermsRestrictive, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        enforcer.afterAllHook(bobTermsRestrictive_, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
         vm.prank(dm);
-        enforcer.afterAllHook(initialTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+        enforcer.afterAllHook(initialTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
     }
 
     /**
@@ -731,47 +731,47 @@ contract ERC20MultiOperationBalanceEnforcerTest is CaveatEnforcerBaseTest {
      */
     function test_redelegation_typeSwitching_alwaysMoreRestrictive() public {
         // Alice creates initial delegation allowing decrease by 1000
-        bytes memory initialTerms = abi.encodePacked(true, address(token), address(delegator), uint256(1000));
+        bytes memory initialTerms_ = abi.encodePacked(true, address(token), address(delegator), uint256(1000));
 
         // Simulate Alice's initial delegation
         // Ensure initial balance is sufficient for decrease validation
         vm.prank(delegator);
         token.mint(delegator, 1000);
         vm.prank(dm);
-        enforcer.beforeAllHook(initialTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+        enforcer.beforeAllHook(initialTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
 
         // Bob redelegates with type switch to increase (should pass - more restrictive)
-        bytes memory bobTerms = abi.encodePacked(false, address(token), address(delegator), uint256(800));
+        bytes memory bobTerms_ = abi.encodePacked(false, address(token), address(delegator), uint256(800));
         vm.prank(dm);
-        enforcer.beforeAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        enforcer.beforeAllHook(bobTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
 
         // Charlie tries to redelegate back to decrease with amount > original (should fail)
-        bytes memory charlieTermsInvalid = abi.encodePacked(true, address(token), address(delegator), uint256(1200));
+        bytes memory charlieTermsInvalid_ = abi.encodePacked(true, address(token), address(delegator), uint256(1200));
         vm.prank(dm);
         vm.expectRevert("ERC20MultiOperationBalanceEnforcer:decrease-must-be-more-restrictive");
-        enforcer.beforeAllHook(charlieTermsInvalid, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
+        enforcer.beforeAllHook(charlieTermsInvalid_, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
 
         // Charlie redelegates back to decrease with amount <= original (should pass)
-        bytes memory charlieTermsValid = abi.encodePacked(true, address(token), address(delegator), uint256(600));
+        bytes memory charlieTermsValid_ = abi.encodePacked(true, address(token), address(delegator), uint256(600));
         vm.prank(dm);
-        enforcer.beforeAllHook(charlieTermsValid, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
+        enforcer.beforeAllHook(charlieTermsValid_, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
 
         // Verify final state: should have both constraints
-        bytes32 hashKey = enforcer.getHashKey(dm, address(token), address(delegator));
-        (, uint256 expectedIncrease, uint256 expectedDecrease,) = enforcer.balanceTracker(hashKey);
+        bytes32 hashKey_ = enforcer.getHashKey(dm, address(token), address(delegator));
+        (, uint256 expectedIncrease_, uint256 expectedDecrease_,) = enforcer.balanceTracker(hashKey_);
 
-        assertEq(expectedIncrease, 800, "Expected increase should be preserved");
-        assertEq(expectedDecrease, 600, "Expected decrease should be most restrictive");
+        assertEq(expectedIncrease_, 800, "Expected increase should be preserved");
+        assertEq(expectedDecrease_, 600, "Expected decrease should be most restrictive");
 
         // Net expected increase is 200; satisfy and clean up
         vm.prank(delegator);
         token.mint(delegator, 200);
         vm.prank(dm);
-        enforcer.afterAllHook(charlieTermsValid, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
+        enforcer.afterAllHook(charlieTermsValid_, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
         vm.prank(dm);
-        enforcer.afterAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        enforcer.afterAllHook(bobTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
         vm.prank(dm);
-        enforcer.afterAllHook(initialTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+        enforcer.afterAllHook(initialTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
     }
 
     /**
@@ -780,60 +780,60 @@ contract ERC20MultiOperationBalanceEnforcerTest is CaveatEnforcerBaseTest {
      */
     function test_redelegation_complexChain_alwaysMoreRestrictive() public {
         // Alice creates initial delegation allowing decrease by 1000
-        bytes memory initialTerms = abi.encodePacked(true, address(token), address(delegator), uint256(1000));
+        bytes memory initialTerms_ = abi.encodePacked(true, address(token), address(delegator), uint256(1000));
 
         // Simulate Alice's initial delegation
         vm.prank(dm);
-        enforcer.beforeAllHook(initialTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+        enforcer.beforeAllHook(initialTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
 
         // Chain of redelegations: decrease -> increase -> decrease -> increase
         // Each should make constraints more restrictive
 
         // 1. Bob: decrease to 800 (more restrictive)
-        bytes memory bobTerms = abi.encodePacked(true, address(token), address(delegator), uint256(800));
+        bytes memory bobTerms_ = abi.encodePacked(true, address(token), address(delegator), uint256(800));
         vm.prank(dm);
-        enforcer.beforeAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        enforcer.beforeAllHook(bobTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
 
         // 2. Charlie: switch to increase of 600 (more restrictive)
-        bytes memory charlieTerms = abi.encodePacked(false, address(token), address(delegator), uint256(600));
+        bytes memory charlieTerms_ = abi.encodePacked(false, address(token), address(delegator), uint256(600));
         vm.prank(dm);
-        enforcer.beforeAllHook(charlieTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
+        enforcer.beforeAllHook(charlieTerms_, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
 
         // 3. David: switch back to decrease of 400 (more restrictive)
-        bytes memory davidTerms = abi.encodePacked(true, address(token), address(delegator), uint256(400));
+        bytes memory davidTerms_ = abi.encodePacked(true, address(token), address(delegator), uint256(400));
         vm.prank(dm);
-        enforcer.beforeAllHook(davidTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x456), address(0));
+        enforcer.beforeAllHook(davidTerms_, hex"", singleDefaultMode, hex"", keccak256(""), address(0x456), address(0));
 
         // 4. Eve: switch to increase of 1000 (more restrictive)
-        bytes memory eveTerms = abi.encodePacked(false, address(token), address(delegator), uint256(1000));
+        bytes memory eveTerms_ = abi.encodePacked(false, address(token), address(delegator), uint256(1000));
         vm.prank(dm);
-        enforcer.beforeAllHook(eveTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x789), address(0));
+        enforcer.beforeAllHook(eveTerms_, hex"", singleDefaultMode, hex"", keccak256(""), address(0x789), address(0));
 
         // Verify final state: should have most restrictive constraints
-        bytes32 hashKey = enforcer.getHashKey(dm, address(token), address(delegator));
-        (, uint256 expectedIncrease, uint256 expectedDecrease,) = enforcer.balanceTracker(hashKey);
+        bytes32 hashKey_ = enforcer.getHashKey(dm, address(token), address(delegator));
+        (, uint256 expectedIncrease_, uint256 expectedDecrease_,) = enforcer.balanceTracker(hashKey_);
 
-        assertEq(expectedIncrease, 1000, "Expected increase should be most restrictive");
-        assertEq(expectedDecrease, 400, "Expected decrease should be most restrictive");
+        assertEq(expectedIncrease_, 1000, "Expected increase should be most restrictive");
+        assertEq(expectedDecrease_, 400, "Expected decrease should be most restrictive");
 
         // Net expected increase is 600; satisfy before running afterAlls
         vm.prank(delegator);
         token.mint(delegator, 600);
 
         vm.prank(dm);
-        enforcer.afterAllHook(eveTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x789), address(0));
+        enforcer.afterAllHook(eveTerms_, hex"", singleDefaultMode, hex"", keccak256(""), address(0x789), address(0));
 
         vm.prank(dm);
-        enforcer.afterAllHook(davidTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x456), address(0));
+        enforcer.afterAllHook(davidTerms_, hex"", singleDefaultMode, hex"", keccak256(""), address(0x456), address(0));
 
         vm.prank(dm);
-        enforcer.afterAllHook(charlieTerms, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
+        enforcer.afterAllHook(charlieTerms_, hex"", singleDefaultMode, hex"", keccak256(""), address(0x123), address(0));
 
         vm.prank(dm);
-        enforcer.afterAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        enforcer.afterAllHook(bobTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
 
         vm.prank(dm);
-        enforcer.afterAllHook(initialTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+        enforcer.afterAllHook(initialTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
     }
 
     /**
@@ -842,35 +842,35 @@ contract ERC20MultiOperationBalanceEnforcerTest is CaveatEnforcerBaseTest {
      */
     function test_firstDelegation_requiresDelegatorEqualsRecipient() public {
         // Bob tries to create first delegation with delegator != recipient (should fail)
-        bytes memory bobTerms = abi.encodePacked(true, address(token), someUser, uint256(1000));
+        bytes memory bobTerms_ = abi.encodePacked(true, address(token), someUser, uint256(1000));
         vm.prank(dm);
         vm.expectRevert("ERC20MultiOperationBalanceEnforcer:invalid-delegator");
-        enforcer.beforeAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        enforcer.beforeAllHook(bobTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
 
         // Alice creates first delegation with delegator == recipient (should pass)
-        bytes memory aliceTerms = abi.encodePacked(true, address(token), someUser, uint256(1000));
+        bytes memory aliceTerms_ = abi.encodePacked(true, address(token), someUser, uint256(1000));
         // Ensure initial balance is sufficient to validate decreases later
         vm.prank(delegator);
         token.mint(someUser, 1000);
         vm.prank(dm);
-        enforcer.beforeAllHook(aliceTerms, hex"", singleDefaultMode, hex"", keccak256(""), someUser, address(0));
+        enforcer.beforeAllHook(aliceTerms_, hex"", singleDefaultMode, hex"", keccak256(""), someUser, address(0));
 
         // Now Bob can redelegate with more restrictive constraints
-        bytes memory bobRedelegationTerms = abi.encodePacked(true, address(token), someUser, uint256(500));
+        bytes memory bobRedelegationTerms_ = abi.encodePacked(true, address(token), someUser, uint256(500));
         vm.prank(dm);
-        enforcer.beforeAllHook(bobRedelegationTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        enforcer.beforeAllHook(bobRedelegationTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
 
         // // Verify final state
-        bytes32 hashKey = enforcer.getHashKey(dm, address(token), someUser);
-        (,, uint256 expectedDecrease,) = enforcer.balanceTracker(hashKey);
+        bytes32 hashKey_ = enforcer.getHashKey(dm, address(token), someUser);
+        (,, uint256 expectedDecrease_,) = enforcer.balanceTracker(hashKey_);
 
-        assertEq(expectedDecrease, 500, "Expected decrease should be most restrictive amount");
-
-        vm.prank(dm);
-        enforcer.afterAllHook(bobRedelegationTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        assertEq(expectedDecrease_, 500, "Expected decrease should be most restrictive amount");
 
         vm.prank(dm);
-        enforcer.afterAllHook(aliceTerms, hex"", singleDefaultMode, hex"", keccak256(""), someUser, address(0));
+        enforcer.afterAllHook(bobRedelegationTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+
+        vm.prank(dm);
+        enforcer.afterAllHook(aliceTerms_, hex"", singleDefaultMode, hex"", keccak256(""), someUser, address(0));
     }
 
     /**
@@ -879,36 +879,36 @@ contract ERC20MultiOperationBalanceEnforcerTest is CaveatEnforcerBaseTest {
      */
     function test_aggregation_onlyWhenDelegatorEqualsRecipient() public {
         // Alice creates first delegation with delegator == recipient
-        bytes memory aliceTerms = abi.encodePacked(true, address(token), address(delegator), uint256(1000));
+        bytes memory aliceTerms_ = abi.encodePacked(true, address(token), address(delegator), uint256(1000));
         vm.prank(dm);
-        enforcer.beforeAllHook(aliceTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+        enforcer.beforeAllHook(aliceTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
 
         // Alice creates another delegation with delegator == recipient (should aggregate)
-        bytes memory aliceTerms2 = abi.encodePacked(false, address(token), address(delegator), uint256(500));
+        bytes memory aliceTerms2_ = abi.encodePacked(false, address(token), address(delegator), uint256(500));
         vm.prank(dm);
-        enforcer.beforeAllHook(aliceTerms2, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+        enforcer.beforeAllHook(aliceTerms2_, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
 
         // Bob tries to redelegate with delegator != recipient (should be more restrictive, not aggregate)
-        bytes memory bobTerms = abi.encodePacked(true, address(token), address(delegator), uint256(300));
+        bytes memory bobTerms_ = abi.encodePacked(true, address(token), address(delegator), uint256(300));
         vm.prank(dm);
-        enforcer.beforeAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        enforcer.beforeAllHook(bobTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
 
         // Verify final state: should have both constraints from Alice + Bob's restrictive constraint
-        bytes32 hashKey = enforcer.getHashKey(dm, address(token), address(delegator));
-        (, uint256 expectedIncrease, uint256 expectedDecrease,) = enforcer.balanceTracker(hashKey);
+        bytes32 hashKey_ = enforcer.getHashKey(dm, address(token), address(delegator));
+        (, uint256 expectedIncrease_, uint256 expectedDecrease_,) = enforcer.balanceTracker(hashKey_);
 
-        assertEq(expectedIncrease, 500, "Expected increase should be from Alice's delegation");
-        assertEq(expectedDecrease, 300, "Expected decrease should be Bob's restrictive constraint");
+        assertEq(expectedIncrease_, 500, "Expected increase should be from Alice's delegation");
+        assertEq(expectedDecrease_, 300, "Expected decrease should be Bob's restrictive constraint");
 
         // Net expected increase is 200; satisfy and clean up
         vm.prank(delegator);
         token.mint(delegator, 200);
         vm.prank(dm);
-        enforcer.afterAllHook(bobTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
+        enforcer.afterAllHook(bobTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegate, address(0));
         vm.prank(dm);
-        enforcer.afterAllHook(aliceTerms2, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+        enforcer.afterAllHook(aliceTerms2_, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
         vm.prank(dm);
-        enforcer.afterAllHook(aliceTerms, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
+        enforcer.afterAllHook(aliceTerms_, hex"", singleDefaultMode, hex"", keccak256(""), delegator, address(0));
     }
 
     ////////////////////////////// Integration tests //////////////////////////////
@@ -1065,7 +1065,7 @@ contract ERC20MultiOperationBalanceEnforcerTest is CaveatEnforcerBaseTest {
         // Requires the total balance increase of 2 ETH worth of TokenB across all delegations
         caveats_[1] = Caveat({ args: hex"", enforcer: address(enforcer), terms: balanceTerms_ });
 
-        Delegation memory delegation1 = Delegation({
+        Delegation memory delegation1_ = Delegation({
             delegate: delegateIntegration,
             delegator: delegatorIntegration,
             authority: ROOT_AUTHORITY,
@@ -1074,7 +1074,7 @@ contract ERC20MultiOperationBalanceEnforcerTest is CaveatEnforcerBaseTest {
             signature: hex""
         });
 
-        Delegation memory delegation2 = Delegation({
+        Delegation memory delegation2_ = Delegation({
             delegate: delegateIntegration,
             delegator: delegatorIntegration,
             authority: ROOT_AUTHORITY,
@@ -1083,15 +1083,15 @@ contract ERC20MultiOperationBalanceEnforcerTest is CaveatEnforcerBaseTest {
             signature: hex""
         });
 
-        delegation1 = signDelegation(users.alice, delegation1);
-        delegation2 = signDelegation(users.alice, delegation2);
+        delegation1_ = signDelegation(users.alice, delegation1_);
+        delegation2_ = signDelegation(users.alice, delegation2_);
 
         // Creating two redemption flows
         Delegation[][] memory delegations_ = new Delegation[][](2);
         delegations_[0] = new Delegation[](1);
-        delegations_[0][0] = delegation1;
+        delegations_[0][0] = delegation1_;
         delegations_[1] = new Delegation[](1);
-        delegations_[1][0] = delegation2;
+        delegations_[1][0] = delegation2_;
 
         vm.expectRevert("ERC20MultiOperationBalanceEnforcer:insufficient-balance-increase");
         swapMock.swapDoubleSpend(delegations_, 1 ether, false);
@@ -1118,7 +1118,7 @@ contract ERC20MultiOperationBalanceEnforcerTest is CaveatEnforcerBaseTest {
         // Requires the total balance increase of 2 ETH worth of TokenB across all delegations
         caveats_[1] = Caveat({ args: hex"", enforcer: address(enforcer), terms: balanceTerms_ });
 
-        Delegation memory delegation1 = Delegation({
+        Delegation memory delegation1_ = Delegation({
             delegate: delegateIntegration,
             delegator: delegatorIntegration,
             authority: ROOT_AUTHORITY,
@@ -1127,7 +1127,7 @@ contract ERC20MultiOperationBalanceEnforcerTest is CaveatEnforcerBaseTest {
             signature: hex""
         });
 
-        Delegation memory delegation2 = Delegation({
+        Delegation memory delegation2_ = Delegation({
             delegate: delegateIntegration,
             delegator: delegatorIntegration,
             authority: ROOT_AUTHORITY,
@@ -1136,23 +1136,23 @@ contract ERC20MultiOperationBalanceEnforcerTest is CaveatEnforcerBaseTest {
             signature: hex""
         });
 
-        delegation1 = signDelegation(users.alice, delegation1);
-        delegation2 = signDelegation(users.alice, delegation2);
+        delegation1_ = signDelegation(users.alice, delegation1_);
+        delegation2_ = signDelegation(users.alice, delegation2_);
 
         // Creating two redemption flows
         Delegation[][] memory delegations_ = new Delegation[][](2);
         delegations_[0] = new Delegation[](1);
-        delegations_[0][0] = delegation1;
+        delegations_[0][0] = delegation1_;
         delegations_[1] = new Delegation[](1);
-        delegations_[1][0] = delegation2;
+        delegations_[1][0] = delegation2_;
 
-        uint256 tokenBalanceBefore = token.balanceOf(address(delegatorIntegration));
-        uint256 tokenBBalanceBefore = tokenB.balanceOf(address(delegatorIntegration));
+        uint256 tokenBalanceBefore_ = token.balanceOf(address(delegatorIntegration));
+        uint256 tokenBBalanceBefore_ = tokenB.balanceOf(address(delegatorIntegration));
 
         swapMock.swapDoubleSpend(delegations_, 1 ether, true);
 
-        assertEq(token.balanceOf(address(delegatorIntegration)), tokenBalanceBefore - 2 ether);
-        assertEq(tokenB.balanceOf(address(delegatorIntegration)), tokenBBalanceBefore + 2 ether);
+        assertEq(token.balanceOf(address(delegatorIntegration)), tokenBalanceBefore_ - 2 ether);
+        assertEq(tokenB.balanceOf(address(delegatorIntegration)), tokenBBalanceBefore_ + 2 ether);
     }
 
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {

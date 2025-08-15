@@ -25,7 +25,7 @@ import { ModeCode } from "../utils/Types.sol";
  *   like DelegationMetaSwapAdapter.sol to redeem delegations
  * - Redelegations can only make restrictions more restrictive (cannot increase limits)
  * - Delegator must equal recipient for first delegation in a chain of delegations
- * - Only if delegator is equal to recipient do the amount aggragate
+ * - Only if delegator is equal to recipient do the amount aggregate
  */
 contract ERC20MultiOperationBalanceEnforcer is CaveatEnforcer {
     ////////////////////////////// Events //////////////////////////////
@@ -139,7 +139,7 @@ contract ERC20MultiOperationBalanceEnforcer is CaveatEnforcer {
     /**
      * @notice This function validates that the recipient's token balance has changed within expected limits.
      * @dev If there are multiple enforcers watching the same recipient/token pair, the validation will only be performed
-     * once in the last enforcers afterAllHook call.
+     * once in the last afterAllHook call.
      * @param _terms 73 packed bytes where:
      * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
      * - next 20 bytes: address of the token
