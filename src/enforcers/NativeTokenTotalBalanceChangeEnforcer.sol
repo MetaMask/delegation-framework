@@ -21,9 +21,7 @@ contract NativeTokenTotalBalanceChangeEnforcer is CaveatEnforcer {
     ////////////////////////////// Events //////////////////////////////
 
     event TrackedBalance(address indexed delegationManager, address indexed recipient, uint256 balance);
-    event UpdatedExpectedBalance(
-        address indexed delegationManager, address indexed recipient, bool enforceDecrease, uint256 expected
-    );
+    event UpdatedExpectedBalance(address indexed delegationManager, address indexed recipient, uint256 expected);
     event ValidatedBalance(address indexed delegationManager, address indexed recipient, uint256 expected);
 
     ////////////////////////////// State //////////////////////////////
@@ -31,7 +29,7 @@ contract NativeTokenTotalBalanceChangeEnforcer is CaveatEnforcer {
     struct BalanceTracker {
         uint256 balanceBefore;
         uint256 expectedIncrease;
-        uint256 expectedDecrease;
+        uint256 validationRemaining;
     }
 
     mapping(bytes32 hashKey => BalanceTracker balance) public balanceTracker;
@@ -52,11 +50,9 @@ contract NativeTokenTotalBalanceChangeEnforcer is CaveatEnforcer {
 
     /**
      * @notice This function caches the delegator's native token balance before the delegation is executed.
-     * @param _terms 53 packed bytes where:
-     * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
-     * - next 20 bytes: address of the recipient
-     * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
-     * enforceDecrease)
+     * @param _terms 52 packed bytes where:
+     * - first 20 bytes: address of the recipient
+     * - next 32 bytes: balance change guardrail amount
      * @param _mode The execution mode. (Must be Default execType)
      */
     function beforeAllHook(
@@ -72,37 +68,30 @@ contract NativeTokenTotalBalanceChangeEnforcer is CaveatEnforcer {
         override
         onlyDefaultExecutionMode(_mode)
     {
-        (bool enforceDecrease_, address recipient_, uint256 amount_) = getTermsInfo(_terms);
+        (address recipient_, uint256 amount_) = getTermsInfo(_terms);
         require(amount_ > 0, "NativeTokenTotalBalanceChangeEnforcer:zero-expected-change-amount");
         bytes32 hashKey_ = _getHashKey(msg.sender, recipient_);
 
         BalanceTracker memory balanceTracker_ = balanceTracker[hashKey_];
 
-        if (balanceTracker_.expectedIncrease == 0 && balanceTracker_.expectedDecrease == 0) {
+        if (balanceTracker_.expectedIncrease == 0) {
             balanceTracker_.balanceBefore = recipient_.balance;
             emit TrackedBalance(msg.sender, recipient_, recipient_.balance);
-        } else {
-            require(balanceTracker_.balanceBefore == recipient_.balance, "NativeTokenTotalBalanceChangeEnforcer:balance-changed");
         }
 
-        if (enforceDecrease_) {
-            balanceTracker_.expectedDecrease += amount_;
-        } else {
-            balanceTracker_.expectedIncrease += amount_;
-        }
+        balanceTracker_.expectedIncrease += amount_;
+        balanceTracker_.validationRemaining++;
 
         balanceTracker[hashKey_] = balanceTracker_;
 
-        emit UpdatedExpectedBalance(msg.sender, recipient_, enforceDecrease_, amount_);
+        emit UpdatedExpectedBalance(msg.sender, recipient_, amount_);
     }
 
     /**
      * @notice This function enforces that the delegator's native token balance has changed by the expected amount.
-     * @param _terms 53 packed bytes where:
-     * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
-     * - next 20 bytes: address of the recipient
-     * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
-     * enforceDecrease)
+     * @param _terms 52 packed bytes where:
+     * - first 20 bytes: address of the recipient
+     * - next 32 bytes: balance change guardrail amount
      */
     function afterAllHook(
         bytes calldata _terms,
@@ -116,50 +105,38 @@ contract NativeTokenTotalBalanceChangeEnforcer is CaveatEnforcer {
         public
         override
     {
-        (, address recipient_,) = getTermsInfo(_terms);
+        (address recipient_,) = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, recipient_);
+
+        balanceTracker[hashKey_].validationRemaining--;
+
+        // Only validate on the last afterAllHook if there are multiple enforcers tracking the same recipient pair
+        if (balanceTracker[hashKey_].validationRemaining > 0) return;
 
         BalanceTracker memory balanceTracker_ = balanceTracker[hashKey_];
 
-        if (balanceTracker_.expectedIncrease == 0 && balanceTracker_.expectedDecrease == 0) return;
+        require(
+            recipient_.balance >= balanceTracker_.balanceBefore + balanceTracker_.expectedIncrease,
+            "NativeTokenTotalBalanceChangeEnforcer:insufficient-balance-increase"
+        );
 
-        uint256 expected_;
-        if (balanceTracker_.expectedIncrease >= balanceTracker_.expectedDecrease) {
-            expected_ = balanceTracker_.expectedIncrease - balanceTracker_.expectedDecrease;
-            require(
-                recipient_.balance >= balanceTracker_.balanceBefore + expected_,
-                "NativeTokenTotalBalanceChangeEnforcer:insufficient-balance-increase"
-            );
-        } else {
-            expected_ = balanceTracker_.expectedDecrease - balanceTracker_.expectedIncrease;
-            require(
-                recipient_.balance >= balanceTracker_.balanceBefore - expected_,
-                "NativeTokenTotalBalanceChangeEnforcer:exceeded-balance-decrease"
-            );
-        }
+        emit ValidatedBalance(msg.sender, recipient_, balanceTracker_.expectedIncrease);
 
         delete balanceTracker[hashKey_];
-
-        emit ValidatedBalance(msg.sender, recipient_, expected_);
     }
 
     /**
      * @notice Decodes the terms used in this CaveatEnforcer.
-     * @param _terms 53 packed bytes where:
-     * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
-     * - next 20 bytes: address of the recipient
-     * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
-     * enforceDecrease)
-     * @return enforceDecrease_ Boolean indicating if the balance should decrease (true) or increase (false).
+     * @param _terms 52 packed bytes where:
+     * - first 20 bytes: address of the recipient
+     * - next 32 bytes: balance change guardrail amount
      * @return recipient_ The address of the recipient whose balance will change.
-     * @return amount_ Balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
-     * enforceDecrease)
+     * @return amount_ Balance change guardrail amount (i.e., minimum increase)
      */
-    function getTermsInfo(bytes calldata _terms) public pure returns (bool enforceDecrease_, address recipient_, uint256 amount_) {
-        require(_terms.length == 53, "NativeTokenTotalBalanceChangeEnforcer:invalid-terms-length");
-        enforceDecrease_ = _terms[0] != 0;
-        recipient_ = address(bytes20(_terms[1:21]));
-        amount_ = uint256(bytes32(_terms[21:]));
+    function getTermsInfo(bytes calldata _terms) public pure returns (address recipient_, uint256 amount_) {
+        require(_terms.length == 52, "NativeTokenTotalBalanceChangeEnforcer:invalid-terms-length");
+        recipient_ = address(bytes20(_terms[0:20]));
+        amount_ = uint256(bytes32(_terms[20:]));
     }
 
     ////////////////////////////// Internal Methods //////////////////////////////
