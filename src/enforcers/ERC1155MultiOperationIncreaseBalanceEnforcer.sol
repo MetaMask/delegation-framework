@@ -8,16 +8,21 @@ import { ModeCode } from "../utils/Types.sol";
 
 /**
  * @title ERC1155MultiOperationIncreaseBalanceEnforcer
- * @notice Enforces that a recipient's token balance increases by at least the expected total amount across multiple delegations
- * or decreases by at most the expected total amount across multiple delegations. In a delegation chain, there can be a combination
- * of both increases and decreases, and the enforcer will track the total expected change.
- * @dev Tracks initial balance and accumulates expected increases and decreases per recipient/token pair within a redemption
- * @dev This enforcer operates only in default execution mode.
+ * @notice Enforces that a recipient's token balance increases by at least the expected amount across multiple delegations.
+ * Tracks balance changes from the first beforeAllHook call to the last afterAllHook call within a redemption.
+ *
+ * @dev This enforcer operates in delegation chains where multiple delegations may affect the same recipient/token pair.
+ * State is shared between enforcers watching the same recipient/token/tokenId pair and is cleared after transaction execution.
+ *
+ * @dev Only operates in default execution mode
+ *
  * @dev Security considerations:
- * - State is shared between enforcers watching the same recipient/token pair. After transaction execution, the state is cleared.
- * - Balance changes are tracked by comparing beforeAll/afterAll balances.
- * - If the delegate is an EOA and not a DeleGator in a situation with multiple delegations, an adapter contract can be used to
- * redeem delegations. An example of this is the src/helpers/DelegationMetaSwapAdapter.sol contract.
+ * - State is shared between enforcers watching the same recipient/token/tokenId pair
+ * - Balance changes are tracked by comparing first beforeAll/last afterAll balances in batch delegations
+ * - If the delegate is an EOA and not a DeleGator in multi-delegation scenarios, use an adapter contract
+ *   like DelegationMetaSwapAdapter.sol to redeem delegations
+ * - If there are multiple instances of this enforcer tracking the same recipient/token pair inside a redemption the
+ *   balance increase will be aggregated.
  */
 contract ERC1155MultiOperationIncreaseBalanceEnforcer is CaveatEnforcer {
     ////////////////////////////// Events //////////////////////////////
@@ -107,7 +112,7 @@ contract ERC1155MultiOperationIncreaseBalanceEnforcer is CaveatEnforcer {
     }
 
     /**
-     * @notice This function enforces that the recipient's ERC1155 token balance has changed by the expected amount.
+     * @notice This function validates that the recipient's token balance has changed within expected limits.
      * @param _terms 104 bytes where:
      * - first 20 bytes: address of the ERC1155 token
      * - next 20 bytes: address of the recipient
