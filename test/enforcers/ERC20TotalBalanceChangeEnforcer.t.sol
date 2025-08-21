@@ -225,22 +225,42 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
-    // Reverts if balance changes between beforeAllHook calls for the same recipient/token pair
-    function test_notAllow_balanceChangedBetweenBeforeAllHookCalls() public {
+    // Validates that balance changes between beforeAllHook calls are allowed and validated in the last afterAllHook call
+    function test_allow_balanceChangedBetweenBeforeAllHookCalls() public {
         bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(100));
 
         // First beforeAllHook call - caches the initial balance
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
-        // Modify the recipient's balance between beforeAllHook calls
+        // Modify the recipient's balance between beforeAllHook calls - this should be allowed
         vm.prank(delegator);
         token.mint(recipient, 50);
 
-        // Second beforeAllHook call - should revert because balance changed
+        // Second beforeAllHook call - should now succeed and track the new balance
         vm.prank(dm);
-        vm.expectRevert(bytes("ERC20TotalBalanceChangeEnforcer:balance-changed"));
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Verify that the balance tracker is properly updated
+        bytes32 hashKey_ = keccak256(abi.encode(address(dm), address(token), address(recipient)));
+        (uint256 balanceBefore_, uint256 expectedIncrease_, uint256 expectedDecrease_, uint256 validationRemaining_) =
+            enforcer.balanceTracker(hashKey_);
+        assertEq(balanceBefore_, 0, "balanceBefore should be same as initial balance");
+        assertEq(expectedIncrease_, 200, "expectedIncrease should be 200 (100 + 100)");
+        assertEq(expectedDecrease_, 0, "expectedDecrease should be 0");
+        assertEq(validationRemaining_, 2, "validationRemaining should be 2");
+
+        // Mint additional tokens to satisfy the total requirement (2 * 100 = 200, already have 50, need 150 more)
+        vm.prank(delegator);
+        token.mint(recipient, 150);
+
+        // First afterAllHook call - should not trigger balance check yet
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Second afterAllHook call - should trigger balance check and cleanup
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Validates that the terms are well formed (exactly 73 bytes)
