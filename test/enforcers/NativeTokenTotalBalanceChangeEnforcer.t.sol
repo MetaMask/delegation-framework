@@ -305,6 +305,88 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
     }
 
+    // Validates that delegation can be reused with different recipients without interference
+    function test_allow_reuseDelegationWithDifferentRecipients() public {
+        address recipient1_ = delegator;
+        address recipient2_ = address(users.carol.deleGator);
+
+        // Terms for two different recipients
+        bytes memory terms1_ = abi.encodePacked(recipient1_, uint256(100));
+        bytes memory terms2_ = abi.encodePacked(recipient2_, uint256(100));
+
+        // Increase for recipient1 - First delegation
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms1_, hex"", singleDefaultMode, executionCallData, bytes32(0), recipient1_, delegate);
+        _increaseBalance(recipient1_, 100);
+        vm.prank(dm);
+        enforcer.afterAllHook(terms1_, hex"", singleDefaultMode, executionCallData, bytes32(0), recipient1_, delegate);
+
+        // Increase for recipient2 - First delegation (aggregation)
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms2_, hex"", singleDefaultMode, executionCallData, bytes32(0), recipient2_, delegate);
+        _increaseBalance(recipient2_, 100);
+        vm.prank(dm);
+        enforcer.afterAllHook(terms2_, hex"", singleDefaultMode, executionCallData, bytes32(0), recipient2_, delegate);
+    }
+
+    // Validates that different delegation hashes with different recipients are handled separately
+    function test_differentiateDelegationHashWithRecipient() public {
+        bytes32 delegationHash1_ = bytes32(uint256(99999999));
+        bytes32 delegationHash2_ = bytes32(uint256(88888888));
+
+        address recipient1_ = delegator;
+        address recipient2_ = address(users.carol.deleGator);
+
+        // Terms for two different recipients
+        bytes memory terms1_ = abi.encodePacked(recipient1_, uint256(100));
+        bytes memory terms2_ = abi.encodePacked(recipient2_, uint256(100));
+
+        // First delegation for recipient1
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms1_, hex"", singleDefaultMode, executionCallData, delegationHash1_, recipient1_, delegate);
+
+        // First delegation for recipient2
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms2_, hex"", singleDefaultMode, executionCallData, delegationHash2_, recipient2_, delegate);
+
+        // Increase balance by 100 only for recipient1
+        _increaseBalance(recipient1_, 100);
+
+        // Recipient1 passes
+        vm.prank(dm);
+        enforcer.afterAllHook(terms1_, hex"", singleDefaultMode, executionCallData, delegationHash1_, recipient1_, delegate);
+
+        // Recipient2 did not receive tokens, so it should revert
+        vm.prank(dm);
+        vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:insufficient-balance-increase"));
+        enforcer.afterAllHook(terms2_, hex"", singleDefaultMode, executionCallData, delegationHash2_, recipient2_, delegate);
+
+        // Increase balance for recipient2
+        _increaseBalance(recipient2_, 100);
+
+        // Recipient2 now passes
+        vm.prank(dm);
+        enforcer.afterAllHook(terms2_, hex"", singleDefaultMode, executionCallData, delegationHash2_, recipient2_, delegate);
+    }
+
+    // Validates that balance tracker is properly cleaned up after validation
+    function test_balanceTracker_clean() public {
+        bytes memory terms_ = abi.encodePacked(address(delegator), uint256(100));
+        bytes32 hash_ = keccak256(abi.encode(address(dm), address(delegator)));
+
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
+        (, uint256 expectedIncrease_,) = enforcer.balanceTracker(hash_);
+        assertEq(expectedIncrease_, 100);
+
+        _increaseBalance(delegator, 100);
+
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
+        (, expectedIncrease_,) = enforcer.balanceTracker(hash_);
+        assertEq(expectedIncrease_, 0);
+    }
+
     ////////////////////////////// Integration tests //////////////////////////////
 
     /**

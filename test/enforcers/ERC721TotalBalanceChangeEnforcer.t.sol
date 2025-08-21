@@ -340,6 +340,63 @@ contract ERC721TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
+    // Validates that pre-existing balances are considered when calculating required increases
+    function test_notAllow_withPreExistingBalance() public {
+        // Recipient already has 1 token
+        _mintTokens(delegator, 1);
+
+        // Expect balance to increase by at least 1 token
+        bytes memory terms_ = abi.encodePacked(address(token), address(delegator), uint256(1));
+
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // No additional minting occurs, so balance remains unchanged
+        vm.prank(dm);
+        vm.expectRevert(bytes("ERC721TotalBalanceChangeEnforcer:insufficient-balance-increase"));
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+    }
+
+    // Validates that different delegation hashes with different recipients are handled separately
+    function test_differentiateDelegationHashWithRecipient() public {
+        bytes32 delegationHash1_ = bytes32(uint256(99999999));
+        bytes32 delegationHash2_ = bytes32(uint256(88888888));
+
+        address recipient1_ = delegator;
+        address recipient2_ = address(users.carol.deleGator);
+
+        // Terms for two different recipients
+        bytes memory terms1_ = abi.encodePacked(address(token), address(recipient1_), uint256(1));
+        bytes memory terms2_ = abi.encodePacked(address(token), address(recipient2_), uint256(1));
+
+        // First delegation for recipient1
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms1_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash1_, recipient1_, delegate);
+
+        // First delegation for recipient2
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash2_, recipient2_, delegate);
+
+        // Mint 1 token only for recipient1
+        _mintTokens(recipient1_, 1);
+
+        // Recipient1 passes
+        vm.prank(dm);
+        enforcer.afterAllHook(terms1_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash1_, recipient1_, delegate);
+
+        // Recipient2 did not receive tokens, so it should revert
+        vm.prank(dm);
+        vm.expectRevert(bytes("ERC721TotalBalanceChangeEnforcer:insufficient-balance-increase"));
+        enforcer.afterAllHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash2_, recipient2_, delegate);
+
+        // Mint 1 token for recipient2
+        _mintTokens(recipient2_, 1);
+
+        // Recipient2 now passes
+        vm.prank(dm);
+        enforcer.afterAllHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash2_, recipient2_, delegate);
+    }
+
     ////////////////////////////// Check events //////////////////////////////
 
     // Validates that the events are emitted correctly for an increase scenario.

@@ -285,6 +285,51 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
 
+    // Validates that delegation can be reused with different recipients without interference
+    function test_allow_reuseDelegationWithDifferentRecipients() public {
+        address recipient1_ = delegator;
+        address recipient2_ = address(users.carol.deleGator);
+
+        // Terms for two different recipients
+        bytes memory terms1_ = abi.encodePacked(address(token), address(recipient1_), uint256(tokenId), uint256(100));
+        bytes memory terms2_ = abi.encodePacked(address(token), address(recipient2_), uint256(tokenId), uint256(100));
+
+        // Increase by 100 for recipient1 - First delegation
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms1_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), recipient1_, delegate);
+        vm.prank(delegator);
+        token.mint(recipient1_, tokenId, 100, "");
+        vm.prank(dm);
+        enforcer.afterAllHook(terms1_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), recipient1_, delegate);
+
+        // Increase by 100 for recipient2 - First delegation (aggregation)
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), recipient2_, delegate);
+        vm.prank(delegator);
+        token.mint(recipient2_, tokenId, 100, "");
+        vm.prank(dm);
+        enforcer.afterAllHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), recipient2_, delegate);
+    }
+
+    // Validates that balance tracker is properly cleaned up after validation
+    function test_balanceTracker_clean() public {
+        bytes memory terms_ = abi.encodePacked(address(token), address(delegator), uint256(tokenId), uint256(100));
+        bytes32 hash_ = keccak256(abi.encode(address(dm), address(token), address(delegator), tokenId));
+
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        (, uint256 expectedIncrease_,) = enforcer.balanceTracker(hash_);
+        assertEq(expectedIncrease_, 100);
+
+        vm.prank(delegator);
+        token.mint(delegator, tokenId, 100, "");
+
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        (, expectedIncrease_,) = enforcer.balanceTracker(hash_);
+        assertEq(expectedIncrease_, 0);
+    }
+
     ////////////////////////////// Check events //////////////////////////////
 
     // Validates that the events are emitted correctly for an increase scenario.
