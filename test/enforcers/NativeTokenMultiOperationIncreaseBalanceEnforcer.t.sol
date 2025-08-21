@@ -4,7 +4,8 @@ pragma solidity 0.8.23;
 import "forge-std/Test.sol";
 import { Execution, Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
-import { NativeTokenTotalBalanceChangeEnforcer } from "../../src/enforcers/NativeTokenTotalBalanceChangeEnforcer.sol";
+import { NativeTokenMultiOperationIncreaseBalanceEnforcer } from
+    "../../src/enforcers/NativeTokenMultiOperationIncreaseBalanceEnforcer.sol";
 import { NativeTokenPaymentEnforcer } from "../../src/enforcers/NativeTokenPaymentEnforcer.sol";
 import { NativeTokenTransferAmountEnforcer } from "../../src/enforcers/NativeTokenTransferAmountEnforcer.sol";
 import { ArgsEqualityCheckEnforcer } from "../../src/enforcers/ArgsEqualityCheckEnforcer.sol";
@@ -16,9 +17,9 @@ import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 
-contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
+contract NativeTokenMultiOperationIncreaseBalanceEnforcerTest is CaveatEnforcerBaseTest {
     ////////////////////////////// State //////////////////////////////
-    NativeTokenTotalBalanceChangeEnforcer public enforcer;
+    NativeTokenMultiOperationIncreaseBalanceEnforcer public enforcer;
     NativeTokenPaymentEnforcer public nativeTokenPaymentEnforcer;
     NativeTokenTransferAmountEnforcer public nativeTokenTransferAmountEnforcer;
     ArgsEqualityCheckEnforcer public argsEqualityCheckEnforcer;
@@ -35,7 +36,7 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         delegator = address(users.alice.deleGator);
         delegate = address(users.bob.deleGator);
         dm = address(delegationManager);
-        enforcer = new NativeTokenTotalBalanceChangeEnforcer();
+        enforcer = new NativeTokenMultiOperationIncreaseBalanceEnforcer();
         vm.label(address(enforcer), "Native Balance Change Enforcer");
         noExecution = Execution(address(0), 0, hex"");
 
@@ -102,7 +103,7 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.startPrank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
         _increaseBalance(delegator, 10);
-        vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:insufficient-balance-increase"));
+        vm.expectRevert(bytes("NativeTokenMultiOperationIncreaseBalanceEnforcer:insufficient-balance-increase"));
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
     }
 
@@ -113,12 +114,12 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // Too small
         terms_ = abi.encodePacked(recipient_, uint8(100));
-        vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:invalid-terms-length"));
+        vm.expectRevert(bytes("NativeTokenMultiOperationIncreaseBalanceEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
 
         // Too large
         terms_ = abi.encodePacked(recipient_, uint256(100), uint256(100));
-        vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:invalid-terms-length"));
+        vm.expectRevert(bytes("NativeTokenMultiOperationIncreaseBalanceEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
     }
 
@@ -229,7 +230,7 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         address recipient_ = delegator;
         bytes memory terms_ = abi.encodePacked(recipient_, uint256(0));
         vm.prank(address(dm));
-        vm.expectRevert("NativeTokenTotalBalanceChangeEnforcer:zero-expected-change-amount");
+        vm.expectRevert("NativeTokenMultiOperationIncreaseBalanceEnforcer:zero-expected-change-amount");
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
     }
 
@@ -256,7 +257,7 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
 
         // Second afterAllHook call - should trigger validation and revert (validationRemaining = 0)
-        vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:insufficient-balance-increase"));
+        vm.expectRevert(bytes("NativeTokenMultiOperationIncreaseBalanceEnforcer:insufficient-balance-increase"));
         vm.prank(dm);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
     }
@@ -271,9 +272,9 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // First beforeAllHook - should emit TrackedBalance and UpdatedExpectedBalance
         vm.expectEmit(true, true, true, true);
-        emit NativeTokenTotalBalanceChangeEnforcer.TrackedBalance(dm, recipient_, 100000000000000000000);
+        emit NativeTokenMultiOperationIncreaseBalanceEnforcer.TrackedBalance(dm, recipient_, 100000000000000000000);
         vm.expectEmit(true, true, true, true);
-        emit NativeTokenTotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, recipient_, 100);
+        emit NativeTokenMultiOperationIncreaseBalanceEnforcer.UpdatedExpectedBalance(dm, recipient_, 100);
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), recipient_, delegate);
 
@@ -301,7 +302,7 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // Second afterAllHook - should emit ValidatedBalance (validationRemaining = 0)
         vm.prank(dm);
         vm.expectEmit(true, true, true, true);
-        emit NativeTokenTotalBalanceChangeEnforcer.ValidatedBalance(dm, delegator, 200);
+        emit NativeTokenMultiOperationIncreaseBalanceEnforcer.ValidatedBalance(dm, delegator, 200);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), delegator, delegate);
     }
 
@@ -358,7 +359,7 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // Recipient2 did not receive tokens, so it should revert
         vm.prank(dm);
-        vm.expectRevert(bytes("NativeTokenTotalBalanceChangeEnforcer:insufficient-balance-increase"));
+        vm.expectRevert(bytes("NativeTokenMultiOperationIncreaseBalanceEnforcer:insufficient-balance-increase"));
         enforcer.afterAllHook(terms2_, hex"", singleDefaultMode, executionCallData, delegationHash2_, recipient2_, delegate);
 
         // Increase balance for recipient2
@@ -400,7 +401,7 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.deal(address(users.alice.deleGator), 100 ether); // Give Alice 100 ETH for balance tracking
 
         // Create batch delegations with balance change enforcers only
-        // 1. First delegation: NativeTokenTotalBalanceChangeEnforcer expecting balance increase up to 1 ETH
+        // 1. First delegation: NativeTokenMultiOperationIncreaseBalanceEnforcer expecting balance increase up to 1 ETH
         bytes memory balanceTerms_ = abi.encodePacked(address(delegator), uint256(1 ether));
 
         Caveat[] memory caveats1_ = new Caveat[](1);
@@ -421,7 +422,7 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // This is represented as an empty delegation array in the permission context
         bytes memory emptyDelegationContext_ = abi.encode(new Delegation[](0));
 
-        // 3. Third delegation: NativeTokenTotalBalanceChangeEnforcer expecting balance increase up to 1 ETH
+        // 3. Third delegation: NativeTokenMultiOperationIncreaseBalanceEnforcer expecting balance increase up to 1 ETH
         Caveat[] memory caveats3_ = new Caveat[](1);
         caveats3_[0] = Caveat({ args: hex"", enforcer: address(enforcer), terms: balanceTerms_ });
 
@@ -502,7 +503,7 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.deal(address(users.alice.deleGator), 100 ether); // Give Alice 100 ETH for balance tracking
 
         // Create batch delegations with multiple enforcers
-        // 1. First delegation: NativeTokenTotalBalanceChangeEnforcer expecting balance increase up to 1 ETH
+        // 1. First delegation: NativeTokenMultiOperationIncreaseBalanceEnforcer expecting balance increase up to 1 ETH
         bytes memory balanceTerms_ = abi.encodePacked(address(delegator), uint256(1 ether));
 
         Caveat[] memory caveats1_ = new Caveat[](1);
@@ -565,7 +566,7 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         allowanceDelegations_[0] = allowanceDelegation_;
         delegation3_.caveats[0].args = abi.encode(allowanceDelegations_);
 
-        // 4. Fourth delegation: NativeTokenTotalBalanceChangeEnforcer expecting balance increase up to 1 ETH
+        // 4. Fourth delegation: NativeTokenMultiOperationIncreaseBalanceEnforcer expecting balance increase up to 1 ETH
         Caveat[] memory caveats4_ = new Caveat[](1);
         caveats4_[0] = Caveat({ args: hex"", enforcer: address(enforcer), terms: balanceTerms_ });
 
@@ -642,7 +643,7 @@ contract NativeTokenTotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // 2. But she also has to pay 1 ETH from the NativeTokenPaymentEnforcer
         // 3. So her net balance change would be 2.4 ETH (from Bob) - 1 ETH (payment) = 1.4 ETH
         // 4. But the enforcers expect at least 2 ETH increase
-        vm.expectRevert("NativeTokenTotalBalanceChangeEnforcer:insufficient-balance-increase");
+        vm.expectRevert("NativeTokenMultiOperationIncreaseBalanceEnforcer:insufficient-balance-increase");
         vm.prank(address(users.bob.deleGator));
         delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
     }

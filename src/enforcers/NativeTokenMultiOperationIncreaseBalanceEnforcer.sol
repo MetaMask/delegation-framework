@@ -5,7 +5,7 @@ import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";
 
 /**
- * @title NativeTokenTotalBalanceChangeEnforcer
+ * @title NativeTokenMultiOperationIncreaseBalanceEnforcer
  * @notice Enforces that a recipient's native token balance increases by at least the expected total amount across multiple
  * delegations or decreases by at most the expected total amount across multiple delegations. In a delegation chain,
  * there can be a combination of both increases and decreases, and the enforcer will track the total expected change.
@@ -17,7 +17,7 @@ import { ModeCode } from "../utils/Types.sol";
  * - If the delegate is an EOA and not a DeleGator in a situation with multiple delegations, an adapter contract can be used to
  * redeem delegations. An example of this is the src/helpers/DelegationMetaSwapAdapter.sol contract.
  */
-contract NativeTokenTotalBalanceChangeEnforcer is CaveatEnforcer {
+contract NativeTokenMultiOperationIncreaseBalanceEnforcer is CaveatEnforcer {
     ////////////////////////////// Events //////////////////////////////
 
     event TrackedBalance(address indexed delegationManager, address indexed recipient, uint256 balance);
@@ -69,7 +69,7 @@ contract NativeTokenTotalBalanceChangeEnforcer is CaveatEnforcer {
         onlyDefaultExecutionMode(_mode)
     {
         (address recipient_, uint256 amount_) = getTermsInfo(_terms);
-        require(amount_ > 0, "NativeTokenTotalBalanceChangeEnforcer:zero-expected-change-amount");
+        require(amount_ > 0, "NativeTokenMultiOperationIncreaseBalanceEnforcer:zero-expected-change-amount");
         bytes32 hashKey_ = _getHashKey(msg.sender, recipient_);
 
         BalanceTracker memory balanceTracker_ = balanceTracker[hashKey_];
@@ -117,7 +117,7 @@ contract NativeTokenTotalBalanceChangeEnforcer is CaveatEnforcer {
 
         require(
             recipient_.balance >= balanceTracker_.balanceBefore + balanceTracker_.expectedIncrease,
-            "NativeTokenTotalBalanceChangeEnforcer:insufficient-balance-increase"
+            "NativeTokenMultiOperationIncreaseBalanceEnforcer:insufficient-balance-increase"
         );
 
         emit ValidatedBalance(msg.sender, recipient_, balanceTracker_.expectedIncrease);
@@ -134,7 +134,7 @@ contract NativeTokenTotalBalanceChangeEnforcer is CaveatEnforcer {
      * @return amount_ Balance change guardrail amount (i.e., minimum increase)
      */
     function getTermsInfo(bytes calldata _terms) public pure returns (address recipient_, uint256 amount_) {
-        require(_terms.length == 52, "NativeTokenTotalBalanceChangeEnforcer:invalid-terms-length");
+        require(_terms.length == 52, "NativeTokenMultiOperationIncreaseBalanceEnforcer:invalid-terms-length");
         recipient_ = address(bytes20(_terms[0:20]));
         amount_ = uint256(bytes32(_terms[20:]));
     }

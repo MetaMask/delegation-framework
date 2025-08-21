@@ -53,10 +53,10 @@ ENFORCERS=(
   "SpecificActionERC20TransferBatchEnforcer"
   "TimestampEnforcer"
   "ValueLteEnforcer"
-  "ERC20TotalBalanceChangeEnforcer"
-  "ERC721TotalBalanceChangeEnforcer"
-  "ERC1155TotalBalanceChangeEnforcer"
-  "NativeTokenTotalBalanceChangeEnforcer"
+  "ERC20MultiOperationIncreaseBalanceEnforcer"
+  "ERC721MultiOperationIncreaseBalanceEnforcer"
+  "ERC1155MultiOperationIncreaseBalanceEnforcer"
+  "NativeTokenMultiOperationIncreaseBalanceEnforcer"
 )
 
 ADDRESSES=(

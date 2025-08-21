@@ -8,7 +8,7 @@ import { Execution, Caveat, Delegation, ModeCode, CallType, ExecType } from "../
 import { CaveatEnforcerBaseTest } from "./CaveatEnforcerBaseTest.t.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 
-import { ERC20TotalBalanceChangeEnforcer } from "../../src/enforcers/ERC20TotalBalanceChangeEnforcer.sol";
+import { ERC20MultiOperationIncreaseBalanceEnforcer } from "../../src/enforcers/ERC20MultiOperationIncreaseBalanceEnforcer.sol";
 import { ExactCalldataEnforcer } from "../../src/enforcers/ExactCalldataEnforcer.sol";
 import { AllowedTargetsEnforcer } from "../../src/enforcers/AllowedTargetsEnforcer.sol";
 import { ValueLteEnforcer } from "../../src/enforcers/ValueLteEnforcer.sol";
@@ -19,9 +19,9 @@ import { ExecutionHelper } from "@erc7579/core/ExecutionHelper.sol";
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
+contract ERC20MultiOperationIncreaseBalanceEnforcerTest is CaveatEnforcerBaseTest {
     ////////////////////////////// State //////////////////////////////
-    ERC20TotalBalanceChangeEnforcer public enforcer;
+    ERC20MultiOperationIncreaseBalanceEnforcer public enforcer;
     ERC20TransferAmountEnforcer public transferAmountEnforcer;
     ExactCalldataEnforcer public exactCalldataEnforcer;
     AllowedTargetsEnforcer public allowedTargetsEnforcer;
@@ -59,7 +59,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         mintExecutionCallData = abi.encode(mintExecution);
 
         // deploy enforcers
-        enforcer = new ERC20TotalBalanceChangeEnforcer();
+        enforcer = new ERC20MultiOperationIncreaseBalanceEnforcer();
         transferAmountEnforcer = new ERC20TransferAmountEnforcer();
         exactCalldataEnforcer = new ExactCalldataEnforcer();
         allowedTargetsEnforcer = new AllowedTargetsEnforcer();
@@ -159,7 +159,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(delegator);
         token.mint(recipient, 10);
         vm.prank(dm);
-        vm.expectRevert(bytes("ERC20TotalBalanceChangeEnforcer:insufficient-balance-increase"));
+        vm.expectRevert(bytes("ERC20MultiOperationIncreaseBalanceEnforcer:insufficient-balance-increase"));
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
@@ -173,7 +173,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // Do not modify recipient's balance.
         vm.prank(dm);
-        vm.expectRevert(bytes("ERC20TotalBalanceChangeEnforcer:insufficient-balance-increase"));
+        vm.expectRevert(bytes("ERC20MultiOperationIncreaseBalanceEnforcer:insufficient-balance-increase"));
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
@@ -219,12 +219,12 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // Too small: missing required bytes (should be 72 bytes)
         terms_ = abi.encodePacked(address(token), address(recipient), uint8(100));
-        vm.expectRevert(bytes("ERC20TotalBalanceChangeEnforcer:invalid-terms-length"));
+        vm.expectRevert(bytes("ERC20MultiOperationIncreaseBalanceEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
 
         // Too large: extra bytes beyond 72
         terms_ = abi.encodePacked(address(token), address(recipient), uint256(100), uint256(100));
-        vm.expectRevert(bytes("ERC20TotalBalanceChangeEnforcer:invalid-terms-length"));
+        vm.expectRevert(bytes("ERC20MultiOperationIncreaseBalanceEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
     }
 
@@ -327,7 +327,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     function test_revertWithZeroAmount() public {
         bytes memory terms_ = abi.encodePacked(address(token), address(recipient), uint256(0));
         vm.prank(address(dm));
-        vm.expectRevert("ERC20TotalBalanceChangeEnforcer:zero-expected-change-amount");
+        vm.expectRevert("ERC20MultiOperationIncreaseBalanceEnforcer:zero-expected-change-amount");
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
@@ -353,7 +353,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(dm);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(dm);
-        vm.expectRevert("ERC20TotalBalanceChangeEnforcer:insufficient-balance-increase");
+        vm.expectRevert("ERC20MultiOperationIncreaseBalanceEnforcer:insufficient-balance-increase");
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
@@ -374,7 +374,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         token.mint(recipient, 50);
 
         vm.prank(dm);
-        vm.expectRevert(bytes("ERC20TotalBalanceChangeEnforcer:insufficient-balance-increase"));
+        vm.expectRevert(bytes("ERC20MultiOperationIncreaseBalanceEnforcer:insufficient-balance-increase"));
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
@@ -408,7 +408,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // Recipient2 did not receive tokens, so it should revert
         vm.prank(dm);
-        vm.expectRevert(bytes("ERC20TotalBalanceChangeEnforcer:insufficient-balance-increase"));
+        vm.expectRevert(bytes("ERC20MultiOperationIncreaseBalanceEnforcer:insufficient-balance-increase"));
         enforcer.afterAllHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash2_, recipient2_, delegate);
 
         // Mint 100 tokens for recipient2
@@ -428,9 +428,9 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         // First beforeAllHook - should emit both TrackedBalance and UpdatedExpectedBalance
         vm.expectEmit(true, true, true, true);
-        emit ERC20TotalBalanceChangeEnforcer.TrackedBalance(dm, recipient, address(token), 0);
+        emit ERC20MultiOperationIncreaseBalanceEnforcer.TrackedBalance(dm, recipient, address(token), 0);
         vm.expectEmit(true, true, true, true);
-        emit ERC20TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, recipient, address(token), 100);
+        emit ERC20MultiOperationIncreaseBalanceEnforcer.UpdatedExpectedBalance(dm, recipient, address(token), 100);
 
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
@@ -465,19 +465,19 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         // Second  afterAllHook - should emit ValidatedBalance
         vm.prank(dm);
         vm.expectEmit(true, true, true, true);
-        emit ERC20TotalBalanceChangeEnforcer.ValidatedBalance(dm, recipient, address(token), 200);
+        emit ERC20MultiOperationIncreaseBalanceEnforcer.ValidatedBalance(dm, recipient, address(token), 200);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     ////////////////////////////// Integration tests //////////////////////////////
 
     /// @notice Tests enforcement of minimum balance increase requirement in a token swap scenario
-    /// @dev Verifies that ERC20TotalBalanceChangeEnforcer correctly reverts when:
+    /// @dev Verifies that ERC20MultiOperationIncreaseBalanceEnforcer correctly reverts when:
     ///      1. token is sent from delegator to SwapMock
     ///      2. The required minimum increase in TokenB balance is not met
-    /// This test ensures the ERC20TotalBalanceChangeEnforcer properly protects against failed or incomplete swaps
+    /// This test ensures the ERC20MultiOperationIncreaseBalanceEnforcer properly protects against failed or incomplete swaps
     /// But it is very restrictive because it doesn't allow a space for the payment to be made.
-    function test_ERC20TotalBalanceChangeEnforcer_failWhenPaymentNotReceived() public {
+    function test_ERC20MultiOperationIncreaseBalanceEnforcer_failWhenPaymentNotReceived() public {
         vm.prank(delegator);
         token.mint(delegatorIntegration, 100 ether);
         // Create delegation from Alice to SwapMock allowing transfer of 1 ETH worth of token
@@ -504,7 +504,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = delegation;
 
-        vm.expectRevert("ERC20TotalBalanceChangeEnforcer:insufficient-balance-increase");
+        vm.expectRevert("ERC20MultiOperationIncreaseBalanceEnforcer:insufficient-balance-increase");
         swapMock.swap(delegations_, 1 ether);
     }
 
@@ -524,7 +524,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     /// NOTES:
     /// This approach works but it assumes that the function swap can be called by anyone.
     /// The delegation should be needed in a context where the caller is restricted and this wouldn't work.
-    function test_ERC20TotalBalanceChangeEnforcer_nestedDelegations() public {
+    function test_ERC20MultiOperationIncreaseBalanceEnforcer_nestedDelegations() public {
         vm.prank(delegator);
         token.mint(delegatorIntegration, 100 ether);
         // Create first delegation from Alice to SwapMock allowing transfer of 1 ETH worth of token
@@ -601,7 +601,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     /**
-     * @notice Tests insufficient balance increase reverts in ERC20TotalBalanceChangeEnforcer
+     * @notice Tests insufficient balance increase reverts in ERC20MultiOperationIncreaseBalanceEnforcer
      * @dev This test verifies that the enforcer properly reverts when total balance increase requirements
      *      are not met across batched delegations. Specifically:
      *      1. Two delegations each require a 1 ETH tokenB balance increase (2 ETH total required)
@@ -610,7 +610,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
      *      4. Transaction reverts due to insufficient balance increase
      *      5. Demonstrates enforcer properly validates cumulative balance changes
      */
-    function test_ERC20TotalBalanceChangeEnforcer_revertOnInsufficientBalanceIncrease() public {
+    function test_ERC20MultiOperationIncreaseBalanceEnforcer_revertOnInsufficientBalanceIncrease() public {
         vm.prank(delegator);
         token.mint(delegatorIntegration, 100 ether);
         // Create delegation from Alice to SwapMock allowing transfer of 1 ETH worth of token
@@ -651,7 +651,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         delegations_[1] = new Delegation[](1);
         delegations_[1][0] = delegation2;
 
-        vm.expectRevert("ERC20TotalBalanceChangeEnforcer:insufficient-balance-increase");
+        vm.expectRevert("ERC20MultiOperationIncreaseBalanceEnforcer:insufficient-balance-increase");
         swapMock.swapDoubleSpend(delegations_, 1 ether, false);
     }
 
@@ -757,7 +757,7 @@ contract SwapMock is ExecutionHelper {
         executionCallDatas_[0] =
             ExecutionLib.encodeSingle(address(tokenIn), 0, abi.encodeCall(IERC20.transfer, (address(this), _amountIn)));
 
-        // If the normal ERC20TotalBalanceChangeEnforcer is used, this will revert because even when the exection is
+        // If the normal ERC20MultiOperationIncreaseBalanceEnforcer is used, this will revert because even when the exection is
         // succesful and the tokens get transferred to the SwapMock, this contract doesn't have a change to pay Alice with the
         // tokensOut.
         // Immediately after the execution the balance of Alice should increase and that can't happen here since it needs the

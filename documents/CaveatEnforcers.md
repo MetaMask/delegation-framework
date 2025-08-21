@@ -88,13 +88,13 @@ Balance Change Enforcers are ideal for:
 - Use **Total Balance Enforcers** when multiple enforcers might track the same recipient in a delegation chain
 
 
-### Total Balance Change Enforcers
+### Multi Operation Increase Balance Enforcers
 
 This includes: 
-- `ERC20TotalBalanceChangeEnforcer`
-- `ERC721TotalBalanceChangeEnforcer`
-- `ERC1155TotalBalanceChangeEnforcer`
-- `NativeTokenTotalBalanceChangeEnforcer`
+- `ERC20MultiOperationIncreaseBalanceEnforcer`
+- `ERC721MultiOperationIncreaseBalanceEnforcer`
+- `ERC1155MultiOperationIncreaseBalanceEnforcer`
+- `NativeTokenMultiOperationIncreaseBalanceEnforcer`
 
 These enforcers are introduced in parallel to the normal `Balance Change enforcers` for scenarios where we have a delegation chain where multiple instances of the same enforcer can be present. 
 
@@ -124,7 +124,7 @@ These enforcers are introduced in parallel to the normal `Balance Change enforce
 
 #### Example Scenario
 
-Consider a delegation chain with 3 instances of `ERC20TotalBalanceChangeEnforcer`:
+Consider a delegation chain with 3 instances of `ERC20MultiOperationIncreaseBalanceEnforcer`:
 - Enforcer 1: Expects an increase of at least 1000 tokens
 - Enforcer 2: Expects an increase of at least 200 tokens  
 - Enforcer 3: Expects a decrease of at most 300 tokens
