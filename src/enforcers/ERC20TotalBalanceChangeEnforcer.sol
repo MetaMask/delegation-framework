@@ -34,6 +34,7 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
         uint256 balanceBefore;
         uint256 expectedIncrease;
         uint256 expectedDecrease;
+        uint256 validationRemaining;
     }
 
     mapping(bytes32 hashKey => BalanceTracker balance) public balanceTracker;
@@ -94,6 +95,8 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
             balanceTracker_.expectedIncrease += amount_;
         }
 
+        balanceTracker_.validationRemaining++;
+
         balanceTracker[hashKey_] = balanceTracker_;
 
         emit UpdatedExpectedBalance(msg.sender, recipient_, token_, enforceDecrease_, amount_);
@@ -123,10 +126,12 @@ contract ERC20TotalBalanceChangeEnforcer is CaveatEnforcer {
         (, address token_, address recipient_,) = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, token_, recipient_);
 
-        BalanceTracker memory balanceTracker_ = balanceTracker[hashKey_];
+        balanceTracker[hashKey_].validationRemaining--;
 
-        // validation has already been made
-        if (balanceTracker_.expectedDecrease == 0 && balanceTracker_.expectedIncrease == 0) return;
+        // Only validate on the last afterAllHook if there are multiple enforcers tracking the same recipient/token pair
+        if (balanceTracker[hashKey_].validationRemaining > 0) return;
+
+        BalanceTracker memory balanceTracker_ = balanceTracker[hashKey_];
 
         uint256 currentBalance_ = IERC20(token_).balanceOf(recipient_);
         uint256 expected_;

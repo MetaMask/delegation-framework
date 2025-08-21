@@ -258,6 +258,58 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.getTermsInfo(terms_);
     }
 
+    // Validates that balance check happens in the last afterAllHook call
+    function test_balanceCheck_lastAfterAllHook() public {
+        // Terms: [flag=false, token, recipient, amount=100] - expecting balance increase
+        bytes memory terms_ = abi.encodePacked(false, address(token), address(recipient), uint256(100));
+        bytes32 hashKey_ = keccak256(abi.encode(address(dm), address(token), address(recipient)));
+
+        // First beforeAllHook call
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Check validationRemaining after first beforeAllHook
+        (,,, uint256 validationRemaining_) = enforcer.balanceTracker(hashKey_);
+        assertEq(validationRemaining_, 1, "validationRemaining should be 1 after first beforeAllHook");
+
+        // Second beforeAllHook call
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Check validationRemaining after second beforeAllHook
+        (,,, validationRemaining_) = enforcer.balanceTracker(hashKey_);
+        assertEq(validationRemaining_, 2, "validationRemaining should be 2 after second beforeAllHook");
+
+        // Mint tokens to recipient to satisfy the balance requirement (2 * 100 = 200)
+        vm.prank(delegator);
+        token.mint(recipient, 200);
+
+        // First afterAllHook call - should not trigger balance check yet
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Check validationRemaining after first afterAllHook
+        (,,, validationRemaining_) = enforcer.balanceTracker(hashKey_);
+        assertEq(validationRemaining_, 1, "validationRemaining should be 1 after first afterAllHook");
+
+        // Verify balance tracker still exists (not cleaned up yet)
+        (uint256 balanceBefore_, uint256 expectedIncrease_, uint256 expectedDecrease_,) = enforcer.balanceTracker(hashKey_);
+        assertEq(balanceBefore_, 0, "balanceBefore should still be tracked");
+        assertEq(expectedIncrease_, 200, "expectedIncrease should be 200 (100 + 100)");
+        assertEq(expectedDecrease_, 0, "expectedDecrease should be 0");
+
+        // Second afterAllHook call - should trigger balance check and cleanup
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Verify balance tracker is cleaned up (deleted)
+        (balanceBefore_, expectedIncrease_, expectedDecrease_, validationRemaining_) = enforcer.balanceTracker(hashKey_);
+        assertEq(balanceBefore_, 0, "balanceBefore should be 0 after cleanup");
+        assertEq(expectedIncrease_, 0, "expectedIncrease should be 0 after cleanup");
+        assertEq(expectedDecrease_, 0, "expectedDecrease should be 0 after cleanup");
+        assertEq(validationRemaining_, 0, "validationRemaining should be 0 after cleanup");
+    }
+
     // Validates that an invalid token address (address(0)) reverts when calling beforeAllHook.
     function test_invalid_tokenAddress() public {
         bytes memory terms_ = abi.encodePacked(false, address(0), address(recipient), uint256(100));
@@ -284,7 +336,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
-        (, uint256 expectedIncrease_,) = enforcer.balanceTracker(hash_);
+        (, uint256 expectedIncrease_,,) = enforcer.balanceTracker(hash_);
         assertEq(expectedIncrease_, 100);
 
         vm.prank(delegator);
@@ -292,7 +344,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(dm);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
-        (, expectedIncrease_,) = enforcer.balanceTracker(hash_);
+        (, expectedIncrease_,,) = enforcer.balanceTracker(hash_);
         assertEq(expectedIncrease_, 0);
     }
 
@@ -328,6 +380,10 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(delegator);
         token.mint(recipient, 299);
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         vm.prank(dm);
         vm.expectRevert("ERC20TotalBalanceChangeEnforcer:insufficient-balance-increase");
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
@@ -375,8 +431,9 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(recipient);
         token.transfer(delegator, 21);
         vm.prank(dm);
-        vm.expectRevert("ERC20TotalBalanceChangeEnforcer:exceeded-balance-decrease");
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        vm.prank(dm);
+        vm.expectRevert("ERC20TotalBalanceChangeEnforcer:exceeded-balance-decrease");
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
@@ -397,6 +454,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         token.mint(recipient, 90);
         vm.prank(dm);
         enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        vm.prank(dm);
         enforcer.afterAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
@@ -421,6 +479,7 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         token.transfer(delegator, 90);
         vm.prank(dm);
         enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        vm.prank(dm);
         enforcer.afterAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
@@ -440,8 +499,9 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(delegator);
         token.mint(recipient, 89);
         vm.prank(dm);
-        vm.expectRevert("ERC20TotalBalanceChangeEnforcer:insufficient-balance-increase");
         enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        vm.prank(dm);
+        vm.expectRevert("ERC20TotalBalanceChangeEnforcer:insufficient-balance-increase");
         enforcer.afterAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
@@ -465,8 +525,9 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(recipient);
         token.transfer(delegator, 91);
         vm.prank(dm);
-        vm.expectRevert("ERC20TotalBalanceChangeEnforcer:exceeded-balance-decrease");
         enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+        vm.prank(dm);
+        vm.expectRevert("ERC20TotalBalanceChangeEnforcer:exceeded-balance-decrease");
         enforcer.afterAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
@@ -505,19 +566,18 @@ contract ERC20TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(delegator);
         token.mint(recipient, 200);
 
-        // First afterAllHook - should emit ValidatedBalance
-        vm.expectEmit(true, true, true, true);
-        emit ERC20TotalBalanceChangeEnforcer.ValidatedBalance(dm, recipient, address(token), 200);
-
-        vm.prank(dm);
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
-
-        // Second afterAllHook - should not emit any events
+        // First afterAllHook - should not emit any events
         vm.recordLogs();
         vm.prank(dm);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
         Vm.Log[] memory afterAllLogs = vm.getRecordedLogs();
         assertEq(afterAllLogs.length, 0, "Should not emit any events");
+
+        // Second  afterAllHook - should emit ValidatedBalance
+        vm.prank(dm);
+        vm.expectEmit(true, true, true, true);
+        emit ERC20TotalBalanceChangeEnforcer.ValidatedBalance(dm, recipient, address(token), 200);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Test events for decrease scenario
