@@ -43,11 +43,10 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     ////////////////////// Basic Functionality //////////////////////
 
     // Validates the terms get decoded correctly.
-    // Terms format: [bool shouldBalanceIncrease, address token, address recipient, uint256 tokenId, uint256 amount]
+    // Terms format: [address token, address recipient, uint256 tokenId, uint256 amount]
     function test_decodedTheTerms() public {
-        bytes memory terms_ = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(100));
+        bytes memory terms_ = abi.encodePacked(address(token), address(delegator), uint256(tokenId), uint256(100));
         ERC1155TotalBalanceChangeEnforcer.TermsData memory termsData_ = enforcer.getTermsInfo(terms_);
-        assertEq(termsData_.enforceDecrease, true);
         assertEq(termsData_.token, address(token));
         assertEq(termsData_.recipient, delegator);
         assertEq(termsData_.tokenId, tokenId);
@@ -70,7 +69,7 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     // Validates that a balance has increased at least by the expected amount.
     function test_allow_ifBalanceIncreases() public {
         // Expect increase by at least 100.
-        bytes memory terms_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(100));
+        bytes memory terms_ = abi.encodePacked(address(token), address(delegator), uint256(tokenId), uint256(100));
 
         // Increase by 100.
         vm.prank(dm);
@@ -89,44 +88,6 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
 
-    ////////////////////// Errors //////////////////////
-
-    // Reverts if a balance hasn't increased by the set amount.
-    function test_notAllow_insufficientIncrease() public {
-        // Expect increase by at least 100.
-        bytes memory terms_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(100));
-
-        // Increase by 10 only, expect revert.
-        vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-        vm.prank(delegator);
-        token.mint(delegator, tokenId, 10, "");
-        vm.prank(dm);
-        vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:insufficient-balance-increase"));
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-    }
-
-    // Reverts if a balance decreases in between the hooks.
-    function test_notAllow_ifBalanceDecreases() public {
-        // Starting with 10 tokens.
-        vm.prank(delegator);
-        token.mint(delegator, tokenId, 10, "");
-
-        // Expect increase by at least 100.
-        bytes memory terms_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(100));
-
-        vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-
-        // Decrease balance by transferring tokens away.
-        vm.prank(delegator);
-        token.safeTransferFrom(delegator, address(1), tokenId, 10, "");
-
-        vm.prank(dm);
-        vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:insufficient-balance-increase"));
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-    }
-
     // Allows checking the balance of different recipients.
     function test_allow_withDifferentRecipients() public {
         address[] memory recipients_ = new address[](2);
@@ -135,7 +96,7 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
         for (uint256 i = 0; i < recipients_.length; i++) {
             address currentRecipient_ = recipients_[i];
-            bytes memory terms_ = abi.encodePacked(false, address(token), currentRecipient_, uint256(tokenId), uint256(100));
+            bytes memory terms_ = abi.encodePacked(address(token), address(currentRecipient_), uint256(tokenId), uint256(100));
 
             // Increase by 100 for each recipient.
             vm.prank(dm);
@@ -147,6 +108,21 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         }
     }
 
+    // Reverts if a balance hasn't increased by the set amount.
+    function test_notAllow_insufficientIncrease() public {
+        // Expect increase by at least 100.
+        bytes memory terms_ = abi.encodePacked(address(token), address(delegator), uint256(tokenId), uint256(100));
+
+        // Increase by 10 only, expect revert.
+        vm.prank(dm);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        vm.prank(delegator);
+        token.mint(delegator, tokenId, 10, "");
+        vm.prank(dm);
+        vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:insufficient-balance-increase"));
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+    }
+
     // Considers any pre-existing balances in the recipient.
     function test_notAllow_withPreExistingBalance() public {
         // Recipient already has 50 tokens.
@@ -154,7 +130,7 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         token.mint(delegator, tokenId, 50, "");
 
         // Expect balance to increase by at least 100.
-        bytes memory terms_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(100));
+        bytes memory terms_ = abi.encodePacked(address(token), address(delegator), uint256(tokenId), uint256(100));
 
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
@@ -168,22 +144,40 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
 
-    // Reverts if balance changes between beforeAllHook calls for the same recipient/token pair
-    function test_notAllow_balanceChangedBetweenBeforeAllHookCalls() public {
-        bytes memory terms_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(100));
+    // Validates that balance changes between beforeAllHook calls are allowed and validated in the last afterAllHook call
+    function test_allow_balanceChangedBetweenBeforeAllHookCalls() public {
+        bytes memory terms_ = abi.encodePacked(address(token), address(delegator), uint256(tokenId), uint256(100));
 
-        // First beforeAllHook call - caches the initial balance
+        // First beforeAllHook call - caches the initial balance - First delegation: delegator == recipient
         vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
 
-        // Modify the recipient's balance between beforeAllHook calls
+        // Modify the recipient's balance between beforeAllHook calls - this should be allowed
         vm.prank(delegator);
         token.mint(delegator, tokenId, 50, "");
 
-        // Second beforeAllHook call - should revert because balance changed
+        // Second beforeAllHook call - should now succeed and track the new balance (delegator == recipient for aggregation)
         vm.prank(dm);
-        vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:balance-changed"));
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Verify that the balance tracker is properly updated
+        bytes32 hashKey_ = keccak256(abi.encode(address(dm), address(token), address(delegator), tokenId));
+        (uint256 balanceBefore_, uint256 expectedIncrease_, uint256 validationRemaining_) = enforcer.balanceTracker(hashKey_);
+        assertEq(balanceBefore_, 0, "balanceBefore should be same as initial balance");
+        assertEq(expectedIncrease_, 200, "expectedIncrease should be 200 (100 + 100)");
+        assertEq(validationRemaining_, 2, "validationRemaining should be 2");
+
+        // Mint additional tokens to satisfy the total requirement (already have 50, need 150 more)
+        vm.prank(delegator);
+        token.mint(delegator, tokenId, 150, "");
+
+        // First afterAllHook call - should not trigger balance check yet
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+
+        // Second afterAllHook call - should trigger balance check and cleanup
+        vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
     }
 
     // Differentiates delegation hash with different recipients.
@@ -191,8 +185,8 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         bytes32 delegationHash_ = bytes32(uint256(99999999));
         address recipient2_ = address(1111111);
         // Terms for two different recipients.
-        bytes memory terms1_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(100));
-        bytes memory terms2_ = abi.encodePacked(false, address(token), recipient2_, uint256(tokenId), uint256(100));
+        bytes memory terms1_ = abi.encodePacked(address(token), address(delegator), uint256(tokenId), uint256(100));
+        bytes memory terms2_ = abi.encodePacked(address(token), recipient2_, uint256(tokenId), uint256(100));
 
         vm.prank(dm);
         enforcer.beforeAllHook(terms1_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
@@ -222,82 +216,33 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.afterAllHook(terms2_, hex"", singleDefaultMode, mintExecutionCallData, delegationHash_, address(0), delegate);
     }
 
-    ////////////////////// Decrease Tests //////////////////////
-
-    // Validates that a balance decrease within the allowed range passes.
-    // For decrease scenarios (flag = true), the final balance must be at least the cached balance minus the allowed decrease.
-    function test_allow_ifBalanceDoesNotDecreaseTooMuch() public {
-        // Mint 100 tokens to delegator.
-        vm.prank(delegator);
-        token.mint(delegator, tokenId, 100, "");
-        // Confirm initial balance.
-        uint256 initialBalance_ = token.balanceOf(delegator, tokenId);
-        assertEq(initialBalance_, 100);
-
-        // Set terms with flag = true (decrease expected), allowed decrease is 20.
-        bytes memory terms_ = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(20));
-
-        vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-
-        // Remove 10 tokens: final balance becomes 90, which is >= 100 - 20 = 80.
-        vm.prank(delegator);
-        token.safeTransferFrom(delegator, address(2), tokenId, 10, "");
-
-        vm.prank(dm);
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-    }
-
-    // Reverts if the balance decreases too much (i.e. final balance falls below cached balance - allowed amount).
-    function test_notAllow_excessiveDecrease() public {
-        // Mint 100 tokens to delegator.
-        vm.prank(delegator);
-        token.mint(delegator, tokenId, 100, "");
-        uint256 initialBalance_ = token.balanceOf(delegator, tokenId);
-        assertEq(initialBalance_, 100);
-
-        // Set terms with flag = true (decrease expected), allowed decrease is 20.
-        bytes memory terms_ = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(20));
-
-        vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-
-        // Remove 30 tokens: final balance becomes 70, which is below 100 - 20 = 80.
-        vm.prank(delegator);
-        token.safeTransferFrom(delegator, address(3), tokenId, 30, "");
-
-        vm.prank(dm);
-        vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:exceeded-balance-decrease"));
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-    }
-
     ////////////////////// Invalid Terms Tests //////////////////////
 
-    // Validates that the terms are well-formed (exactly 105 bytes).
+    // Validates that the terms are well-formed (exactly 104 bytes).
     function test_invalid_decodedTheTerms() public {
         bytes memory terms_;
 
-        // Too small: missing required bytes (no boolean flag, etc.).
-        terms_ = abi.encodePacked(address(token), address(delegator), uint256(tokenId), uint256(100));
+        // Too small: missing required bytes (should be 104 bytes)
+        terms_ = abi.encodePacked(address(token), address(delegator), uint256(tokenId));
         vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
 
-        // Too large: extra bytes appended.
-        terms_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(100), uint256(1));
+        // Too large: extra bytes beyond 104
+        terms_ = abi.encodePacked(address(token), address(delegator), uint256(tokenId), uint256(100), uint256(1));
         vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:invalid-terms-length"));
         enforcer.getTermsInfo(terms_);
     }
 
     // Validates that an invalid token address causes a revert.
     function test_invalid_tokenAddress() public {
-        bytes memory terms_ = abi.encodePacked(false, address(0), address(delegator), uint256(tokenId), uint256(100));
+        bytes memory terms_ = abi.encodePacked(address(0), address(delegator), uint256(tokenId), uint256(100));
         vm.expectRevert();
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
 
     // Reverts if an unrealistic amount triggers overflow.
     function test_notAllow_expectingOverflow() public {
-        bytes memory terms_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), type(uint256).max);
+        bytes memory terms_ = abi.encodePacked(address(token), address(delegator), uint256(tokenId), type(uint256).max);
 
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
@@ -309,7 +254,7 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
 
     // Reverts if amount is 0
     function test_revertWithZeroAmount() public {
-        bytes memory terms_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(0));
+        bytes memory terms_ = abi.encodePacked(address(token), address(delegator), uint256(tokenId), uint256(0));
         vm.prank(address(dm));
         vm.expectRevert("ERC1155TotalBalanceChangeEnforcer:zero-expected-change-amount");
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
@@ -322,7 +267,7 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     // increase of at least 200.
     function test_multiple_enforcers_insufficient_increase() public {
         // Expect increase by at least 100.
-        bytes memory terms_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(100));
+        bytes memory terms_ = abi.encodePacked(address(token), address(delegator), uint256(tokenId), uint256(100));
 
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
@@ -333,83 +278,11 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         token.mint(delegator, tokenId, 199, "");
 
         vm.prank(dm);
+        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+
+        vm.prank(dm);
         vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:insufficient-balance-increase"));
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-    }
-
-    // Reverts if the total balance decrease is excessive with multiple enforcers.
-    // We are running 2 enforcers in the delegation chain: both decreasing by 100. Total expected balance change is a
-    // decrease of at most 200.
-    function test_multiple_enforcers_excessive_decrease() public {
-        vm.prank(delegator);
-        token.mint(delegator, tokenId, 300, "");
-
-        // Expect decrease of max 100.
-        bytes memory terms_ = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(100));
-
-        vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-        vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-
-        // decrease by more then 200
-        vm.prank(delegator);
-        token.safeTransferFrom(delegator, address(2), tokenId, 201, "");
-
-        vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:exceeded-balance-decrease"));
-        vm.prank(dm);
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-    }
-
-    // Reverts if the total balance increase is insufficient with multiple enforcers.
-    // We are running 3 enforcers in the delegation chain: 2 increasing and 1 decreasing. Total expected balance change is an
-    // increase of at least 100.
-    function test_mixed_enforcers_insufficient_increase() public {
-        // Decrease by 100
-        bytes memory termsDecrease_ = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(100));
-        // Increase by 100
-        bytes memory termsIncrease_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(100));
-
-        vm.prank(dm);
-        enforcer.beforeAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-        vm.prank(dm);
-        enforcer.beforeAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-        vm.prank(dm);
-        enforcer.beforeAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-
-        vm.prank(delegator);
-        token.mint(delegator, tokenId, 99, "");
-
-        vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:insufficient-balance-increase"));
-        vm.prank(dm);
-        enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-    }
-
-    // Reverts if the total balance decrease is excessive with multiple enforcers.
-    // We are running 3 enforcers in the delegation chain: 1 increasing and 2 decreasing. Total expected balance change is an
-    // decrease of at most 100.
-    function test_mixed_enforcers_excessive_decrease() public {
-        vm.prank(delegator);
-        token.mint(delegator, tokenId, 300, "");
-
-        // Decrease by 100
-        bytes memory termsDecrease_ = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(100));
-        // Increase by 100
-        bytes memory termsIncrease_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(100));
-
-        vm.prank(dm);
-        enforcer.beforeAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-        vm.prank(dm);
-        enforcer.beforeAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-        vm.prank(dm);
-        enforcer.beforeAllHook(termsDecrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-
-        vm.prank(delegator);
-        token.safeTransferFrom(delegator, address(2), tokenId, 101, "");
-
-        vm.expectRevert(bytes("ERC1155TotalBalanceChangeEnforcer:exceeded-balance-decrease"));
-        vm.prank(dm);
-        enforcer.afterAllHook(termsIncrease_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
 
     ////////////////////////////// Check events //////////////////////////////
@@ -417,13 +290,14 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
     // Validates that the events are emitted correctly for an increase scenario.
     function test_events_emitted_correctly() public {
         // Increase by 100
-        bytes memory terms_ = abi.encodePacked(false, address(token), address(delegator), uint256(tokenId), uint256(100));
+        bytes memory terms_ = abi.encodePacked(address(token), address(delegator), uint256(tokenId), uint256(100));
 
         // First beforeAllHook - should emit TrackedBalance and UpdatedExpectedBalance
         vm.expectEmit(true, true, true, true);
         emit ERC1155TotalBalanceChangeEnforcer.TrackedBalance(dm, delegator, address(token), tokenId, 0);
         vm.expectEmit(true, true, true, true);
-        emit ERC1155TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, delegator, address(token), tokenId, false, 100);
+        emit ERC1155TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, delegator, address(token), tokenId, 100);
+
         vm.prank(dm);
         enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
 
@@ -435,52 +309,24 @@ contract ERC1155TotalBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(logs.length, 1, "Should only emit one event");
 
         // Verify it's the UpdatedExpectedBalance event
-        assertEq(logs[0].topics[0], keccak256("UpdatedExpectedBalance(address,address,address,uint256,bool,uint256)"));
+        assertEq(logs[0].topics[0], keccak256("UpdatedExpectedBalance(address,address,address,uint256,uint256)"));
         assertEq(logs[0].topics[1], bytes32(uint256(uint160(dm)))); // delegationManager
         assertEq(logs[0].topics[2], bytes32(uint256(uint160(address(delegator))))); // recipient
         assertEq(logs[0].topics[3], bytes32(uint256(uint160(address(token))))); // token
 
-        // mint 2 tokens
         vm.prank(delegator);
         token.mint(delegator, tokenId, 200, "");
 
-        // First afterAllHook - should emit ValidatedBalance
-        vm.expectEmit(true, true, true, true);
-        emit ERC1155TotalBalanceChangeEnforcer.ValidatedBalance(dm, delegator, address(token), tokenId, 200);
-        vm.prank(dm);
-        enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-
-        // Second afterAllHook should not emit anything
+        // First afterAllHook - should not emit anything
         vm.recordLogs();
         vm.prank(dm);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
         logs = vm.getRecordedLogs();
         assertEq(logs.length, 0, "Should not emit any events");
-    }
 
-    // Validates that the events are emitted correctly for a decrease scenario.
-    function test_events_emitted_correctly_with_decrease() public {
-        // Mint 100 tokens to delegator.
-        vm.prank(delegator);
-        token.mint(delegator, tokenId, 100, "");
-
-        // Decrease by 100
-        bytes memory terms_ = abi.encodePacked(true, address(token), address(delegator), uint256(tokenId), uint256(100));
-
-        // beforeAllHook - should emit TrackedBalance and UpdatedExpectedBalance
+        // Second afterAllHook - should emit ValidatedBalance
         vm.expectEmit(true, true, true, true);
-        emit ERC1155TotalBalanceChangeEnforcer.TrackedBalance(dm, delegator, address(token), tokenId, 100);
-        vm.expectEmit(true, true, true, true);
-        emit ERC1155TotalBalanceChangeEnforcer.UpdatedExpectedBalance(dm, delegator, address(token), tokenId, true, 100);
-        vm.prank(dm);
-        enforcer.beforeAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
-
-        vm.prank(delegator);
-        token.safeTransferFrom(delegator, address(2), tokenId, 50, "");
-
-        // afterAllHook - should emit ValidatedBalance
-        vm.expectEmit(true, true, true, true);
-        emit ERC1155TotalBalanceChangeEnforcer.ValidatedBalance(dm, delegator, address(token), tokenId, 100);
+        emit ERC1155TotalBalanceChangeEnforcer.ValidatedBalance(dm, delegator, address(token), tokenId, 200);
         vm.prank(dm);
         enforcer.afterAllHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
     }
