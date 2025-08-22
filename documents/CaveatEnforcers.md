@@ -102,13 +102,13 @@ Stated more simply when you want to enforce an outcome of a batch delegation.
 #### When to Use Multi Operation Increase Balance Enforcers
 
 **✅ Use Multi Operation Increase Balance Enforcers when:**
-- You have a **single complex transaction** that requires multiple steps
+- You have a **complex transaction** that requires multiple steps
 - Multiple delegations need to **coordinate** to achieve a shared goal
 - You want to **accumulate** balance increase requirements across the entire delegation chain
 - You need to verify the **final end state** of the recipient after all steps complete
 
 **❌ Do NOT use Multi Operation Increase Balance Enforcers when:**
-- You want **independent, per-delegation constraints**(non-aggregating semantics)
+- You want **independent, per-delegation constraints** (non-aggregating semantics)
 - You need progressive restrictions (e.g., “max 100 ETH” then “max 50 ETH”)
 - You want the **strictest constraint** to win (these enforcers aggregate increases rather than picking the minimum)
 - You need to enforce **decreases** or **loss limits**
@@ -121,7 +121,7 @@ Stated more simply when you want to enforce an outcome of a batch delegation.
 
 1. **Redemption-wide tracking**: Balance is tracked from the first `beforeAllHook` to the last `afterAllHook` for a given state key. The state key is defined by the recipient; for token-based variants it also includes the token address, and for ERC1155 it additionally includes the token ID. The state is scoped to the current `DelegationManager`. Any balance changes that happen between these hooks including those from other enforcers (even ones that update state in `afterAllHook`, like `NativeTokenPaymentEnforcer`, though mixing with it is discouraged) are counted in the final validation.
 
-2. **Initialization rule**: The first enforcer that starts tracking can be created by any account in the delegation chain. There is no requirement that the delegator must equal the recipient.
+2. **Initialization rule**: The first enforcer that starts tracking can be created by any account in the delegation chain.
 
 3. **Aggregation behavior**: All enforcers in the delegation chain that target the same state key will aggregate their expected amounts, regardless of who the delegator is. The overall value becomes more restrictive (higher total balance requirement) as more enforcers are added to the chain.
 
@@ -131,7 +131,7 @@ Stated more simply when you want to enforce an outcome of a batch delegation.
 
 #### How It Works
 
-1. **Initialization**: The first enforcer in the chain caches the initial balance for the state key, regardless of who the delegator is.
+1. **Initialization**: The first enforcer in the chain caches the initial balance for the state key.
 
 2. **Accumulation**: All enforcers in the delegation chain that target the same state key accumulate their expected amounts, making the overall requirement more restrictive.
 
