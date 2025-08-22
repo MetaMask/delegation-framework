@@ -14,13 +14,13 @@ import { ModeCode } from "../utils/Types.sol";
  * @dev This enforcer operates in delegation chains where multiple delegations may affect the same recipient/token pair.
  * State is shared between enforcers watching the same recipient/token pair and is cleared after transaction execution.
  *
- * @dev Only operates in default execution mode
+ * @dev Only operates in default execution mode,
  *
  * @dev Security considerations:
- * - State is shared between enforcers watching the same recipient/token pair
- * - Balance changes are tracked by comparing first beforeAll/last afterAll balances in batch delegations
+ * - State is shared between enforcers watching the same recipient/token pair,
+ * - Balance changes are tracked by comparing first beforeAll/last afterAll balances in batch delegations,
  * - If the delegate is an EOA and not a DeleGator in multi-delegation scenarios, use an adapter contract
- *   like DelegationMetaSwapAdapter.sol to redeem delegations
+ *   like DelegationMetaSwapAdapter.sol to redeem delegations,
  * - If there are multiple instances of this enforcer tracking the same recipient/token pair inside a redemption the
  *   balance increase will be aggregated.
  */
