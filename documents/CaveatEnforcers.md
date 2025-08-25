@@ -104,7 +104,7 @@ Stated more simply when you want to enforce an outcome of a batch delegation.
 **✅ Use Multi Operation Increase Balance Enforcers when:**
 - You have a **complex transaction** that requires multiple steps
 - Multiple delegations need to **coordinate** to achieve a shared goal
-- You want to **accumulate** balance increase requirements across the entire delegation chain
+- You want to **accumulate** balance increase requirements across the entire redemption flow
 - You need to verify the **final end state** of the recipient after all steps complete
 
 **❌ Do NOT use Multi Operation Increase Balance Enforcers when:**
