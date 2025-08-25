@@ -7,31 +7,31 @@ import { CaveatEnforcer } from "./CaveatEnforcer.sol";
 import { ModeCode } from "../utils/Types.sol";
 
 /**
- * @title ERC1155TotalBalanceChangeEnforcer
- * @notice Enforces that a recipient's token balance increases by at least the expected total amount across multiple delegations
- * or decreases by at most the expected total amount across multiple delegations. In a delegation chain, there can be a combination
- * of both increases and decreases, and the enforcer will track the total expected change.
- * @dev Tracks initial balance and accumulates expected increases and decreases per recipient/token pair within a redemption
- * @dev This enforcer operates only in default execution mode.
+ * @title ERC1155MultiOperationIncreaseBalanceEnforcer
+ * @notice Enforces that a recipient's token balance increases by at least the expected amount across multiple delegations.
+ * Tracks balance changes from the first beforeAllHook call to the last afterAllHook call within a redemption.
+ *
+ * @dev This enforcer operates in delegation chains where multiple delegations may affect the same recipient/token/tokenId pair.
+ * State is shared between enforcers watching the same recipient/token/tokenId pair and is cleared after transaction execution.
+ *
+ * @dev Only operates in default execution mode.
+ *
  * @dev Security considerations:
- * - State is shared between enforcers watching the same recipient/token pair. After transaction execution, the state is cleared.
- * - Balance changes are tracked by comparing beforeAll/afterAll balances.
- * - If the delegate is an EOA and not a DeleGator in a situation with multiple delegations, an adapter contract can be used to
- * redeem delegations. An example of this is the src/helpers/DelegationMetaSwapAdapter.sol contract.
+ * - State is shared between enforcers watching the same recipient/token/tokenId pair.
+ * - Balance changes are tracked by comparing first beforeAll/last afterAll balances in batch delegations.
+ * - If the delegate is an EOA and not a DeleGator in multi-delegation scenarios, use an adapter contract
+ *   like DelegationMetaSwapAdapter.sol to redeem delegations.
+ * - If there are multiple instances of this enforcer tracking the same recipient/token/tokenId pair inside a redemption the
+ *   balance increase will be aggregated.
  */
-contract ERC1155TotalBalanceChangeEnforcer is CaveatEnforcer {
+contract ERC1155MultiOperationIncreaseBalanceEnforcer is CaveatEnforcer {
     ////////////////////////////// Events //////////////////////////////
 
     event TrackedBalance(
         address indexed delegationManager, address indexed recipient, address indexed token, uint256 tokenId, uint256 balance
     );
     event UpdatedExpectedBalance(
-        address indexed delegationManager,
-        address indexed recipient,
-        address indexed token,
-        uint256 tokenId,
-        bool enforceDecrease,
-        uint256 expected
+        address indexed delegationManager, address indexed recipient, address indexed token, uint256 tokenId, uint256 expected
     );
     event ValidatedBalance(
         address indexed delegationManager, address indexed recipient, address indexed token, uint256 tokenId, uint256 expected
@@ -42,11 +42,10 @@ contract ERC1155TotalBalanceChangeEnforcer is CaveatEnforcer {
     struct BalanceTracker {
         uint256 balanceBefore;
         uint256 expectedIncrease;
-        uint256 expectedDecrease;
+        uint256 validationRemaining;
     }
 
     struct TermsData {
-        bool enforceDecrease;
         address token;
         address recipient;
         uint256 tokenId;
@@ -73,13 +72,11 @@ contract ERC1155TotalBalanceChangeEnforcer is CaveatEnforcer {
 
     /**
      * @notice This function caches the recipient's ERC1155 token balance before the delegation is executed.
-     * @param _terms 105 bytes where:
-     * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
-     * - next 20 bytes: address of the ERC1155 token
+     * @param _terms 104 bytes where:
+     * - first 20 bytes: address of the ERC1155 token
      * - next 20 bytes: address of the recipient
      * - next 32 bytes: token ID
-     * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
-     * enforceDecrease)
+     * - next 32 bytes: balance change guardrail amount (i.e., minimum increase)
      * @param _mode The execution mode. (Must be Default execType)
      */
     function beforeAllHook(
@@ -96,40 +93,31 @@ contract ERC1155TotalBalanceChangeEnforcer is CaveatEnforcer {
         onlyDefaultExecutionMode(_mode)
     {
         TermsData memory terms_ = getTermsInfo(_terms);
-        require(terms_.amount > 0, "ERC1155TotalBalanceChangeEnforcer:zero-expected-change-amount");
+        require(terms_.amount > 0, "ERC1155MultiOperationIncreaseBalanceEnforcer:zero-expected-change-amount");
         bytes32 hashKey_ = _getHashKey(msg.sender, terms_.token, terms_.recipient, terms_.tokenId);
         uint256 balance_ = IERC1155(terms_.token).balanceOf(terms_.recipient, terms_.tokenId);
         BalanceTracker memory balanceTracker_ = balanceTracker[hashKey_];
 
-        if (balanceTracker_.expectedIncrease == 0 && balanceTracker_.expectedDecrease == 0) {
+        if (balanceTracker_.expectedIncrease == 0) {
             balanceTracker_.balanceBefore = balance_;
             emit TrackedBalance(msg.sender, terms_.recipient, terms_.token, terms_.tokenId, balance_);
-        } else {
-            require(balanceTracker_.balanceBefore == balance_, "ERC1155TotalBalanceChangeEnforcer:balance-changed");
         }
 
-        if (terms_.enforceDecrease) {
-            balanceTracker_.expectedDecrease += terms_.amount;
-        } else {
-            balanceTracker_.expectedIncrease += terms_.amount;
-        }
+        balanceTracker_.expectedIncrease += terms_.amount;
+        balanceTracker_.validationRemaining++;
 
         balanceTracker[hashKey_] = balanceTracker_;
 
-        emit UpdatedExpectedBalance(
-            msg.sender, terms_.recipient, terms_.token, terms_.tokenId, terms_.enforceDecrease, terms_.amount
-        );
+        emit UpdatedExpectedBalance(msg.sender, terms_.recipient, terms_.token, terms_.tokenId, terms_.amount);
     }
 
     /**
-     * @notice This function enforces that the recipient's ERC1155 token balance has changed by the expected amount.
-     * @param _terms 105 bytes where:
-     * - first byte: boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00)
-     * - next 20 bytes: address of the ERC1155 token
+     * @notice This function validates that the recipient's token balance has changed within expected limits.
+     * @param _terms 104 bytes where:
+     * - first 20 bytes: address of the ERC1155 token
      * - next 20 bytes: address of the recipient
      * - next 32 bytes: token ID
-     * - next 32 bytes: balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
-     * enforceDecrease)
+     * - next 32 bytes: balance change guardrail amount (i.e., minimum increase)
      */
     function afterAllHook(
         bytes calldata _terms,
@@ -146,51 +134,41 @@ contract ERC1155TotalBalanceChangeEnforcer is CaveatEnforcer {
         TermsData memory terms_ = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, terms_.token, terms_.recipient, terms_.tokenId);
 
-        BalanceTracker memory balanceTracker_ = balanceTracker[hashKey_];
+        balanceTracker[hashKey_].validationRemaining--;
 
-        // already validated
-        if (balanceTracker_.expectedIncrease == 0 && balanceTracker_.expectedDecrease == 0) return;
+        // Only validate on the last afterAllHook if there are multiple enforcers tracking the same recipient/token/tokenId pair
+        if (balanceTracker[hashKey_].validationRemaining > 0) return;
+
+        BalanceTracker memory balanceTracker_ = balanceTracker[hashKey_];
 
         uint256 balance_ = IERC1155(terms_.token).balanceOf(terms_.recipient, terms_.tokenId);
 
-        uint256 expected_;
-        if (balanceTracker_.expectedIncrease >= balanceTracker_.expectedDecrease) {
-            expected_ = balanceTracker_.expectedIncrease - balanceTracker_.expectedDecrease;
-            require(
-                balance_ >= balanceTracker_.balanceBefore + expected_,
-                "ERC1155TotalBalanceChangeEnforcer:insufficient-balance-increase"
-            );
-        } else {
-            expected_ = balanceTracker_.expectedDecrease - balanceTracker_.expectedIncrease;
-            require(
-                balance_ >= balanceTracker_.balanceBefore - expected_, "ERC1155TotalBalanceChangeEnforcer:exceeded-balance-decrease"
-            );
-        }
+        require(
+            balance_ >= balanceTracker_.balanceBefore + balanceTracker_.expectedIncrease,
+            "ERC1155MultiOperationIncreaseBalanceEnforcer:insufficient-balance-increase"
+        );
+
+        emit ValidatedBalance(msg.sender, terms_.recipient, terms_.token, terms_.tokenId, balanceTracker_.expectedIncrease);
 
         delete balanceTracker[hashKey_];
-
-        emit ValidatedBalance(msg.sender, terms_.recipient, terms_.token, terms_.tokenId, expected_);
     }
 
     /**
      * @notice Decodes the terms used in this CaveatEnforcer.
      * @param _terms Encoded data that is used during the execution hooks.
      * @return TermsData Struct that consists of:
-     * - enforceDecrease_ Boolean indicating if the balance should decrease (true | 0x01) or increase (false | 0x00).
      * - token_ The address of the ERC1155 token.
      * - recipient_ The address of the recipient of the token.
      * - tokenId_ The ID of the ERC1155 token.
-     * - amount_ Balance change guardrail amount (i.e., minimum increase OR maximum decrease, depending on
-     * enforceDecrease)
+     * - amount_ Balance change guardrail amount (i.e., minimum increase)
      */
     function getTermsInfo(bytes calldata _terms) public pure returns (TermsData memory) {
-        require(_terms.length == 105, "ERC1155TotalBalanceChangeEnforcer:invalid-terms-length");
+        require(_terms.length == 104, "ERC1155MultiOperationIncreaseBalanceEnforcer:invalid-terms-length");
         return TermsData({
-            enforceDecrease: _terms[0] != 0,
-            token: address(bytes20(_terms[1:21])),
-            recipient: address(bytes20(_terms[21:41])),
-            tokenId: uint256(bytes32(_terms[41:73])),
-            amount: uint256(bytes32(_terms[73:]))
+            token: address(bytes20(_terms[:20])),
+            recipient: address(bytes20(_terms[20:40])),
+            tokenId: uint256(bytes32(_terms[40:72])),
+            amount: uint256(bytes32(_terms[72:]))
         });
     }
 

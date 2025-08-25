@@ -38,10 +38,11 @@ import { RedeemerEnforcer } from "../src/enforcers/RedeemerEnforcer.sol";
 import { SpecificActionERC20TransferBatchEnforcer } from "../src/enforcers/SpecificActionERC20TransferBatchEnforcer.sol";
 import { TimestampEnforcer } from "../src/enforcers/TimestampEnforcer.sol";
 import { ValueLteEnforcer } from "../src/enforcers/ValueLteEnforcer.sol";
-import { ERC20TotalBalanceChangeEnforcer } from "../src/enforcers/ERC20TotalBalanceChangeEnforcer.sol";
-import { ERC721TotalBalanceChangeEnforcer } from "../src/enforcers/ERC721TotalBalanceChangeEnforcer.sol";
-import { ERC1155TotalBalanceChangeEnforcer } from "../src/enforcers/ERC1155TotalBalanceChangeEnforcer.sol";
-import { NativeTokenTotalBalanceChangeEnforcer } from "../src/enforcers/NativeTokenTotalBalanceChangeEnforcer.sol";
+import { ERC20MultiOperationIncreaseBalanceEnforcer } from "../src/enforcers/ERC20MultiOperationIncreaseBalanceEnforcer.sol";
+import { ERC721MultiOperationIncreaseBalanceEnforcer } from "../src/enforcers/ERC721MultiOperationIncreaseBalanceEnforcer.sol";
+import { ERC1155MultiOperationIncreaseBalanceEnforcer } from "../src/enforcers/ERC1155MultiOperationIncreaseBalanceEnforcer.sol";
+import { NativeTokenMultiOperationIncreaseBalanceEnforcer } from
+    "../src/enforcers/NativeTokenMultiOperationIncreaseBalanceEnforcer.sol";
 
 /**
  * @title DeployCaveatEnforcers
@@ -170,17 +171,17 @@ contract DeployCaveatEnforcers is Script {
         deployedAddress = address(new ValueLteEnforcer{ salt: salt }());
         console2.log("ValueLteEnforcer: %s", deployedAddress);
 
-        deployedAddress = address(new ERC20TotalBalanceChangeEnforcer{ salt: salt }());
-        console2.log("ERC20TotalBalanceChangeEnforcer: %s", deployedAddress);
+        deployedAddress = address(new ERC20MultiOperationIncreaseBalanceEnforcer{ salt: salt }());
+        console2.log("ERC20MultiOperationIncreaseBalanceEnforcer: %s", deployedAddress);
 
-        deployedAddress = address(new ERC721TotalBalanceChangeEnforcer{ salt: salt }());
-        console2.log("ERC721TotalBalanceChangeEnforcer: %s", deployedAddress);
+        deployedAddress = address(new ERC721MultiOperationIncreaseBalanceEnforcer{ salt: salt }());
+        console2.log("ERC721MultiOperationIncreaseBalanceEnforcer: %s", deployedAddress);
 
-        deployedAddress = address(new ERC1155TotalBalanceChangeEnforcer{ salt: salt }());
-        console2.log("ERC1155TotalBalanceChangeEnforcer: %s", deployedAddress);
+        deployedAddress = address(new ERC1155MultiOperationIncreaseBalanceEnforcer{ salt: salt }());
+        console2.log("ERC1155MultiOperationIncreaseBalanceEnforcer: %s", deployedAddress);
 
-        deployedAddress = address(new NativeTokenTotalBalanceChangeEnforcer{ salt: salt }());
-        console2.log("NativeTokenTotalBalanceChangeEnforcer: %s", deployedAddress);
+        deployedAddress = address(new NativeTokenMultiOperationIncreaseBalanceEnforcer{ salt: salt }());
+        console2.log("NativeTokenMultiOperationIncreaseBalanceEnforcer: %s", deployedAddress);
 
         vm.stopBroadcast();
     }

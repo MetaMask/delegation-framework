@@ -85,57 +85,81 @@ Balance Change Enforcers are ideal for:
 
 **When to Use Regular vs Total Balance Enforcers**:
 - Use **Regular Balance Enforcers** for simple, single-enforcer scenarios
-- Use **Total Balance Enforcers** when multiple enforcers might track the same recipient in a delegation chain
+- Use **Multi Operation Balance Enforcers** when multiple enforcers might track the same recipient in a delegation chain
 
-
-### Total Balance Change Enforcers
+### Multi Operation Increase Balance Enforcers
 
 This includes: 
-- `ERC20TotalBalanceChangeEnforcer`
-- `ERC721TotalBalanceChangeEnforcer`
-- `ERC1155TotalBalanceChangeEnforcer`
-- `NativeTokenTotalBalanceChangeEnforcer`
+- `ERC20MultiOperationIncreaseBalanceEnforcer`
+- `ERC721MultiOperationIncreaseBalanceEnforcer`
+- `ERC1155MultiOperationIncreaseBalanceEnforcer`
+- `NativeTokenMultiOperationIncreaseBalanceEnforcer`
 
-These enforcers are introduced in parallel to the normal `Balance Change enforcers` for scenarios where we have a delegation chain where multiple instances of the same enforcer can be present. 
+Use these when multiple **increase** balance constraints may apply to the same recipient and token within a single redemption, and you need a single, coherent end-of-redemption.
+
+Stated more simply when you want to enforce an outcome of a batch delegation.
+
+#### When to Use Multi Operation Increase Balance Enforcers
+
+**✅ Use Multi Operation Increase Balance Enforcers when:**
+- You have a **complex transaction** that requires multiple steps
+- Multiple delegations need to **coordinate** to achieve a shared goal
+- You want to **accumulate** balance increase requirements across the entire redemption flow
+- You need to verify the **final end state** of the recipient after all steps complete
+
+**❌ Do NOT use Multi Operation Increase Balance Enforcers when:**
+- You want **independent, per-delegation constraints** (non-aggregating semantics)
+- You need progressive restrictions (e.g., “max 100 ETH” then “max 50 ETH”)
+- You want the **strictest constraint** to win (these enforcers aggregate increases rather than picking the minimum)
+- You need to enforce **decreases** or **loss limits**
 
 #### Key Differences from Regular Balance Change Enforcers
 
-**Regular Balance Change Enforcers** (e.g., `NativeBalanceChangeEnforcer`) track balance changes by comparing the recipient's balance before and after execution using `beforeHook` and `afterHook`. Since enforcers watching the same recipient and token share state, a single balance modification may satisfy multiple enforcers simultaneously, which can lead to unintended behavior in delegation chains.
+**Regular Balance Change Enforcers** (e.g., `NativeBalanceChangeEnforcer`) check deltas around one execution using `beforeHook`/`afterHook`. Because multiple enforcers watching the same recipient can be satisfied by the same balance movement, they are best for independent, per-delegation constraints.
 
-**Total Balance Change Enforcers** address this issue by:
+**Multi Operation Increase Balance Enforcers** are designed for coordinated multi-step flows and behave as follows:
 
-1. **Using `beforeAllHook` and `afterAllHook`**: These hooks enable proper handling of inner delegations and ensure all enforcers in the chain are processed together.
+1. **Redemption-wide tracking**: Balance is tracked from the first `beforeAllHook` to the last `afterAllHook` for a given state key. The state key is defined by the recipient; for token-based variants it also includes the token address, and for ERC1155 it additionally includes the token ID. The state is scoped to the current `DelegationManager`. Any balance changes that happen between these hooks including those from other enforcers (even ones that update state in `afterAllHook`, like `NativeTokenPaymentEnforcer`, though mixing with it is discouraged) are counted in the final validation.
 
-2. **Accumulating Expected Changes**: Each enforcer maintains a `BalanceTracker` struct that accumulates the expected increases and decreases for a specific recipient + token combination across all enforcers in the delegation chain.
+2. **Initialization rule**: The first enforcer that starts tracking can be created by any account in the delegation chain.
 
-3. **State Isolation**: The hash key is generated using the delegation manager address and recipient (plus token address and token ID for ERC1155), ensuring that different delegation managers don't interfere with each other.
+3. **Aggregation behavior**: All enforcers in the delegation chain that target the same state key will aggregate their expected amounts, regardless of who the delegator is. The overall value becomes more restrictive (higher total balance requirement) as more enforcers are added to the chain.
 
-4. **Aggregated Validation**: The final validation in `afterAllHook` combines all expected changes and validates the total net change against the actual balance change.
+4. **State scope and keying**: State is defined by the `DelegationManager` and the recipient; for ERC20/721 it also includes the token address; for ERC1155 it additionally includes the token ID. **Important**: The state key does not include the delegation hash, which means Multi Operation Increase Balance Enforcers can share state across multiple, unrelated execution call datas. Within a single redemption that performs multiple executions, different total enforcers that target the same state key will share and coordinate on the same state. State is cleared when the final `afterAllHook` for that state key runs.
+
+5. **Single final validation**: At the last `afterAllHook`, the net expected increase is computed and validated against the actual end balance.
 
 #### How It Works
 
-1. **Initialization**: When the first enforcer in a chain calls `beforeAllHook`, it records the initial balance and starts tracking expected changes.
+1. **Initialization**: The first enforcer in the chain caches the initial balance for the state key.
 
-2. **Accumulation**: Subsequent enforcers in the chain add their expected increases or decreases to the running totals.
+2. **Accumulation**: All enforcers in the delegation chain that target the same state key accumulate their expected amounts, making the overall requirement more restrictive.
 
-3. **Validation**: In `afterAllHook`, the enforcer calculates the net expected change (total increases minus total decreases) and validates that the actual balance change meets this requirement.
+3. **Validation**: After the last `afterAllHook` for the key, the final balance is checked against the total accumulated expected increase and state is cleared.
 
-4. **Cleanup**: The balance tracker is deleted after validation to prevent state pollution.
+#### Example Scenario: Coordinated Multi-Operation Transaction
 
-#### Example Scenario
+Consider a complex DeFi operation that requires multiple delegations to work together:
 
-Consider a delegation chain with 3 instances of `ERC20TotalBalanceChangeEnforcer`:
+**Delegation Chain:**
+- **Alice → Bob**: "Can execute complex DeFi operation that should increase treasury by at least 1000 tokens"
+- **Bob → Charlie**: "Can execute DeFi step 1 that should increase treasury by at least 200 tokens"  
+- **Charlie → Dave**: "Can execute DeFi step 2 that should increase treasury by at least 300 tokens"
+
+**Using Multi Operation Increase Balance Enforcers:**
 - Enforcer 1: Expects an increase of at least 1000 tokens
 - Enforcer 2: Expects an increase of at least 200 tokens  
-- Enforcer 3: Expects a decrease of at most 300 tokens
+- Enforcer 3: Expects an increase of at least 300 tokens
 
-The total balance enforcer will:
-1. Track the initial balance
-2. Accumulate expected changes: +1000 + 200 - 300 = +900
-3. Validate that the final balance has increased by at least 900 tokens
+**Result:**
+1. Track the initial treasury balance
+2. Accumulate expected increases: +1000 + 200 + 300 = +1500
+3. Validate that the final treasury balance has increased by at least 1500 tokens
 
-This ensures that the combined effect of all enforcers is properly validated, preventing scenarios where individual enforcers might be satisfied by the same balance change.  
+This ensures that the **combined effect** of all DeFi steps achieves the overall goal of increasing the treasury by the required amount.
+
+Note that in this scenario we have the same end recipient (treasury) and the same token. If the recipient in any of the steps would be different, that would be tracked in a separate state.
 
 #### Delegating to EOA
 
-If you are delegating to an EOA a delegation chain the EOA cannot execute directly since it cannot redeem inner delegations. EOA can become a deleGator by using EIP7702 or it can use an adapter contract to execute the delegation. An example for that is available in `./src/helpers/DelegationMetaSwapAdapter.sol`.
+If you are delegating to an EOA in a delegation chain, the EOA cannot execute directly since it cannot redeem inner delegations. The EOA can become a deleGator by using EIP7702 or it can use an adapter contract to execute the delegation. An example for that is available in `./src/helpers/DelegationMetaSwapAdapter.sol`.
