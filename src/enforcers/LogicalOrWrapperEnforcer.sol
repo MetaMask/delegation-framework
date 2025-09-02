@@ -32,10 +32,11 @@ import { ModeCode, Caveat } from "../utils/Types.sol";
  *  - The enforcer iterates over all caveats in the specified `CaveatGroup`.
  *  - For a group to pass, all caveats within that group must succeed.
  *  - Every caveat in the group is evaluated.
- *  - The group index provided via `SelectedGroup.groupIndex` must be valid (i.e. less than or equal to the length of the terms
- * array).
+ *  - The group index provided via `SelectedGroup.groupIndex` must be valid (i.e. less than the length of the terms array).
  *  - The length of `SelectedGroup.caveatArgs` must exactly match the number of caveats in the corresponding `CaveatGroup`.
  *    Empty bytes can be used for caveats that do not require arguments.
+ *  - To prevent delegationHash collisions between different caveat groups using the same delegationHash, this enforcer
+ *    creates a unique delegationHash by combining the original delegationHash with the caveat group index.
  *
  * @dev Security Notice: This enforcer allows the redeemer to choose which caveat group to use at
  * execution time, via the groupIndex parameter. If multiple caveat groups are defined with varying
@@ -104,6 +105,17 @@ contract LogicalOrWrapperEnforcer is CaveatEnforcer {
     }
 
     ////////////////////////////// Public Methods //////////////////////////////
+
+    /**
+     * @notice Combines a delegation hash with the group index to create a unique identifier
+     * @dev This is the delegationHash that the caveat enforcers will receive.
+     * @param _delegationHash The original delegation hash
+     * @param _groupIndex The index of the caveat group being evaluated
+     * @return bytes32 A unique hash combining the delegation hash and group index
+     */
+    function getLogicalOrDelegationHash(bytes32 _delegationHash, uint256 _groupIndex) external pure returns (bytes32) {
+        return _getLogicalOrDelegationHash(_delegationHash, _groupIndex);
+    }
 
     /**
      * @notice Hook called before all delegations are executed
@@ -266,11 +278,21 @@ contract LogicalOrWrapperEnforcer is CaveatEnforcer {
                     selectedGroup_.caveatArgs[i],
                     _params.mode,
                     _params.executionCallData,
-                    _params.delegationHash,
+                    _getLogicalOrDelegationHash(_params.delegationHash, selectedGroup_.groupIndex),
                     _params.delegator,
                     _params.redeemer
                 )
             );
         }
+    }
+
+    /**
+     * @notice Combines a delegation hash with the group index to create a unique identifier
+     * @param _delegationHash The original delegation hash
+     * @param _groupIndex The index of the caveat group being evaluated
+     * @return bytes32 A unique hash combining the delegation hash and group index
+     */
+    function _getLogicalOrDelegationHash(bytes32 _delegationHash, uint256 _groupIndex) internal pure returns (bytes32) {
+        return keccak256(abi.encode(_delegationHash, _groupIndex));
     }
 }
