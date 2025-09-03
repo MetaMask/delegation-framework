@@ -40,6 +40,7 @@ Because the `NativeTokenPaymentEnforcer` modifies the state of external contract
 ### Balance Change Enforcers
 
 This includes:
+
 - `NativeBalanceChangeEnforcer`
 - `ERC20BalanceChangeEnforcer`
 - `ERC721BalanceChangeEnforcer`
@@ -56,6 +57,7 @@ Balance Change Enforcers allow setting up guardrails around balance changes for 
 2. **Hash Key Generation**: The hash key is generated using the delegation manager address and delegation hash (plus token address and token ID for ERC1155), ensuring each delegation has its own isolated state.
 
 3. **Balance Caching**: In `beforeHook`, the enforcer:
+
    - Checks that the enforcer isn't already locked for this delegation
    - Locks the enforcer to prevent concurrent access
    - Caches the current balance of the recipient
@@ -79,17 +81,20 @@ Balance Change Enforcers are ideal for:
 **⚠️ Important Security Notice**: These enforcers track balance changes by comparing the recipient's balance before and after execution. Since enforcers watching the same recipient share state, a single balance modification may satisfy multiple enforcers simultaneously. This can lead to unintended behavior in delegation chains.
 
 **Key Limitations**:
+
 1. **State Sharing**: Multiple enforcers tracking the same recipient may interfere with each other
 2. **No Aggregation**: Each enforcer operates independently and doesn't consider other enforcers in the chain
 3. **Delegation Chain Issues**: In complex delegation chains, the same balance change might satisfy multiple enforcers, potentially bypassing intended security measures
 
 **When to Use Regular vs Total Balance Enforcers**:
+
 - Use **Regular Balance Enforcers** for simple, single-enforcer scenarios
 - Use **Multi Operation Balance Enforcers** when multiple enforcers might track the same recipient in a delegation chain
 
 ### Multi Operation Increase Balance Enforcers
 
-This includes: 
+This includes:
+
 - `ERC20MultiOperationIncreaseBalanceEnforcer`
 - `ERC721MultiOperationIncreaseBalanceEnforcer`
 - `ERC1155MultiOperationIncreaseBalanceEnforcer`
@@ -102,12 +107,14 @@ Stated more simply when you want to enforce an outcome of a batch delegation.
 #### When to Use Multi Operation Increase Balance Enforcers
 
 **✅ Use Multi Operation Increase Balance Enforcers when:**
+
 - You have a **complex transaction** that requires multiple steps
 - Multiple delegations need to **coordinate** to achieve a shared goal
 - You want to **accumulate** balance increase requirements across the entire redemption flow
 - You need to verify the **final end state** of the recipient after all steps complete
 
 **❌ Do NOT use Multi Operation Increase Balance Enforcers when:**
+
 - You want **independent, per-delegation constraints** (non-aggregating semantics)
 - You need progressive restrictions (e.g., “max 100 ETH” then “max 50 ETH”)
 - You want the **strictest constraint** to win (these enforcers aggregate increases rather than picking the minimum)
@@ -142,16 +149,19 @@ Stated more simply when you want to enforce an outcome of a batch delegation.
 Consider a complex DeFi operation that requires multiple delegations to work together:
 
 **Delegation Chain:**
+
 - **Alice → Bob**: "Can execute complex DeFi operation that should increase treasury by at least 1000 tokens"
-- **Bob → Charlie**: "Can execute DeFi step 1 that should increase treasury by at least 200 tokens"  
+- **Bob → Charlie**: "Can execute DeFi step 1 that should increase treasury by at least 200 tokens"
 - **Charlie → Dave**: "Can execute DeFi step 2 that should increase treasury by at least 300 tokens"
 
 **Using Multi Operation Increase Balance Enforcers:**
+
 - Enforcer 1: Expects an increase of at least 1000 tokens
-- Enforcer 2: Expects an increase of at least 200 tokens  
+- Enforcer 2: Expects an increase of at least 200 tokens
 - Enforcer 3: Expects an increase of at least 300 tokens
 
 **Result:**
+
 1. Track the initial treasury balance
 2. Accumulate expected increases: +1000 + 200 + 300 = +1500
 3. Validate that the final treasury balance has increased by at least 1500 tokens
@@ -163,3 +173,79 @@ Note that in this scenario we have the same end recipient (treasury) and the sam
 #### Delegating to EOA
 
 If you are delegating to an EOA in a delegation chain, the EOA cannot execute directly since it cannot redeem inner delegations. The EOA can become a deleGator by using EIP7702 or it can use an adapter contract to execute the delegation. An example for that is available in `./src/helpers/DelegationMetaSwapAdapter.sol`.
+
+## LogicalOrWrapperEnforcer Context Switching
+
+The `LogicalOrWrapperEnforcer` enables logical OR functionality between groups of enforcers, allowing flexibility in delegation constraints. This enforcer is designed for a narrow set of use cases, and careful attention must be given when constructing caveats. The enforcer introduces an important architectural consideration: **context switching**.
+
+### How Context Switching Works
+
+When the `LogicalOrWrapperEnforcer` calls inner enforcers, it uses external calls (`Address.functionCall`), which changes the caller context:
+
+- **Direct call**: `DelegationManager` → `NonceEnforcer`
+  - Inside `NonceEnforcer`: `msg.sender == DelegationManager`
+- **Through wrapper**: `DelegationManager` → `LogicalOrWrapperEnforcer` → `NonceEnforcer`
+  - Inside `NonceEnforcer`: `msg.sender == LogicalOrWrapperEnforcer`
+
+This context switch creates separate storage namespaces for enforcers that key their state by `msg.sender`.
+
+### Context-Sensitive Enforcers
+
+Some enforcers maintain state using `msg.sender` as a key and require special consideration with `LogicalOrWrapperEnforcer`. In general, nonce or ID caveats should be top-level caveats rather than children of a logical OR caveat.
+
+#### NonceEnforcer
+
+- **Purpose**: Enables delegation revocation by incrementing nonces
+- **State keying**: `mapping(address delegationManager => mapping(address delegator => uint256 nonce))`
+- **Context dependency**: When wrapped, nonces are tracked under the wrapper's address, creating a separate nonce space
+- **Important**: A nonce caveat within a logical OR caveat is distinct from one created at the top level
+- **Advanced usage**: If specifically required as a child of logical OR, the `LogicalOrWrapperEnforcer` address must be provided when incrementing the nonce
+
+#### IdEnforcer
+
+- **Purpose**: Ensures delegation IDs can only be used once
+- **State keying**: `mapping(address delegationManager => mapping(address delegator => BitMaps.BitMap id))`
+- **Context dependency**: When wrapped, used IDs are tracked under the wrapper's address
+- **Important**: An ID caveat within a logical OR caveat is distinct from one created at the top level
+- **Advanced usage**: If specifically required as a child of logical OR, understand that ID uniqueness applies only within the wrapper's context
+
+### Recommended Usage Patterns
+
+#### ✅ Correct Pattern - Top-level Only
+
+Place context-sensitive enforcers at the top level of your delegation:
+
+```solidity
+delegation {
+  enforcers: [
+    nonceEnforcer,        // ← Top-level placement
+    idEnforcer,           // ← Top-level placement
+    logicalOrEnforcer: [
+      erc20TransferEnforcer,
+      nativeTransferEnforcer
+    ]
+  ]
+}
+```
+
+#### ❌ Incorrect Pattern - Nested Placement
+
+Avoid placing context-sensitive enforcers inside the wrapper:
+
+```solidity
+delegation {
+  enforcers: [
+    logicalOrEnforcer: [
+      nonceEnforcer,      // ← Creates separate state namespace
+      erc20TransferEnforcer
+    ]
+  ]
+}
+```
+
+### Understanding the Implications
+
+If you have deep knowledge of the delegation framework and specifically need to use context-sensitive enforcers within `LogicalOrWrapperEnforcer`, understand that:
+
+- State will be isolated under the wrapper's address namespace
+- This pattern should only be used when the isolation is intentional and well-understood
