@@ -176,7 +176,7 @@ If you are delegating to an EOA in a delegation chain, the EOA cannot execute di
 
 ## LogicalOrWrapperEnforcer Context Switching
 
-The `LogicalOrWrapperEnforcer` enables logical OR functionality between groups of enforcers, allowing flexibility in delegation constraints. However, it introduces an important architectural consideration: **context switching**.
+The `LogicalOrWrapperEnforcer` enables logical OR functionality between groups of enforcers, allowing flexibility in delegation constraints. This enforcer is designed for a narrow set of use cases, and careful attention must be given when constructing caveats. The enforcer introduces an important architectural consideration: **context switching**.
 
 ### How Context Switching Works
 
@@ -189,21 +189,25 @@ When the `LogicalOrWrapperEnforcer` calls inner enforcers, it uses external call
 
 This context switch creates separate storage namespaces for enforcers that key their state by `msg.sender`.
 
-### Incompatible Enforcers
+### Context-Sensitive Enforcers
+
+Some enforcers maintain state using `msg.sender` as a key and require special consideration with `LogicalOrWrapperEnforcer`. In general, nonce or ID caveats should be top-level caveats rather than children of a logical OR caveat.
 
 #### NonceEnforcer
 
 - **Purpose**: Enables delegation revocation by incrementing nonces
 - **State keying**: `mapping(address delegationManager => mapping(address delegator => uint256 nonce))`
 - **Context dependency**: When wrapped, nonces are tracked under the wrapper's address, creating a separate nonce space
-- **Consequence**: Nonce revocations through `DelegationManager` won't affect delegations using the enforcer through the wrapper
+- **Important**: A nonce caveat within a logical OR caveat is distinct from one created at the top level
+- **Advanced usage**: If specifically required as a child of logical OR, the `LogicalOrWrapperEnforcer` address must be provided when incrementing the nonce
 
 #### IdEnforcer
 
 - **Purpose**: Ensures delegation IDs can only be used once
 - **State keying**: `mapping(address delegationManager => mapping(address delegator => BitMaps.BitMap id))`
 - **Context dependency**: When wrapped, used IDs are tracked under the wrapper's address
-- **Consequence**: IDs marked as "used" in direct calls remain unused in the wrapper context, enabling reuse
+- **Important**: An ID caveat within a logical OR caveat is distinct from one created at the top level
+- **Advanced usage**: If specifically required as a child of logical OR, understand that ID uniqueness applies only within the wrapper's context
 
 ### Recommended Usage Patterns
 
