@@ -1923,8 +1923,6 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
         caveatArgs_[0] = hex"";
         LogicalOrWrapperEnforcer.SelectedGroup memory selectedGroup = _createSelectedGroup(0, caveatArgs_);
 
-        uint256 initialBobBalance = mockNft.balanceOf(address(users.bob.deleGator));
-
         // Create execution_ that will only mint 1 NFT (less than required 2)
         Execution memory execution_ = Execution({
             target: address(mockNft),
@@ -2338,7 +2336,7 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
 
     ////////////////////// Delegation Creation Helpers //////////////////////////////
 
-    function _createDelegationForERC20MultiOp() internal returns (Delegation memory) {
+    function _createDelegationForERC20MultiOp() internal view returns (Delegation memory) {
         // Setup LogicalOrWrapperEnforcer with ERC20 MultiOp enforcer
         address[] memory enforcers_ = new address[](1);
         enforcers_[0] = address(erc20MultiOpIncreaseBalanceEnforcer);
@@ -2368,7 +2366,7 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
         return signDelegation(users.alice, delegation);
     }
 
-    function _createDelegationForNativeMultiOp() internal returns (Delegation memory) {
+    function _createDelegationForNativeMultiOp() internal view returns (Delegation memory) {
         // Setup LogicalOrWrapperEnforcer with Native MultiOp enforcer
         address[] memory enforcers_ = new address[](1);
         enforcers_[0] = address(nativeMultiOpIncreaseBalanceEnforcer);
@@ -2398,7 +2396,7 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
         return signDelegation(users.alice, delegation);
     }
 
-    function _createDelegationForERC20Period() internal returns (Delegation memory) {
+    function _createDelegationForERC20Period() internal view returns (Delegation memory) {
         // Setup LogicalOrWrapperEnforcer with ERC20 Period Transfer enforcer
         address[] memory enforcers_ = new address[](1);
         enforcers_[0] = address(erc20PeriodTransferEnforcer);
@@ -2428,7 +2426,7 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
         return signDelegation(users.alice, delegation);
     }
 
-    function _createDelegationForERC20Streaming() internal returns (Delegation memory) {
+    function _createDelegationForERC20Streaming() internal view returns (Delegation memory) {
         // Setup LogicalOrWrapperEnforcer with ERC20 Streaming enforcer
         address[] memory enforcers_ = new address[](1);
         enforcers_[0] = address(erc20StreamingEnforcer);
@@ -2464,7 +2462,7 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
         return signDelegation(users.alice, delegation);
     }
 
-    function _createDelegationForMultiTokenPeriod() internal returns (Delegation memory) {
+    function _createDelegationForMultiTokenPeriod() internal view returns (Delegation memory) {
         // Setup LogicalOrWrapperEnforcer with MultiToken Period enforcer
         address[] memory enforcers_ = new address[](1);
         enforcers_[0] = address(multiTokenPeriodEnforcer);
