@@ -26,6 +26,9 @@ abstract contract CaveatEnforcer is ICaveatEnforcer {
     /// @inheritdoc ICaveatEnforcer
     function afterAllHook(bytes calldata, bytes calldata, ModeCode, bytes calldata, bytes32, address, address) public virtual { }
 
+    /// @inheritdoc ICaveatEnforcer
+    function _convertReadableTermsToCaveats(ReadableTerm[] memory _readableTerms) internal view virtual returns (Caveat[] memory) { }
+
     /**
      * @dev Require the function call to be in single call type
      */
