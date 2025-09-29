@@ -517,5 +517,6 @@ abstract contract BaseTest is Test {
         users_.dave = createUser("Dave");
         users_.eve = createUser("Eve");
         users_.frank = createUser("Frank");
+        users_.grace = createUser("Grace");
     }
 }
