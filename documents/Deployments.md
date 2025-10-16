@@ -44,6 +44,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Berachain
 - Unichain
 - Ink
+- Sonic
 
 ### Testnets
 
@@ -61,6 +62,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Monad
 - Citera testnet
 - Ink Sepolia
+- Sonic testnet
 
 ## **Deployments**
 
