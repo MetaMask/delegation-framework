@@ -9,6 +9,7 @@
 CHAIN_IDS=(
   1          # ethereum
   11155111   # sepolia
+  560048     # hoodi
   59144      # linea
   59141      # linea-sepolia
   8453       # base
@@ -52,6 +53,7 @@ get_chain_config() {
     case "$chain_id" in
         1)        config=("$ETHERSCAN_API_KEY" "etherscan" "$MAINNET_RPC_URL" "https://etherscan.io/") ;; # ethereum
         11155111) config=("$ETHERSCAN_API_KEY" "etherscan" "$SEPOLIA_RPC_URL" "https://sepolia.etherscan.io/") ;;  # sepolia
+        560048)   config=("$ETHERSCAN_API_KEY" "etherscan" "$HOODI_RPC_URL" "https://hoodi.etherscan.io/") ;; # hoodi
         59144)    config=("$ETHERSCAN_API_KEY" "etherscan" "$LINEA_RPC_URL" "https://lineascan.build/") ;; # linea
         59141)    config=("$ETHERSCAN_API_KEY" "etherscan" "$LINEA_SEPOLIA_RPC_URL" "https://sepolia.lineascan.build/") ;; # linea-sepolia
         8453)     config=("$ETHERSCAN_API_KEY" "etherscan" "$BASE_RPC_URL" "https://basescan.org/")  ;; # base
