@@ -53,6 +53,10 @@ ENFORCERS=(
   "SpecificActionERC20TransferBatchEnforcer"
   "TimestampEnforcer"
   "ValueLteEnforcer"
+  "ERC20MultiOperationIncreaseBalanceEnforcer"
+  "ERC721MultiOperationIncreaseBalanceEnforcer"
+  "ERC1155MultiOperationIncreaseBalanceEnforcer"
+  "NativeTokenMultiOperationIncreaseBalanceEnforcer"
 )
 
 ADDRESSES=(
@@ -83,9 +87,13 @@ ADDRESSES=(
   "0xDE4f2FAC4B3D87A1d9953Ca5FC09FCa7F366254f"
   "0x7EEf9734E7092032B5C56310Eb9BbD1f4A524681"
   "0xE144b0b2618071B4E56f746313528a669c7E65c5"
-  "0x00e0251aaA263dfE3B3541B758A82D1CBA1c3B6D"
+  "0x6649b61c873F6F9686A1E1ae9ee98aC380c7bA13"
   "0x1046bb45C8d673d4ea75321280DB34899413c069"
   "0x92Bf12322527cAA612fd31a0e810472BBB106A8F"
+  "0xeaA1bE91F0ea417820a765df9C5BE542286BFfDC"
+  "0x44877cDAFC0d529ab144bb6B0e202eE377C90229"
+  "0x9eB86bbdaA71D4D8d5Fb1B8A9457F04D3344797b"
+  "0xaD551E9b971C1b0c02c577bFfCFAA20b81777276"
 )
 
 ###############################################################################

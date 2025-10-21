@@ -44,6 +44,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Berachain
 - Unichain
 - Ink
+- Sei
 - Sonic
 
 ### Testnets
@@ -62,6 +63,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Monad
 - Citera testnet
 - Ink Sepolia
+- Sei testnet
 - Sonic testnet
 
 ## **Deployments**
@@ -103,9 +105,13 @@ NativeTokenPeriodTransferEnforcer: 0x9BC0FAf4Aca5AE429F4c06aEEaC517520CB16BD9
 NonceEnforcer: 0xDE4f2FAC4B3D87A1d9953Ca5FC09FCa7F366254f
 OwnershipTransferEnforcer: 0x7EEf9734E7092032B5C56310Eb9BbD1f4A524681
 RedeemerEnforcer: 0xE144b0b2618071B4E56f746313528a669c7E65c5
-SpecificActionERC20TransferBatchEnforcer: 0x00e0251aaA263dfE3B3541B758A82D1CBA1c3B6D
+SpecificActionERC20TransferBatchEnforcer: 0x6649b61c873F6F9686A1E1ae9ee98aC380c7bA13
 TimestampEnforcer: 0x1046bb45C8d673d4ea75321280DB34899413c069
 ValueLteEnforcer: 0x92Bf12322527cAA612fd31a0e810472BBB106A8F
+ERC20MultiOperationIncreaseBalanceEnforcer: 0xeaA1bE91F0ea417820a765df9C5BE542286BFfDC
+ERC721MultiOperationIncreaseBalanceEnforcer: 0x44877cDAFC0d529ab144bb6B0e202eE377C90229
+ERC1155MultiOperationIncreaseBalanceEnforcer: 0x9eB86bbdaA71D4D8d5Fb1B8A9457F04D3344797b
+NativeTokenMultiOperationIncreaseBalanceEnforcer: 0xaD551E9b971C1b0c02c577bFfCFAA20b81777276
 
 DelegationMetaSwapAdapter
 Ethereum: 0xe41eB5A3F6e35f1A8C77113F372892D09820C3fD

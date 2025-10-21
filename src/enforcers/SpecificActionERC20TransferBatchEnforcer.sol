@@ -11,7 +11,7 @@ import { ModeCode, Execution } from "../utils/Types.sol";
 /**
  * @title SpecificActionERC20TransferBatchEnforcer
  * @dev This enforcer validates a batch of exactly 2 transactions where:
- * 1. First transaction must match specific target, method and calldata
+ * 1. First transaction must match specific target, value, method and calldata
  * 2. Second transaction must be an ERC20 transfer with specific parameters
  * @dev The delegation can only be executed once
  * @dev This enforcer operates only in batch execution call type and with default execution mode.
@@ -36,6 +36,7 @@ contract SpecificActionERC20TransferBatchEnforcer is CaveatEnforcer {
         address recipient;
         uint256 amount;
         address firstTarget;
+        uint256 firstValue;
         bytes firstCalldata;
     }
 
@@ -48,6 +49,7 @@ contract SpecificActionERC20TransferBatchEnforcer is CaveatEnforcer {
      *   - Transfer recipient address (20 bytes)
      *   - Transfer amount (32 bytes)
      *   - First transaction target address (20 bytes)
+     *   - First transaction value (32 bytes)
      *   - First transaction calldata (remaining bytes)
      * @param _mode The execution mode. (Must be Batch callType, Default execType)
      * @param _executionCallData The batch execution calldata
@@ -88,7 +90,7 @@ contract SpecificActionERC20TransferBatchEnforcer is CaveatEnforcer {
 
         // Validate first transaction
         if (
-            executions_[0].target != terms_.firstTarget || executions_[0].value != 0
+            executions_[0].target != terms_.firstTarget || executions_[0].value != terms_.firstValue
                 || keccak256(executions_[0].callData) != keccak256(terms_.firstCalldata)
         ) {
             revert("SpecificActionERC20TransferBatchEnforcer:invalid-first-transaction");
@@ -113,8 +115,8 @@ contract SpecificActionERC20TransferBatchEnforcer is CaveatEnforcer {
      * @return termsData_ The decoded terms data
      */
     function getTermsInfo(bytes calldata _terms) public pure returns (TermsData memory termsData_) {
-        // Require minimum length: 20 + 20 + 32 + 20 = 92 bytes
-        require(_terms.length >= 92, "SpecificActionERC20TransferBatchEnforcer:invalid-terms-length");
+        // Require minimum length: 20 + 20 + 32 + 20 + 32 = 124 bytes
+        require(_terms.length >= 124, "SpecificActionERC20TransferBatchEnforcer:invalid-terms-length");
 
         // First 20 bytes is token address
         termsData_.tokenAddress = address(bytes20(_terms[0:20]));
@@ -128,7 +130,10 @@ contract SpecificActionERC20TransferBatchEnforcer is CaveatEnforcer {
         // Next 20 bytes is first target
         termsData_.firstTarget = address(bytes20(_terms[72:92]));
 
+        // Next 32 bytes is first value
+        termsData_.firstValue = uint256(bytes32(_terms[92:124]));
+
         // Remaining bytes is firstCalldata
-        termsData_.firstCalldata = _terms[92:];
+        termsData_.firstCalldata = _terms[124:];
     }
 }
