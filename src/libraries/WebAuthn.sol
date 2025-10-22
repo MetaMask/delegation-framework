@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
-pragma solidity 0.8.23;
+pragma solidity ^0.8.23;
 
 import { Base64URL } from "./utils/Base64URL.sol";
 import { P256SCLVerifierLib } from "./P256SCLVerifierLib.sol";

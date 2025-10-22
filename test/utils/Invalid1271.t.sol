@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
-pragma solidity 0.8.23;
+pragma solidity ^0.8.23;
 
 import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 

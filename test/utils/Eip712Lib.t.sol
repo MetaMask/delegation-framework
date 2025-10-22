@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
-pragma solidity 0.8.23;
+pragma solidity ^0.8.23;
 
 library Eip712Lib {
     bytes32 internal constant DOMAIN_TYPE_HASH =
