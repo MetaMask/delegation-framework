@@ -78,12 +78,7 @@ contract ERC1155BalanceChangeEnforcer is CaveatEnforcer {
         override
         onlyDefaultExecutionMode(_mode)
     {
-        (, address token_, address recipient_, uint256 tokenId_,) = getTermsInfo(_terms);
-        bytes32 hashKey_ = _getHashKey(msg.sender, token_, recipient_, tokenId_, _delegationHash);
-        require(!isLocked[hashKey_], "ERC1155BalanceChangeEnforcer:enforcer-is-locked");
-        isLocked[hashKey_] = true;
-        uint256 balance_ = IERC1155(token_).balanceOf(recipient_, tokenId_);
-        balanceCache[hashKey_] = balance_;
+        _validateBeforeHook(_terms, _delegationHash);
     }
 
     /**
@@ -160,5 +155,23 @@ contract ERC1155BalanceChangeEnforcer is CaveatEnforcer {
         returns (bytes32)
     {
         return keccak256(abi.encode(_caller, _token, _recipient, _tokenId, _delegationHash));
+    }
+
+    /**
+     * @notice Internal function to validate and setup state before a delegation is executed
+     * @dev Caches the initial balance and locks the enforcer to prevent reentrancy
+     * @param _terms The encoded terms of the delegation
+     * @param _delegationHash The hash of the delegation being executed
+     */
+    function _validateBeforeHook(bytes calldata _terms, bytes32 _delegationHash) internal {
+        (bool enforceDecrease_, address token_, address recipient_, uint256 tokenId_, uint256 amount_) = getTermsInfo(_terms);
+        bytes32 hashKey_ = _getHashKey(msg.sender, token_, recipient_, tokenId_, _delegationHash);
+        require(!isLocked[hashKey_], "ERC1155BalanceChangeEnforcer:enforcer-is-locked");
+        isLocked[hashKey_] = true;
+        uint256 balance_ = IERC1155(token_).balanceOf(recipient_, tokenId_);
+        if (enforceDecrease_) {
+            require(balance_ >= amount_, "ERC1155BalanceChangeEnforcer:insufficient-initial-balance");
+        }
+        balanceCache[hashKey_] = balance_;
     }
 }
