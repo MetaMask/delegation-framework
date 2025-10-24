@@ -2,6 +2,7 @@
 pragma solidity 0.8.23;
 
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import { IEntryPoint } from "@account-abstraction/interfaces/IEntryPoint.sol";
 
 import { DeleGatorCore } from "./DeleGatorCore.sol";
@@ -12,6 +13,7 @@ import { PackedUserOperation } from "./utils/Types.sol";
 /// @custom:storage-location erc7201:DeleGator.MultiSigDeleGator
 struct MultiSigDeleGatorStorage {
     mapping(address => bool) isSigner;
+    mapping(address => bool) usesERC1271; // Track which signers are ERC1271 contracts
     address[] signers;
     uint256 threshold; // 0 < threshold <= number of signers <= MAX_NUMBER_OF_SIGNERS
 }
@@ -20,7 +22,7 @@ struct MultiSigDeleGatorStorage {
  * @title MultiSig Delegator Contract
  * @dev This contract extends the DeleGatorCore contract. It provides functionality for multi-signature based access control and
  * delegation.
- * @dev The signers that control the DeleGator MUST be EOAs
+ * @dev The signers can be EOAs or ERC1271-compatible contracts (including other MultiSigDeleGators)
  */
 contract MultiSigDeleGator is DeleGatorCore {
     ////////////////////////////// State //////////////////////////////
@@ -41,8 +43,11 @@ contract MultiSigDeleGator is DeleGatorCore {
     /// @dev The maximum number of signers allowed
     uint256 public constant MAX_NUMBER_OF_SIGNERS = 30;
 
-    /// @dev The length of a signature
-    uint256 private constant SIGNATURE_LENGTH = 65;
+    /// @dev The length of an EOA signature
+    uint256 private constant EOA_SIGNATURE_LENGTH = 65;
+
+    /// @dev The length of a contract signature header (address + signature length)
+    uint256 private constant CONTRACT_SIGNATURE_HEADER_LENGTH = 22; // 20 bytes for address + 2 bytes for signature length
 
     ////////////////////////////// Events //////////////////////////////
 
@@ -135,7 +140,10 @@ contract MultiSigDeleGator is DeleGatorCore {
      * @param _newSigner The new signer address to replace the old one.
      */
     function replaceSigner(address _oldSigner, address _newSigner) external onlyEntryPointOrSelf {
-        if (_newSigner == address(0) || _newSigner.code.length != 0) revert InvalidSignerAddress();
+        if (_newSigner == address(0)) revert InvalidSignerAddress();
+        if (_newSigner == address(this)) revert InvalidSignerAddress();
+        // Allow contract signers only if they implement ERC1271
+        if (_newSigner.code.length > 0 && !_supportsERC1271(_newSigner)) revert InvalidSignerAddress();
 
         MultiSigDeleGatorStorage storage s_ = _getDeleGatorStorage();
 
@@ -151,7 +159,9 @@ contract MultiSigDeleGator is DeleGatorCore {
         }
 
         delete s_.isSigner[_oldSigner];
+        delete s_.usesERC1271[_oldSigner];
         s_.isSigner[_newSigner] = true;
+        s_.usesERC1271[_newSigner] = _newSigner.code.length > 0;
         emit ReplacedSigner(_oldSigner, _newSigner);
     }
 
@@ -160,7 +170,10 @@ contract MultiSigDeleGator is DeleGatorCore {
      * @param _newSigner the new signer to be added
      */
     function addSigner(address _newSigner) external onlyEntryPointOrSelf {
-        if (_newSigner == address(0) || _newSigner.code.length != 0) revert InvalidSignerAddress();
+        if (_newSigner == address(0)) revert InvalidSignerAddress();
+        if (_newSigner == address(this)) revert InvalidSignerAddress();
+        // Allow contract signers only if they implement ERC1271
+        if (_newSigner.code.length > 0 && !_supportsERC1271(_newSigner)) revert InvalidSignerAddress();
 
         MultiSigDeleGatorStorage storage s_ = _getDeleGatorStorage();
 
@@ -169,6 +182,7 @@ contract MultiSigDeleGator is DeleGatorCore {
 
         s_.signers.push(_newSigner);
         s_.isSigner[_newSigner] = true;
+        s_.usesERC1271[_newSigner] = _newSigner.code.length > 0;
 
         emit AddedSigner(_newSigner);
     }
@@ -192,6 +206,7 @@ contract MultiSigDeleGator is DeleGatorCore {
         }
         s_.signers.pop();
         delete s_.isSigner[_oldSigner];
+        delete s_.usesERC1271[_oldSigner];
 
         emit RemovedSigner(_oldSigner);
     }
@@ -263,6 +278,16 @@ contract MultiSigDeleGator is DeleGatorCore {
         return s_.signers.length;
     }
 
+    /**
+     * @notice Checks if a signer uses ERC1271 signature validation
+     * @param _signer The address to check
+     * @return True if the address uses ERC1271 (contract-based) signatures, false if EOA
+     */
+    function isERC1271Signer(address _signer) external view returns (bool) {
+        MultiSigDeleGatorStorage storage s_ = _getDeleGatorStorage();
+        return s_.usesERC1271[_signer];
+    }
+
     ////////////////////////////// Internal Methods //////////////////////////////
 
     /**
@@ -284,6 +309,7 @@ contract MultiSigDeleGator is DeleGatorCore {
             for (uint256 i = 0; i < storedSignersLength_; ++i) {
                 address signer_ = s_.signers[i];
                 delete s_.isSigner[signer_];
+                delete s_.usesERC1271[signer_];
                 emit RemovedSigner(signer_);
             }
             delete s_.signers;
@@ -292,10 +318,14 @@ contract MultiSigDeleGator is DeleGatorCore {
         for (uint256 i = 0; i < signersLength_; ++i) {
             address newSigner_ = _signers[i];
             if (s_.isSigner[newSigner_]) revert AlreadyASigner();
-            if (newSigner_ == address(0) || newSigner_.code.length != 0) revert InvalidSignerAddress();
+            if (newSigner_ == address(0)) revert InvalidSignerAddress();
+            if (newSigner_ == address(this)) revert InvalidSignerAddress();
+            // Allow contract signers only if they implement ERC1271
+            if (newSigner_.code.length > 0 && !_supportsERC1271(newSigner_)) revert InvalidSignerAddress();
 
             s_.signers.push(newSigner_);
             s_.isSigner[newSigner_] = true;
+            s_.usesERC1271[newSigner_] = newSigner_.code.length > 0;
 
             emit AddedSigner(newSigner_);
         }
@@ -311,7 +341,9 @@ contract MultiSigDeleGator is DeleGatorCore {
         MultiSigDeleGatorStorage storage s_ = _getDeleGatorStorage();
         uint256 signersLength_ = s_.signers.length;
         for (uint256 i = 0; i < signersLength_; ++i) {
-            delete s_.isSigner[s_.signers[i]];
+            address signer_ = s_.signers[i];
+            delete s_.isSigner[signer_];
+            delete s_.usesERC1271[signer_];
         }
         delete s_.signers;
         delete s_.threshold;
@@ -321,41 +353,88 @@ contract MultiSigDeleGator is DeleGatorCore {
     /**
      * @notice This method is used to verify the signatures of the signers
      * @dev Signatures must be sorted in ascending order by the address of the signer.
+     * @dev For EOA signers: 65-byte ECDSA signature [r(32)|s(32)|v(1)]
+     * @dev For contract signers: [contractAddress(20)][signatureLength(2)][signatureData(dynamic)]
+     * @dev Detection: First 20 bytes checked against usesERC1271 mapping to determine signature type
      * @param _hash The data signed
-     * @param _signatures A threshold amount of 65-byte signatures from the signers all sorted and concatenated
+     * @param _signatures Concatenated signatures from threshold signers, sorted by signer address
      * @return The EIP1271 magic value if the signature is valid, otherwise it reverts
      */
     function _isValidSignature(bytes32 _hash, bytes calldata _signatures) internal view override returns (bytes4) {
         MultiSigDeleGatorStorage storage s_ = _getDeleGatorStorage();
 
-        // check if we have enough sigs by threshold
-        if (_signatures.length != s_.threshold * SIGNATURE_LENGTH) return ERC1271Lib.SIG_VALIDATION_FAILED;
-
-        uint256 signatureCount_ = _signatures.length / SIGNATURE_LENGTH;
         uint256 threshold_ = s_.threshold;
+        if (threshold_ == 0) return ERC1271Lib.SIG_VALIDATION_FAILED;
 
-        // There cannot be an owner with address 0.
+        uint256 offset_ = 0;
         address lastOwner_ = address(0);
-        address currentOwner_;
         uint256 validSignatureCount_ = 0;
 
-        for (uint256 i = 0; i < signatureCount_; ++i) {
-            bytes memory signature_ = _signatures[i * SIGNATURE_LENGTH:(i + 1) * SIGNATURE_LENGTH];
+        while (offset_ < _signatures.length && validSignatureCount_ < threshold_) {
+            address currentOwner_;
 
-            currentOwner_ = ECDSA.recover(_hash, signature_);
+            // Need 22+ bytes to check signer address and determine if contract or EOA signature
+            // This is to prevent out of bounds access to _signatures
+            if (_signatures.length >= offset_ + CONTRACT_SIGNATURE_HEADER_LENGTH) {
+                address potentialSigner_ = address(bytes20(_signatures[offset_:offset_ + 20]));
 
+                if (s_.isSigner[potentialSigner_] && s_.usesERC1271[potentialSigner_]) {
+                    // Contract signature format: address(20) + length(2) + signatureData
+                    currentOwner_ = potentialSigner_;
+                    offset_ += 20;
+
+                    // Get signature length (2 bytes)
+                    uint256 sigLength_ = uint256(uint16(bytes2(_signatures[offset_:offset_ + 2])));
+                    offset_ += 2;
+
+                    // Get signature data
+                    if (_signatures.length < offset_ + sigLength_) return ERC1271Lib.SIG_VALIDATION_FAILED;
+                    bytes memory contractSig_ = _signatures[offset_:offset_ + sigLength_];
+                    offset_ += sigLength_;
+
+                    // Validate with contract's isValidSignature
+                    try IERC1271(currentOwner_).isValidSignature(_hash, contractSig_) returns (bytes4 magicValue) {
+                        if (magicValue != ERC1271Lib.EIP1271_MAGIC_VALUE) return ERC1271Lib.SIG_VALIDATION_FAILED;
+                    } catch {
+                        return ERC1271Lib.SIG_VALIDATION_FAILED;
+                    }
+                } else {
+                    // EOA signature (65 bytes)
+                    if (_signatures.length < offset_ + EOA_SIGNATURE_LENGTH) return ERC1271Lib.SIG_VALIDATION_FAILED;
+                    bytes memory signature_ = _signatures[offset_:offset_ + EOA_SIGNATURE_LENGTH];
+                    offset_ += EOA_SIGNATURE_LENGTH;
+
+                    currentOwner_ = ECDSA.recover(_hash, signature_);
+                }
+            } else {
+                return ERC1271Lib.SIG_VALIDATION_FAILED;
+            }
+
+            // Check ordering and membership
             if (currentOwner_ <= lastOwner_ || !s_.isSigner[currentOwner_]) return ERC1271Lib.SIG_VALIDATION_FAILED;
 
             validSignatureCount_++;
-
-            if (validSignatureCount_ >= threshold_) {
-                return ERC1271Lib.EIP1271_MAGIC_VALUE;
-            }
-
             lastOwner_ = currentOwner_;
         }
 
-        return ERC1271Lib.SIG_VALIDATION_FAILED;
+        return validSignatureCount_ >= threshold_ ? ERC1271Lib.EIP1271_MAGIC_VALUE : ERC1271Lib.SIG_VALIDATION_FAILED;
+    }
+
+    /**
+     * @notice Checks if a contract supports ERC1271 interface
+     * @param _contract The contract address to check
+     * @return true if the contract implements ERC1271, false otherwise
+     */
+    function _supportsERC1271(address _contract) internal view returns (bool) {
+        // Check if contract implements ERC1271 by checking for isValidSignature selector
+        // We use staticcall with a dummy signature to check interface support
+        bytes4 selector = IERC1271.isValidSignature.selector;
+        bytes memory data = abi.encodeWithSelector(selector, bytes32(0), "");
+        (bool success, bytes memory result) = _contract.staticcall(data);
+
+        // Call must succeed and return exactly 32 bytes (a bytes4 padded to 32)
+        // This confirms the function exists and returns the expected type
+        return success && result.length == 32;
     }
 
     /**

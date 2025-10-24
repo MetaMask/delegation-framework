@@ -255,10 +255,13 @@ contract MultiSigDeleGatorTest is BaseTest {
         aliceDeleGator.updateMultiSigParameters(signers_, 1, false);
     }
 
-    // Should revert if new signer is a contract
+    // Should revert if new signer is a non-ERC1271 contract
     function test_error_updateSigParamatersContractNewSigner() public {
+        // Deploy a non-ERC1271 contract
+        NonERC1271TestContract nonERC1271 = new NonERC1271TestContract();
+        
         address[] memory signers_ = new address[](1);
-        signers_[0] = address(users.dave.deleGator);
+        signers_[0] = address(nonERC1271);
 
         vm.prank(address(aliceDeleGator));
         vm.expectRevert(abi.encodeWithSelector(MultiSigDeleGator.InvalidSignerAddress.selector));
@@ -551,9 +554,10 @@ contract MultiSigDeleGatorTest is BaseTest {
         vm.expectRevert(abi.encodeWithSelector(MultiSigDeleGator.InvalidSignerAddress.selector));
         aliceDeleGator.replaceSigner(users.alice.addr, address(0));
 
-        // Don't allow replacing with a contract signer
+        // Don't allow replacing with a non-ERC1271 contract signer
+        NonERC1271TestContract nonERC1271 = new NonERC1271TestContract();
         vm.expectRevert(abi.encodeWithSelector(MultiSigDeleGator.InvalidSignerAddress.selector));
-        aliceDeleGator.replaceSigner(users.alice.addr, address(users.dave.deleGator));
+        aliceDeleGator.replaceSigner(users.alice.addr, address(nonERC1271));
 
         // Don't allow replacing with the address of the DeleGator
         vm.expectRevert(abi.encodeWithSelector(MultiSigDeleGator.InvalidSignerAddress.selector));
@@ -597,9 +601,10 @@ contract MultiSigDeleGatorTest is BaseTest {
         vm.expectRevert(abi.encodeWithSelector(MultiSigDeleGator.InvalidSignerAddress.selector));
         aliceDeleGator.addSigner(address(0));
 
-        // Don't allow adding a contract signer
+        // Don't allow adding a non-ERC1271 contract signer
+        NonERC1271TestContract nonERC1271 = new NonERC1271TestContract();
         vm.expectRevert(abi.encodeWithSelector(MultiSigDeleGator.InvalidSignerAddress.selector));
-        aliceDeleGator.addSigner(address(users.dave.deleGator));
+        aliceDeleGator.addSigner(address(nonERC1271));
 
         // Don't allow adding with the address of the DeleGator
         vm.expectRevert(abi.encodeWithSelector(MultiSigDeleGator.InvalidSignerAddress.selector));
@@ -875,6 +880,281 @@ contract MultiSigDeleGatorTest is BaseTest {
         MultiSigDeleGator(delegator_).reinitialize(version_, newSigners_, 1, false);
     }
 
+    ////////////////////// ERC-1271 Contract Signer Tests //////////////////////
+
+    // should allow adding an ERC-1271 contract as a signer
+    function test_allow_addContractSigner() public {
+        // Deploy a contract signer (another MultiSigDeleGator)
+        address[] memory contractSigners_ = new address[](1);
+        contractSigners_[0] = users.carol.addr;
+        MultiSigDeleGator contractSigner_ = MultiSigDeleGator(payable(deployDeleGator_MultiSig(contractSigners_, 1)));
+
+        vm.prank(address(aliceDeleGator));
+        vm.expectEmit(true, true, true, true, address(aliceDeleGator));
+        emit AddedSigner(address(contractSigner_));
+        aliceDeleGator.addSigner(address(contractSigner_));
+
+        address[] memory signers_ = aliceDeleGator.getSigners();
+        assertEq(signers_.length, 2);
+        assertEq(signers_[1], address(contractSigner_));
+        assertTrue(aliceDeleGator.isERC1271Signer(address(contractSigner_)));
+    }
+
+    // should allow replacing EOA with ERC-1271 contract signer
+    function test_allow_replaceWithContractSigner() public {
+        // Deploy a contract signer
+        address[] memory contractSigners_ = new address[](1);
+        contractSigners_[0] = users.bob.addr;
+        MultiSigDeleGator contractSigner_ = MultiSigDeleGator(payable(deployDeleGator_MultiSig(contractSigners_, 1)));
+
+        vm.prank(address(aliceDeleGator));
+        vm.expectEmit(true, true, true, true, address(aliceDeleGator));
+        emit ReplacedSigner(users.alice.addr, address(contractSigner_));
+        aliceDeleGator.replaceSigner(users.alice.addr, address(contractSigner_));
+
+        address[] memory signers_ = aliceDeleGator.getSigners();
+        assertEq(signers_.length, 1);
+        assertEq(signers_[0], address(contractSigner_));
+        assertTrue(aliceDeleGator.isERC1271Signer(address(contractSigner_)));
+    }
+
+    // should validate mixed EOA and contract signatures
+    function test_allow_mixedSignatureValidation() public {
+        // Setup: Create a multisig with 2 EOAs and 1 contract signer (3-of-3)
+        address[] memory subSigners_ = new address[](1);
+        subSigners_[0] = users.carol.addr;
+        MultiSigDeleGator subMultiSig_ = MultiSigDeleGator(payable(deployDeleGator_MultiSig(subSigners_, 1)));
+
+        address[] memory mixedSigners_ = new address[](3);
+        mixedSigners_[0] = users.alice.addr;
+        mixedSigners_[1] = users.bob.addr;
+        mixedSigners_[2] = address(subMultiSig_);
+        
+        MultiSigDeleGator mixedDeleGator_ = MultiSigDeleGator(payable(deployDeleGator_MultiSig(mixedSigners_, 3)));
+
+        bytes32 hash_ = keccak256("test message");
+
+        // Create all signatures
+        bytes memory aliceSig_ = SigningUtilsLib.signHash_EOA(users.alice.privateKey, hash_);
+        bytes memory bobSig_ = SigningUtilsLib.signHash_EOA(users.bob.privateKey, hash_);
+        bytes memory carolSig_ = SigningUtilsLib.signHash_EOA(users.carol.privateKey, hash_);
+        
+        bytes memory contractSig_ = abi.encodePacked(
+            address(subMultiSig_),
+            uint16(carolSig_.length),
+            carolSig_
+        );
+
+        // Build combined signature in sorted order (all 3 signers for 3-of-3 threshold)
+        address[] memory signers_ = new address[](3);
+        bytes[] memory sigs_ = new bytes[](3);
+        signers_[0] = users.alice.addr;
+        signers_[1] = users.bob.addr;
+        signers_[2] = address(subMultiSig_);
+        sigs_[0] = aliceSig_;
+        sigs_[1] = bobSig_;
+        sigs_[2] = contractSig_;
+        bytes memory combinedSig_ = _sortSignatures(signers_, sigs_);
+
+        bytes4 result_ = mixedDeleGator_.isValidSignature(hash_, combinedSig_);
+        assertEq(result_, bytes4(0x1626ba7e), "Mixed signature validation failed");
+    }
+
+    // should validate nested contract signatures (2 levels)
+    function test_allow_nestedContractSignatures() public {
+        // Level 2: SubMultiSig with Alice and Bob (2-of-2)
+        address[] memory subSigners_ = new address[](2);
+        subSigners_[0] = users.alice.addr;
+        subSigners_[1] = users.bob.addr;
+        MultiSigDeleGator subMultiSig_ = MultiSigDeleGator(payable(deployDeleGator_MultiSig(subSigners_, 2)));
+
+        // Level 1: RootMultiSig with Carol and SubMultiSig (2-of-2)
+        address[] memory rootSigners_ = new address[](2);
+        rootSigners_[0] = users.carol.addr;
+        rootSigners_[1] = address(subMultiSig_);
+        MultiSigDeleGator rootMultiSig_ = MultiSigDeleGator(payable(deployDeleGator_MultiSig(rootSigners_, 2)));
+
+        bytes32 hash_ = keccak256("nested test");
+
+        // Create signatures for SubMultiSig (Alice + Bob) - sorted
+        bytes memory aliceSig_ = SigningUtilsLib.signHash_EOA(users.alice.privateKey, hash_);
+        bytes memory bobSig_ = SigningUtilsLib.signHash_EOA(users.bob.privateKey, hash_);
+        
+        address[] memory subSigSigners_ = new address[](2);
+        bytes[] memory subSigs_ = new bytes[](2);
+        subSigSigners_[0] = users.alice.addr;
+        subSigSigners_[1] = users.bob.addr;
+        subSigs_[0] = aliceSig_;
+        subSigs_[1] = bobSig_;
+        bytes memory subMultiSigSig_ = _sortSignatures(subSigSigners_, subSigs_);
+
+        // Create Carol's signature
+        bytes memory carolSig_ = SigningUtilsLib.signHash_EOA(users.carol.privateKey, hash_);
+
+        // Encode contract signature for SubMultiSig
+        bytes memory contractSig_ = abi.encodePacked(
+            address(subMultiSig_),
+            uint16(subMultiSigSig_.length),
+            subMultiSigSig_
+        );
+
+        // Sort root signatures
+        address[] memory rootSigSigners_ = new address[](2);
+        bytes[] memory rootSigs_ = new bytes[](2);
+        rootSigSigners_[0] = users.carol.addr;
+        rootSigSigners_[1] = address(subMultiSig_);
+        rootSigs_[0] = carolSig_;
+        rootSigs_[1] = contractSig_;
+        bytes memory combinedSig_ = _sortSignatures(rootSigSigners_, rootSigs_);
+
+        // Validate
+        bytes4 result_ = rootMultiSig_.isValidSignature(hash_, combinedSig_);
+        assertEq(result_, bytes4(0x1626ba7e), "Nested signature validation failed");
+    }
+
+    // should reject if contract signature is invalid
+    function test_notAllow_invalidContractSignature() public {
+        // Setup: multisig with 1 EOA and 1 contract signer
+        address[] memory subSigners_ = new address[](1);
+        subSigners_[0] = users.bob.addr;
+        MultiSigDeleGator subMultiSig_ = MultiSigDeleGator(payable(deployDeleGator_MultiSig(subSigners_, 1)));
+
+        address[] memory mixedSigners_ = new address[](2);
+        mixedSigners_[0] = users.alice.addr;
+        mixedSigners_[1] = address(subMultiSig_);
+        MultiSigDeleGator mixedDeleGator_ = MultiSigDeleGator(payable(deployDeleGator_MultiSig(mixedSigners_, 2)));
+
+        bytes32 hash_ = keccak256("test");
+
+        // Create valid Alice signature
+        bytes memory aliceSig_ = SigningUtilsLib.signHash_EOA(users.alice.privateKey, hash_);
+        
+        // Create INVALID signature for contract (wrong private key)
+        bytes memory wrongSig_ = SigningUtilsLib.signHash_EOA(users.carol.privateKey, hash_);
+        
+        bytes memory contractSig_ = abi.encodePacked(
+            address(subMultiSig_),
+            uint16(wrongSig_.length),
+            wrongSig_
+        );
+
+        bytes memory combinedSig_ = abi.encodePacked(aliceSig_, contractSig_);
+
+        // Should fail validation
+        bytes4 result_ = mixedDeleGator_.isValidSignature(hash_, combinedSig_);
+        assertEq(result_, bytes4(0xffffffff), "Should reject invalid contract signature");
+    }
+
+    // should return correct isERC1271Signer status
+    function test_return_isERC1271Signer() public {
+        // Deploy contract signer
+        address[] memory contractSigners_ = new address[](1);
+        contractSigners_[0] = users.bob.addr;
+        MultiSigDeleGator contractSigner_ = MultiSigDeleGator(payable(deployDeleGator_MultiSig(contractSigners_, 1)));
+
+        // Add contract signer
+        vm.prank(address(aliceDeleGator));
+        aliceDeleGator.addSigner(address(contractSigner_));
+
+        // Alice should be EOA (not ERC1271)
+        assertFalse(aliceDeleGator.isERC1271Signer(users.alice.addr));
+        
+        // Contract signer should be ERC1271
+        assertTrue(aliceDeleGator.isERC1271Signer(address(contractSigner_)));
+    }
+
+    // should handle threshold with mixed signers
+    function test_allow_thresholdWithMixedSigners() public {
+        // Setup: 2 EOAs + 1 contract, threshold 2-of-3
+        address[] memory subSigners_ = new address[](1);
+        subSigners_[0] = users.carol.addr;
+        MultiSigDeleGator subMultiSig_ = MultiSigDeleGator(payable(deployDeleGator_MultiSig(subSigners_, 1)));
+
+        address[] memory mixedSigners_ = new address[](3);
+        mixedSigners_[0] = users.alice.addr;
+        mixedSigners_[1] = users.bob.addr;
+        mixedSigners_[2] = address(subMultiSig_);
+        
+        MultiSigDeleGator mixedDeleGator_ = MultiSigDeleGator(payable(deployDeleGator_MultiSig(mixedSigners_, 2)));
+
+        bytes32 hash_ = keccak256("threshold test");
+
+        // Test 1: Alice + Bob (2 EOAs)
+        bytes memory aliceSig_ = SigningUtilsLib.signHash_EOA(users.alice.privateKey, hash_);
+        bytes memory bobSig_ = SigningUtilsLib.signHash_EOA(users.bob.privateKey, hash_);
+        
+        address[] memory signers1_ = new address[](2);
+        bytes[] memory sigs1_ = new bytes[](2);
+        signers1_[0] = users.alice.addr;
+        signers1_[1] = users.bob.addr;
+        sigs1_[0] = aliceSig_;
+        sigs1_[1] = bobSig_;
+        bytes memory sig1_ = _sortSignatures(signers1_, sigs1_);
+        
+        bytes4 result1_ = mixedDeleGator_.isValidSignature(hash_, sig1_);
+        assertEq(result1_, bytes4(0x1626ba7e), "EOA-only threshold should work");
+
+        // Test 2: Alice + SubMultiSig (1 EOA + 1 contract)
+        bytes memory carolSig_ = SigningUtilsLib.signHash_EOA(users.carol.privateKey, hash_);
+        bytes memory contractSig_ = abi.encodePacked(
+            address(subMultiSig_),
+            uint16(carolSig_.length),
+            carolSig_
+        );
+        address[] memory signers2_ = new address[](2);
+        bytes[] memory sigs2_ = new bytes[](2);
+        signers2_[0] = users.alice.addr;
+        signers2_[1] = address(subMultiSig_);
+        sigs2_[0] = aliceSig_;
+        sigs2_[1] = contractSig_;
+        bytes memory sig2_ = _sortSignatures(signers2_, sigs2_);
+        
+        bytes4 result2_ = mixedDeleGator_.isValidSignature(hash_, sig2_);
+        assertEq(result2_, bytes4(0x1626ba7e), "Mixed threshold should work");
+    }
+
+    // should maintain signature ordering with contract signers
+    function test_notAllow_unsortedMixedSignatures() public {
+        // Setup with sorted addresses: alice < contractSigner
+        address[] memory subSigners_ = new address[](1);
+        subSigners_[0] = users.bob.addr;
+        MultiSigDeleGator subMultiSig_ = MultiSigDeleGator(payable(deployDeleGator_MultiSig(subSigners_, 1)));
+
+        // Ensure alice's address is less than contract address for testing
+        address[] memory mixedSigners_ = new address[](2);
+        if (users.alice.addr < address(subMultiSig_)) {
+            mixedSigners_[0] = users.alice.addr;
+            mixedSigners_[1] = address(subMultiSig_);
+        } else {
+            mixedSigners_[0] = address(subMultiSig_);
+            mixedSigners_[1] = users.alice.addr;
+        }
+        
+        MultiSigDeleGator mixedDeleGator_ = MultiSigDeleGator(payable(deployDeleGator_MultiSig(mixedSigners_, 2)));
+
+        bytes32 hash_ = keccak256("ordering test");
+
+        bytes memory aliceSig_ = SigningUtilsLib.signHash_EOA(users.alice.privateKey, hash_);
+        bytes memory bobSig_ = SigningUtilsLib.signHash_EOA(users.bob.privateKey, hash_);
+        bytes memory contractSig_ = abi.encodePacked(
+            address(subMultiSig_),
+            uint16(bobSig_.length),
+            bobSig_
+        );
+
+        // Provide signatures in WRONG order (should fail)
+        bytes memory wrongOrderSig_;
+        if (users.alice.addr < address(subMultiSig_)) {
+            // Correct order is alice, contract - so reverse it
+            wrongOrderSig_ = abi.encodePacked(contractSig_, aliceSig_);
+        } else {
+            wrongOrderSig_ = abi.encodePacked(aliceSig_, contractSig_);
+        }
+
+        bytes4 result_ = mixedDeleGator_.isValidSignature(hash_, wrongOrderSig_);
+        assertEq(result_, bytes4(0xffffffff), "Unsorted signatures should fail");
+    }
+
     ////////////////////// Helpers //////////////////////
 
     function _createMultipleSigners(uint256 _numOfSigners, bool _sort) internal returns (address[] memory, uint256[] memory) {
@@ -890,5 +1170,46 @@ contract MultiSigDeleGatorTest is BaseTest {
 
         (signers_, privateKeys_) = AccountSorterLib.sortAddressesWithPrivateKeys(signers_, privateKeys_);
         return (signers_, privateKeys_);
+    }
+
+    // Helper to build sorted signatures using address-signature pairs
+    // Similar approach to AccountSorterLib but for signatures instead of private keys
+    function _sortSignatures(
+        address[] memory signers,
+        bytes[] memory signatures
+    ) internal pure returns (bytes memory) {
+        require(signers.length == signatures.length, "Length mismatch");
+        
+        // Use insertion sort (efficient for small arrays)
+        for (uint256 i = 1; i < signers.length; i++) {
+            address keyAddr = signers[i];
+            bytes memory keySig = signatures[i];
+            uint256 j = i;
+            
+            while (j > 0 && signers[j - 1] > keyAddr) {
+                signers[j] = signers[j - 1];
+                signatures[j] = signatures[j - 1];
+                j--;
+            }
+            
+            signers[j] = keyAddr;
+            signatures[j] = keySig;
+        }
+        
+        // Concatenate sorted signatures
+        bytes memory result;
+        for (uint256 i = 0; i < signatures.length; i++) {
+            result = abi.encodePacked(result, signatures[i]);
+        }
+        
+        return result;
+    }
+}
+
+// Mock non-ERC1271 contract for testing rejection of invalid contract signers
+contract NonERC1271TestContract {
+    // This contract intentionally does not implement isValidSignature
+    function someFunction() external pure returns (uint256) {
+        return 42;
     }
 }
