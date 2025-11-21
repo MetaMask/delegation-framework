@@ -55,14 +55,9 @@ abstract contract DelegationMetaSwapAdapterBaseTest is BaseTest {
     AllowedTargetsEnforcer public allowedTargetsEnforcer;
     AllowedMethodsEnforcer public allowedMethodsEnforcer;
     ValueLteEnforcer public valueLteEnforcer;
-    ArgsEqualityCheckEnforcer public argsEqualityCheckEnforcer;
 
     RedeemerEnforcer public redeemerEnforcer;
     bytes public swapDataTokenAtoTokenB;
-
-    string public constant WHITELIST_ENFORCED = "Token-Whitelist-Enforced";
-    string public constant WHITELIST_NOT_ENFORCED = "Token-Whitelist-Not-Enforced";
-    bytes public argsEqualityEnforcerTerms = abi.encode(WHITELIST_ENFORCED);
 
     uint256 public swapSignerPrivateKey;
     address public swapApiSignerAddress;
@@ -82,7 +77,6 @@ abstract contract DelegationMetaSwapAdapterBaseTest is BaseTest {
         allowedMethodsEnforcer = new AllowedMethodsEnforcer();
         valueLteEnforcer = new ValueLteEnforcer();
         redeemerEnforcer = new RedeemerEnforcer();
-        argsEqualityCheckEnforcer = new ArgsEqualityCheckEnforcer();
 
         (swapApiSignerAddress, swapSignerPrivateKey) = makeAddrAndKey("SWAP_API");
     }
@@ -174,12 +168,10 @@ abstract contract DelegationMetaSwapAdapterBaseTest is BaseTest {
     }
 
     function _getCaveatsVaultDelegationNativeToken() private view returns (Caveat[] memory) {
-        Caveat[] memory caveats_ = new Caveat[](3);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(argsEqualityCheckEnforcer), terms: argsEqualityEnforcerTerms });
+        Caveat[] memory caveats_ = new Caveat[](2);
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(valueLteEnforcer), terms: abi.encode(uint256(10 ether)) });
 
-        caveats_[1] = Caveat({ args: hex"", enforcer: address(valueLteEnforcer), terms: abi.encode(uint256(10 ether)) });
-
-        caveats_[2] = Caveat({
+        caveats_[1] = Caveat({
             args: hex"",
             enforcer: address(redeemerEnforcer),
             terms: abi.encodePacked(address(delegationMetaSwapAdapter))
@@ -188,21 +180,19 @@ abstract contract DelegationMetaSwapAdapterBaseTest is BaseTest {
     }
 
     function _getCaveatsVaultDelegationErc20() private view returns (Caveat[] memory) {
-        Caveat[] memory caveats_ = new Caveat[](5);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(argsEqualityCheckEnforcer), terms: argsEqualityEnforcerTerms });
+        Caveat[] memory caveats_ = new Caveat[](4);
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(allowedTargetsEnforcer), terms: abi.encodePacked(address(tokenA)) });
 
-        caveats_[1] = Caveat({ args: hex"", enforcer: address(allowedTargetsEnforcer), terms: abi.encodePacked(address(tokenA)) });
-
-        caveats_[2] =
+        caveats_[1] =
             Caveat({ args: hex"", enforcer: address(allowedMethodsEnforcer), terms: abi.encodePacked(IERC20.transfer.selector) });
 
         uint256 paramStart_ = abi.encodeWithSelector(IERC20.transfer.selector).length;
         address paramValue_ = address(delegationMetaSwapAdapter);
         // The param start and and param value are packed together, but the param value is not packed.
         bytes memory inputTerms_ = abi.encodePacked(paramStart_, bytes32(uint256(uint160(paramValue_))));
-        caveats_[3] = Caveat({ args: hex"", enforcer: address(allowedCalldataEnforcer), terms: inputTerms_ });
+        caveats_[2] = Caveat({ args: hex"", enforcer: address(allowedCalldataEnforcer), terms: inputTerms_ });
 
-        caveats_[4] = Caveat({
+        caveats_[3] = Caveat({
             args: hex"",
             enforcer: address(redeemerEnforcer),
             terms: abi.encodePacked(address(delegationMetaSwapAdapter))
@@ -276,20 +266,6 @@ abstract contract DelegationMetaSwapAdapterBaseTest is BaseTest {
         vm.prank(owner);
         delegationMetaSwapAdapter.updateAllowedTokens(allowedTokens_, statuses_);
     }
-
-    /**
-     * @dev Whitelists an aggregator ID string so DelegationMetaSwapAdapter can use it.
-     * @param _aggregatorId The aggregator ID string
-     */
-    function _whiteListAggregatorId(string memory _aggregatorId) internal {
-        string[] memory aggregatorIds_ = new string[](1);
-        aggregatorIds_[0] = _aggregatorId;
-        bool[] memory statuses_ = new bool[](1);
-        statuses_[0] = true;
-
-        vm.prank(owner);
-        delegationMetaSwapAdapter.updateAllowedAggregatorIds(aggregatorIds_, statuses_);
-    }
 }
 
 /**
@@ -304,8 +280,7 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
     function setUp() public override {
         super.setUp();
         swapApiSigner = vm.addr(_swapSignerPrivateKey);
-        adapter =
-            new DelegationMetaSwapAdapterSignatureTest(address(this), swapApiSigner, address(0x123), address(0x456), address(0x789));
+        adapter = new DelegationMetaSwapAdapterSignatureTest(address(this), swapApiSigner, address(0x123), address(0x456));
     }
 
     ////////////////////////////// Signature validation tests //////////////////////////////
@@ -413,22 +388,18 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         address swapApiSigner_ = address(1);
         IDelegationManager delegationManager_ = IDelegationManager(address(1));
         IMetaSwap metaSwap_ = IMetaSwap(address(1));
-        address argsEqualityCheckEnforcer_ = address(1);
 
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableInvalidOwner.selector, address(0)));
-        new DelegationMetaSwapAdapter(address(0), swapApiSigner_, delegationManager_, metaSwap_, argsEqualityCheckEnforcer_);
+        new DelegationMetaSwapAdapter(address(0), swapApiSigner_, delegationManager_, metaSwap_);
 
         vm.expectRevert(DelegationMetaSwapAdapter.InvalidZeroAddress.selector);
-        new DelegationMetaSwapAdapter(owner_, address(0), delegationManager_, metaSwap_, argsEqualityCheckEnforcer_);
+        new DelegationMetaSwapAdapter(owner_, address(0), delegationManager_, metaSwap_);
 
         vm.expectRevert(DelegationMetaSwapAdapter.InvalidZeroAddress.selector);
-        new DelegationMetaSwapAdapter(owner_, swapApiSigner_, IDelegationManager(address(0)), metaSwap_, argsEqualityCheckEnforcer_);
+        new DelegationMetaSwapAdapter(owner_, swapApiSigner_, IDelegationManager(address(0)), metaSwap_);
 
         vm.expectRevert(DelegationMetaSwapAdapter.InvalidZeroAddress.selector);
-        new DelegationMetaSwapAdapter(owner_, swapApiSigner_, delegationManager_, IMetaSwap(address(0)), argsEqualityCheckEnforcer_);
-
-        vm.expectRevert(DelegationMetaSwapAdapter.InvalidZeroAddress.selector);
-        new DelegationMetaSwapAdapter(owner_, swapApiSigner_, delegationManager_, metaSwap_, address(0));
+        new DelegationMetaSwapAdapter(owner_, swapApiSigner_, delegationManager_, IMetaSwap(address(0)));
     }
 
     /**
@@ -452,12 +423,74 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         DelegationMetaSwapAdapter.SignatureData memory sigData_ = _buildSigData(apiData_);
 
         vm.prank(address(subVault.deleGator));
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
 
         uint256 vaultTokenAUsed_ = vaultTokenABalanceBefore_ - tokenA.balanceOf(address(vault.deleGator));
         uint256 vaultTokenBObtained_ = tokenB.balanceOf(address(vault.deleGator)) - vaultTokenBBalanceBefore_;
         assertEq(vaultTokenAUsed_, amountFrom, "Vault should spend the specified amount of tokenA");
         assertEq(vaultTokenBObtained_, amountTo, "Vault should receive the correct amount of tokenB");
+    }
+
+    /**
+     * @notice Verifies that a single direct delegation from vault to adapter works (no intermediate subVault).
+     * @dev In this scenario, the vault delegates directly to the adapter and calls swapByDelegation itself.
+     *      The vault is both the leaf delegator (caller) and root delegator (recipient of swapped tokens).
+     */
+    function test_canSwapByDelegationsMock_singleDirectDelegation() public {
+        _setUpMockContracts();
+
+        // Create a single delegation: vault -> adapter
+        Caveat[] memory caveats_ = new Caveat[](4);
+
+        // Restrict to tokenA transfers only
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(allowedTargetsEnforcer), terms: abi.encodePacked(address(tokenA)) });
+
+        caveats_[1] =
+            Caveat({ args: hex"", enforcer: address(allowedMethodsEnforcer), terms: abi.encodePacked(IERC20.transfer.selector) });
+
+        // Restrict transfer recipient to the adapter
+        uint256 paramStart_ = abi.encodeWithSelector(IERC20.transfer.selector).length;
+        address paramValue_ = address(delegationMetaSwapAdapter);
+        bytes memory inputTerms_ = abi.encodePacked(paramStart_, bytes32(uint256(uint160(paramValue_))));
+        caveats_[2] = Caveat({ args: hex"", enforcer: address(allowedCalldataEnforcer), terms: inputTerms_ });
+
+        // Only the adapter can redeem this delegation
+        caveats_[3] = Caveat({
+            args: hex"",
+            enforcer: address(redeemerEnforcer),
+            terms: abi.encodePacked(address(delegationMetaSwapAdapter))
+        });
+
+        Delegation memory vaultDelegation_ = Delegation({
+            delegate: address(delegationMetaSwapAdapter),
+            delegator: address(vault.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: caveats_,
+            salt: 0,
+            signature: hex""
+        });
+
+        vaultDelegation_ = signDelegation(vault, vaultDelegation_);
+
+        // Single delegation in the array
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = vaultDelegation_;
+
+        uint256 vaultTokenABalanceBefore_ = tokenA.balanceOf(address(vault.deleGator));
+        uint256 vaultTokenBBalanceBefore_ = tokenB.balanceOf(address(vault.deleGator));
+
+        bytes memory swapData_ = _encodeSwapData(IERC20(tokenA), IERC20(tokenB), amountFrom, amountTo, hex"", 0, address(0), false);
+        bytes memory apiData_ = _encodeApiData(aggregatorId, IERC20(tokenA), amountFrom, swapData_);
+        DelegationMetaSwapAdapter.SignatureData memory sigData_ = _buildSigData(apiData_);
+
+        // The vault calls swapByDelegation directly (they are the leaf delegator)
+        vm.prank(address(vault.deleGator));
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
+
+        uint256 vaultTokenAUsed_ = vaultTokenABalanceBefore_ - tokenA.balanceOf(address(vault.deleGator));
+        uint256 vaultTokenBObtained_ = tokenB.balanceOf(address(vault.deleGator)) - vaultTokenBBalanceBefore_;
+        assertEq(vaultTokenAUsed_, amountFrom, "Vault should spend the specified amount of tokenA");
+        assertEq(vaultTokenBObtained_, amountTo, "Vault should receive the swapped tokenB");
     }
 
     /**
@@ -486,7 +519,7 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         DelegationMetaSwapAdapter.SignatureData memory sigData_ = _buildSigData(apiData_);
 
         vm.prank(address(subVault.deleGator));
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
 
         // Calculate the change in balances.
         uint256 vaultEthUsed = vaultEthBalanceBefore - address(vault.deleGator).balance;
@@ -521,91 +554,13 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         DelegationMetaSwapAdapter.SignatureData memory sigData_ = _buildSigData(apiData_);
 
         vm.prank(address(subVault.deleGator));
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
 
         // Calculate the change in balances.
         uint256 vaultTokenAUsed = vaultTokenABalanceBefore - tokenA.balanceOf(address(vault.deleGator));
         uint256 vaultEthObtained = address(vault.deleGator).balance - vaultEthBalanceBefore;
         assertEq(vaultTokenAUsed, amountFrom, "Vault should spend the specified amount of tokenA");
         assertEq(vaultEthObtained, amountTo, "Vault should receive the correct amount of ETH");
-    }
-
-    // When _useTokenWhitelist is false, token whitelist checks are skipped.
-    // In this test, we first mark tokenA and tokenB as NOT allowed (so they would fail if checked)
-    // but the swap should succeed when _useTokenWhitelist is false.
-    function test_canSwapByDelegationsMock_withNoTokenWhitelist() public {
-        _setUpMockContracts();
-        // Update allowed tokens: disable both tokens.
-        IERC20[] memory tokens_ = new IERC20[](2);
-        tokens_[0] = IERC20(tokenA);
-        tokens_[1] = IERC20(tokenB);
-        bool[] memory statuses_ = new bool[](2);
-        statuses_[0] = false;
-        statuses_[1] = false;
-        vm.prank(owner);
-        delegationMetaSwapAdapter.updateAllowedTokens(tokens_, statuses_);
-        assertFalse(delegationMetaSwapAdapter.isTokenAllowed(tokenA), "TokenA should be disabled");
-        assertFalse(delegationMetaSwapAdapter.isTokenAllowed(tokenB), "TokenB should be disabled");
-
-        // Setting the args enforcer terms to skip the token whitelist
-        argsEqualityEnforcerTerms = abi.encode(WHITELIST_NOT_ENFORCED);
-
-        // Build a valid delegation chain (which includes the argsEqualityCheckEnforcer in the first caveat).
-        Delegation[] memory delegations_ = new Delegation[](2);
-        Delegation memory vaultDelegation_ = _getVaultDelegation();
-        Delegation memory subVaultDelegation_ = _getSubVaultDelegation(EncoderLib._getDelegationHash(vaultDelegation_));
-        delegations_[1] = vaultDelegation_;
-        delegations_[0] = subVaultDelegation_;
-
-        uint256 vaultTokenABalanceBefore_ = tokenA.balanceOf(address(vault.deleGator));
-        uint256 vaultTokenBBalanceBefore_ = tokenB.balanceOf(address(vault.deleGator));
-
-        bytes memory swapData_ = _encodeSwapData(IERC20(tokenA), IERC20(tokenB), amountFrom, amountTo, hex"", 0, address(0), true);
-        bytes memory apiData_ = _encodeApiData(aggregatorId, IERC20(tokenA), amountFrom, swapData_);
-
-        // Call swapByDelegation with _useTokenWhitelist set to false.
-        // Since whitelist checks are skipped, the swap should proceed even though tokenA and tokenB are not allowed.
-        DelegationMetaSwapAdapter.SignatureData memory sigData_ = _buildSigData(apiData_);
-        vm.prank(address(subVault.deleGator));
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, false);
-
-        uint256 vaultTokenAUsed_ = vaultTokenABalanceBefore_ - tokenA.balanceOf(address(vault.deleGator));
-        uint256 vaultTokenBObtained_ = tokenB.balanceOf(address(vault.deleGator)) - vaultTokenBBalanceBefore_;
-        assertEq(vaultTokenAUsed_, amountFrom, "Vault should spend the specified amount of tokenA");
-        assertEq(vaultTokenBObtained_, amountTo, "Vault should receive the correct amount of tokenB");
-    }
-
-    // The redeemer tries to swapByDelegation passing a flag different from what the delegator indicated
-    function test_revert_swapByDelegationsMock_withNoTokenWhitelistAndIncorrectArgs() public {
-        _setUpMockContracts();
-        // Update allowed tokens: disable both tokens.
-        IERC20[] memory tokens_ = new IERC20[](2);
-        tokens_[0] = IERC20(tokenA);
-        tokens_[1] = IERC20(tokenB);
-        bool[] memory statuses_ = new bool[](2);
-        statuses_[0] = false;
-        statuses_[1] = false;
-        vm.prank(owner);
-        delegationMetaSwapAdapter.updateAllowedTokens(tokens_, statuses_);
-
-        // Build a valid delegation chain (which includes the argsEqualityCheckEnforcer in the first caveat).
-        // The args indicate to use the token whitelist but the function the flag is set to not use the whitelist
-        // the difference between the expected and obtained args reverts
-        Delegation[] memory delegations_ = new Delegation[](2);
-        Delegation memory vaultDelegation_ = _getVaultDelegation();
-        Delegation memory subVaultDelegation_ = _getSubVaultDelegation(EncoderLib._getDelegationHash(vaultDelegation_));
-        delegations_[1] = vaultDelegation_;
-        delegations_[0] = subVaultDelegation_;
-
-        bytes memory swapData_ = _encodeSwapData(IERC20(tokenA), IERC20(tokenB), amountFrom, amountTo, hex"", 0, address(0), true);
-        bytes memory apiData_ = _encodeApiData(aggregatorId, IERC20(tokenA), amountFrom, swapData_);
-        DelegationMetaSwapAdapter.SignatureData memory sigData_ = _buildSigData(apiData_);
-
-        // Call swapByDelegation with _useTokenWhitelist set to false.
-        vm.prank(address(subVault.deleGator));
-
-        vm.expectRevert("ArgsEqualityCheckEnforcer:different-args-and-terms");
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, false);
     }
 
     /// @notice Verifies that only the current owner can initiate ownership transfer.
@@ -706,60 +661,6 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         vm.stopPrank();
     }
 
-    /// @notice Verifies that the contract owner can update allowed aggregator IDs and the correct changes are applied.
-    function test_canUpdateAllowedAggregatorIds() public {
-        _setUpMockContracts();
-
-        string[] memory aggregatorIds_ = new string[](2);
-        aggregatorIds_[0] = "1";
-        aggregatorIds_[1] = "2";
-
-        bool[] memory statuses_ = new bool[](2);
-        statuses_[0] = false;
-        statuses_[1] = true;
-
-        vm.startPrank(owner);
-        delegationMetaSwapAdapter.updateAllowedAggregatorIds(aggregatorIds_, statuses_);
-        vm.stopPrank();
-
-        bytes32 aggregator1Hash_ = keccak256(abi.encode("1"));
-        bytes32 aggregator2Hash_ = keccak256(abi.encode("2"));
-        assertFalse(delegationMetaSwapAdapter.isAggregatorAllowed(aggregator1Hash_));
-        assertTrue(delegationMetaSwapAdapter.isAggregatorAllowed(aggregator2Hash_));
-    }
-
-    /// @notice Verifies that non-owners cannot call updateAllowedAggregatorIds.
-    function test_revert_updateAllowedAggregatorIds_ifNotOwner() public {
-        _setUpMockContracts();
-
-        string[] memory aggregatorIds_ = new string[](1);
-        aggregatorIds_[0] = "randomId";
-        bool[] memory statuses_ = new bool[](1);
-        statuses_[0] = true;
-
-        vm.startPrank(address(subVault.deleGator));
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(subVault.deleGator)));
-        delegationMetaSwapAdapter.updateAllowedAggregatorIds(aggregatorIds_, statuses_);
-        vm.stopPrank();
-    }
-
-    /// @notice Verifies that updateAllowedAggregatorIds reverts if array lengths mismatch.
-    function test_revert_updateAllowedAggregatorIds_arrayLengthMismatch() public {
-        _setUpMockContracts();
-
-        string[] memory aggregatorIds_ = new string[](2);
-        aggregatorIds_[0] = "A1";
-        aggregatorIds_[1] = "A2";
-
-        bool[] memory statuses_ = new bool[](1);
-        statuses_[0] = true;
-
-        vm.startPrank(owner);
-        vm.expectRevert(abi.encodeWithSelector(DelegationMetaSwapAdapter.InputLengthsMismatch.selector));
-        delegationMetaSwapAdapter.updateAllowedAggregatorIds(aggregatorIds_, statuses_);
-        vm.stopPrank();
-    }
-
     /// @notice Ensures that calling `swapTokens` externally reverts with `NotSelf()`.
     function test_revert_swapTokens_ifNotSelf() public {
         _setUpMockContracts();
@@ -787,15 +688,14 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
 
         vm.prank(address(subVault.deleGator));
         vm.expectRevert(DelegationMetaSwapAdapter.InvalidEmptyDelegations.selector);
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, emptyDelegations_, true);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, emptyDelegations_);
     }
 
     // Test that swapByDelegation reverts when called from a non-leaf delegator
     function test_revert_swapByDelegation_nonLeafDelegator() public {
         _setUpMockContracts();
         bytes memory apiData_ = _encodeApiData(aggregatorId, IERC20(tokenA), amountFrom, swapDataTokenAtoTokenB);
-        Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(argsEqualityCheckEnforcer), terms: argsEqualityEnforcerTerms });
+        Caveat[] memory caveats_ = new Caveat[](0);
 
         Delegation memory delegation_ = Delegation({
             delegate: address(delegationMetaSwapAdapter),
@@ -813,7 +713,7 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         // Using invalid caller, must be the vault not subVault
         vm.prank(address(subVault.deleGator));
         vm.expectRevert(DelegationMetaSwapAdapter.NotLeafDelegator.selector);
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
     }
 
     // Test that swapByDelegation reverts if tokenFrom equals tokenTo.
@@ -829,7 +729,7 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
 
         vm.prank(address(subVault.deleGator));
         vm.expectRevert(DelegationMetaSwapAdapter.InvalidIdenticalTokens.selector);
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
     }
 
     // Test that swapByDelegation reverts if tokenFrom is not allowed.
@@ -851,7 +751,7 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
 
         vm.prank(address(subVault.deleGator));
         vm.expectRevert(abi.encodeWithSelector(DelegationMetaSwapAdapter.TokenFromIsNotAllowed.selector, tokenA));
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
     }
 
     // Test that swapByDelegation reverts if tokenTo is not allowed.
@@ -873,29 +773,7 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
 
         vm.prank(address(subVault.deleGator));
         vm.expectRevert(abi.encodeWithSelector(DelegationMetaSwapAdapter.TokenToIsNotAllowed.selector, tokenB));
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
-    }
-
-    // Test that swapByDelegation reverts if the aggregator ID is not allowed.
-    function test_revert_swapByDelegation_aggregatorIdNotAllowed() public {
-        _setUpMockContracts();
-        // Remove aggregatorId from the allowed list.
-        string[] memory aggregatorIds_ = new string[](1);
-        aggregatorIds_[0] = aggregatorId;
-        bool[] memory statuses = new bool[](1);
-        statuses[0] = false;
-        vm.prank(owner);
-        delegationMetaSwapAdapter.updateAllowedAggregatorIds(aggregatorIds_, statuses);
-
-        bytes memory apiData_ = _encodeApiData(aggregatorId, IERC20(tokenA), amountFrom, swapDataTokenAtoTokenB);
-        Delegation[] memory delegations_ = new Delegation[](1);
-        delegations_[0] = _getVaultDelegation();
-
-        DelegationMetaSwapAdapter.SignatureData memory sigData_ = _buildSigData(apiData_);
-
-        vm.prank(address(subVault.deleGator));
-        vm.expectRevert(abi.encodeWithSelector(DelegationMetaSwapAdapter.AggregatorIdIsNotAllowed.selector, aggregatorId));
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
     }
 
     // Test that swapTokens reverts when insufficient tokens are received.
@@ -934,30 +812,6 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
             amountFrom,
             "Recipient should receive tokenB swapped for amountFrom"
         );
-    }
-
-    // When the last delegation is missing the argsEqualityCheckEnforcer,
-    // swapByDelegation should revert with MissingArgsEqualityCheckEnforcer.
-    function test_revert_swapByDelegation_missingArgsEqualityCheckEnforcer() public {
-        _setUpMockContracts();
-        bytes memory apiData_ = _encodeApiData(aggregatorId, IERC20(tokenA), amountFrom, swapDataTokenAtoTokenB);
-
-        // Create a vault delegation and remove its caveats (so that the check fails)
-        Delegation memory badVaultDelegation_ = _getVaultDelegation();
-        // Remove caveats so that its length is zero
-        delete badVaultDelegation_.caveats;
-
-        // Build the delegation chain with the modified vault delegation.
-        Delegation[] memory delegations_ = new Delegation[](2);
-        delegations_[1] = badVaultDelegation_; // last (root) delegation
-        delegations_[0] = _getSubVaultDelegation(EncoderLib._getDelegationHash(badVaultDelegation_));
-
-        DelegationMetaSwapAdapter.SignatureData memory sigData_ = _buildSigData(apiData_);
-
-        vm.prank(address(subVault.deleGator));
-        vm.expectRevert(DelegationMetaSwapAdapter.MissingArgsEqualityCheckEnforcer.selector);
-        // Call the new version with _useTokenWhitelist (value here is irrelevant)
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
     }
 
     // Test the withdraw function for an ERC20 token.
@@ -1029,21 +883,6 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         delegationMetaSwapAdapter.updateAllowedTokens(tokens_, statuses_);
     }
 
-    // Test that updateAllowedAggregatorIds emits the ChangedAggregatorIdStatus event.
-    function test_event_ChangedAggregatorIdStatus() public {
-        _setUpMockContracts();
-        string[] memory aggregatorIds_ = new string[](1);
-        aggregatorIds_[0] = "2";
-        bool[] memory statuses_ = new bool[](1);
-        statuses_[0] = true;
-        bytes32 aggHash_ = keccak256(abi.encode("2"));
-
-        vm.expectEmit(true, false, false, true);
-        emit DelegationMetaSwapAdapter.ChangedAggregatorIdStatus(aggHash_, "2", true);
-        vm.prank(owner);
-        delegationMetaSwapAdapter.updateAllowedAggregatorIds(aggregatorIds_, statuses_);
-    }
-
     // Test that swapTokens (when called via the extra-token branch) emits two SentTokens events.
     function test_event_SentTokens_in_swapTokens() public {
         _setUpMockContracts();
@@ -1085,19 +924,6 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         delegationMetaSwapAdapter.updateAllowedTokens(tokens_, statuses_);
     }
 
-    // Test that updateAllowedAggregatorIds reverts with InputLengthsMismatch.
-    function test_revert_updateAllowedAggregatorIds_arrayLengthMismatch_New() public {
-        _setUpMockContracts();
-        string[] memory aggregatorIds_ = new string[](2);
-        aggregatorIds_[0] = "X";
-        aggregatorIds_[1] = "Y";
-        bool[] memory statuses_ = new bool[](1); // intentionally mismatched
-        statuses_[0] = true;
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(DelegationMetaSwapAdapter.InputLengthsMismatch.selector));
-        delegationMetaSwapAdapter.updateAllowedAggregatorIds(aggregatorIds_, statuses_);
-    }
-
     // Test that a native token transfer failure reverts with FailedNativeTokenTransfer.
     function test_revert_withdraw_failedNativeTokenTransfer() public {
         _setUpMockContracts();
@@ -1136,7 +962,7 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         // Call swapByDelegation from the subVault's perspective
         vm.prank(address(subVault.deleGator));
         vm.expectRevert(DelegationMetaSwapAdapter.InvalidSwapFunctionSelector.selector);
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
     }
 
     function test_revert_swapByDelegation_tokenFromMismatch() public {
@@ -1151,7 +977,7 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
 
         vm.prank(address(subVault.deleGator));
         vm.expectRevert(DelegationMetaSwapAdapter.TokenFromMismatch.selector);
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
     }
 
     function test_revert_swapByDelegation_amountFromMismatch() public {
@@ -1191,7 +1017,7 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
 
         vm.prank(address(subVault.deleGator));
         vm.expectRevert(DelegationMetaSwapAdapter.AmountFromMismatch.selector);
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
     }
 
     // Test that the constructor emits the constructor events and assigns their values
@@ -1200,7 +1026,6 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         address dummySwapApiSignerAddress_ = address(0x999);
         address dummyDelegationManager_ = address(0x123);
         address dummyMetaSwap_ = address(0x456);
-        address dummyArgsEqualityCheckEnforcer_ = address(0x456);
 
         // Expect the events to be emitted during construction.
         vm.expectEmit(true, true, false, true);
@@ -1209,15 +1034,9 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         emit DelegationMetaSwapAdapter.SetDelegationManager(IDelegationManager(dummyDelegationManager_));
         vm.expectEmit(true, true, false, true);
         emit DelegationMetaSwapAdapter.SetMetaSwap(IMetaSwap(dummyMetaSwap_));
-        vm.expectEmit(true, true, false, true);
-        emit DelegationMetaSwapAdapter.SetArgsEqualityCheckEnforcer(dummyArgsEqualityCheckEnforcer_);
         // Deploy a new instance to capture the events.
         DelegationMetaSwapAdapter adapter_ = new DelegationMetaSwapAdapter(
-            owner,
-            dummySwapApiSignerAddress_,
-            IDelegationManager(dummyDelegationManager_),
-            IMetaSwap(dummyMetaSwap_),
-            dummyArgsEqualityCheckEnforcer_
+            owner, dummySwapApiSignerAddress_, IDelegationManager(dummyDelegationManager_), IMetaSwap(dummyMetaSwap_)
         );
         assertEq(adapter_.owner(), owner, "Constructor did not set owner correctly");
         assertEq(
@@ -1225,11 +1044,6 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         );
         assertEq(address(adapter_.swapApiSigner()), dummySwapApiSignerAddress_, "Constructor did not set swapApiSigner correctly");
         assertEq(address(adapter_.metaSwap()), dummyMetaSwap_, "Constructor did not set metaSwap correctly");
-        assertEq(
-            adapter_.argsEqualityCheckEnforcer(),
-            dummyArgsEqualityCheckEnforcer_,
-            "Constructor did not set ArgsEqualityCheckEnforcer correctly"
-        );
     }
 
     // Test that allowance increases when it is zero.
@@ -1297,7 +1111,7 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
 
         vm.prank(address(subVault.deleGator));
         vm.expectRevert(DelegationMetaSwapAdapter.SignatureExpired.selector);
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
     }
 
     /// @notice Tests that swapByDelegation reverts with SignatureExpired when the signature expiration is equal to current
@@ -1320,7 +1134,7 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
 
         vm.prank(address(subVault.deleGator));
         vm.expectRevert(DelegationMetaSwapAdapter.SignatureExpired.selector);
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
     }
 
     /// @notice Tests that swapByDelegation reverts with InvalidApiSignature when the signature is invalid.
@@ -1341,7 +1155,7 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
 
         vm.prank(address(subVault.deleGator));
         vm.expectRevert(DelegationMetaSwapAdapter.InvalidApiSignature.selector);
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
     }
 
     /**
@@ -1366,13 +1180,8 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
 
         metaSwapMock = IMetaSwap(address(new MetaSwapMock(IERC20(tokenA), IERC20(tokenB))));
 
-        delegationMetaSwapAdapter = new DelegationMetaSwapAdapter(
-            owner,
-            swapApiSignerAddress,
-            IDelegationManager(address(delegationManager)),
-            metaSwapMock,
-            address(argsEqualityCheckEnforcer)
-        );
+        delegationMetaSwapAdapter =
+            new DelegationMetaSwapAdapter(owner, swapApiSignerAddress, IDelegationManager(address(delegationManager)), metaSwapMock);
 
         vm.startPrank(owner);
 
@@ -1390,8 +1199,6 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         vm.deal(address(metaSwapMock), 1000 ether);
 
         _updateAllowedTokens();
-
-        _whiteListAggregatorId(aggregatorId);
 
         swapDataTokenAtoTokenB =
             abi.encode(IERC20(address(tokenA)), IERC20(address(tokenB)), 1 ether, 1 ether, hex"", uint256(0), address(0), true);
@@ -1452,7 +1259,7 @@ contract DelegationMetaSwapAdapterForkTest is DelegationMetaSwapAdapterBaseTest 
         DelegationMetaSwapAdapter.SignatureData memory sigData_ = _buildSigData(API_DATA_ERC20_TO_ERC20);
 
         vm.prank(address(subVault.deleGator));
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
 
         uint256 vaultTokenFromUsed_ = vaultTokenFromBalanceBefore_ - tokenFrom_.balanceOf(address(vault.deleGator));
         uint256 vaultTokenToObtained_ = tokenTo_.balanceOf(address(vault.deleGator)) - vaultTokenToBalanceBefore_;
@@ -1481,7 +1288,7 @@ contract DelegationMetaSwapAdapterForkTest is DelegationMetaSwapAdapterBaseTest 
         DelegationMetaSwapAdapter.SignatureData memory sigData_ = _buildSigData(API_DATA_NATIVE_TO_ERC20);
 
         vm.prank(address(subVault.deleGator));
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
 
         // Calculate the change in balances.
         uint256 vaultEthUsed = vaultEthBalanceBefore - address(vault.deleGator).balance;
@@ -1510,7 +1317,7 @@ contract DelegationMetaSwapAdapterForkTest is DelegationMetaSwapAdapterBaseTest 
         DelegationMetaSwapAdapter.SignatureData memory sigData_ = _buildSigData(API_DATA_ERC20_TO_NATIVE);
 
         vm.prank(address(subVault.deleGator));
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_, true);
+        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
 
         uint256 vaultTokenFromUsed_ = vaultTokenFromBalanceBefore_ - tokenFrom_.balanceOf(address(vault.deleGator));
         uint256 vaultTokenToObtained_ = address(vault.deleGator).balance - vaultTokenToBalanceBefore_;
@@ -1534,9 +1341,8 @@ contract DelegationMetaSwapAdapterForkTest is DelegationMetaSwapAdapterBaseTest 
     {
         // Overriding values
         entryPoint = ENTRY_POINT_FORK;
-        delegationMetaSwapAdapter = new DelegationMetaSwapAdapter(
-            owner, swapApiSignerAddress, DELEGATION_MANAGER_FORK, META_SWAP_FORK, address(argsEqualityCheckEnforcer)
-        );
+        delegationMetaSwapAdapter =
+            new DelegationMetaSwapAdapter(owner, swapApiSignerAddress, DELEGATION_MANAGER_FORK, META_SWAP_FORK);
         delegationManager = DelegationManager(address(DELEGATION_MANAGER_FORK));
         hybridDeleGatorImpl = HYBRID_DELEGATOR_IMPL_FORK;
 
@@ -1545,8 +1351,6 @@ contract DelegationMetaSwapAdapterForkTest is DelegationMetaSwapAdapterBaseTest 
         subVault = users.bob;
 
         (aggregatorId_, tokenFrom_, amountFrom_, swapData_) = _decodeApiData(_apiData);
-
-        _whiteListAggregatorId(aggregatorId_);
 
         (, tokenTo_,, amountTo_) = _decodeApiSwapData(swapData_);
         tokenA = BasicERC20(address(tokenFrom_));
@@ -1612,16 +1416,9 @@ contract DelegationMetaSwapAdapterSignatureTest is DelegationMetaSwapAdapter {
         address _owner,
         address _swapApiSigner,
         address _delegationManager,
-        address _metaSwap,
-        address _argsEqualityCheckEnforcer
+        address _metaSwap
     )
-        DelegationMetaSwapAdapter(
-            _owner,
-            _swapApiSigner,
-            IDelegationManager(_delegationManager),
-            IMetaSwap(_metaSwap),
-            _argsEqualityCheckEnforcer
-        )
+        DelegationMetaSwapAdapter(_owner, _swapApiSigner, IDelegationManager(_delegationManager), IMetaSwap(_metaSwap))
     { }
 
     function exposedValidateSignature(SignatureData memory _signatureData) public view {

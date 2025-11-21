@@ -18,11 +18,6 @@ import { CALLTYPE_SINGLE, EXECTYPE_DEFAULT } from "../utils/Constants.sol";
 /**
  * @title DelegationMetaSwapAdapter
  * @notice Acts as a middleman to orchestrate token swaps using delegations and an aggregator (MetaSwap).
- * @dev This contract depends on an ArgsEqualityCheckEnforcer. The root delegation must include a caveat
- *      with this enforcer as its first element. Its arguments indicate whether the swap should enforce the token
- *      whitelist ("Token-Whitelist-Enforced") or not ("Token-Whitelist-Not-Enforced"). The root delegator is
- *      responsible for including this enforcer to signal the desired behavior.
- *
  * @dev This adapter is intended to be used with the Swaps API. Accordingly, all API requests must include a valid
  *      signature that incorporates an expiration timestamp. The signature is verified during swap execution to ensure
  *      that it is still valid.
@@ -40,29 +35,17 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
 
     ////////////////////////////// State //////////////////////////////
 
-    /// @dev Constant value used to enforce the token whitelist
-    string public constant WHITELIST_ENFORCED = "Token-Whitelist-Enforced";
-
-    /// @dev Constant value used to avoid enforcing the token whitelist
-    string public constant WHITELIST_NOT_ENFORCED = "Token-Whitelist-Not-Enforced";
-
     /// @dev The DelegationManager contract that has root access to this contract
     IDelegationManager public immutable delegationManager;
 
     /// @dev The MetaSwap contract used to swap tokens
     IMetaSwap public immutable metaSwap;
 
-    /// @dev The enforcer used to compare args and terms
-    address public immutable argsEqualityCheckEnforcer;
-
     /// @dev Address of the API signer account.
     address public swapApiSigner;
 
     /// @dev Indicates if a token is allowed to be used in the swaps
     mapping(IERC20 token => bool allowed) public isTokenAllowed;
-
-    /// @dev A mapping indicating if an aggregator ID hash is allowed.
-    mapping(bytes32 aggregatorIdHash => bool allowed) public isAggregatorAllowed;
 
     ////////////////////////////// Events //////////////////////////////
 
@@ -72,17 +55,11 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /// @dev Emitted when the MetaSwap contract address is set.
     event SetMetaSwap(IMetaSwap indexed newMetaSwap);
 
-    /// @dev Emitted when the Args Equality Check Enforcer contract address is set.
-    event SetArgsEqualityCheckEnforcer(address indexed newArgsEqualityCheckEnforcer);
-
     /// @dev Emitted when the contract sends tokens (or native tokens) to a recipient.
     event SentTokens(IERC20 indexed token, address indexed recipient, uint256 amount);
 
     /// @dev Emitted when the allowed token status changes for a token.
     event ChangedTokenStatus(IERC20 token, bool status);
-
-    /// @dev Emitted when the allowed aggregator ID status changes.
-    event ChangedAggregatorIdStatus(bytes32 indexed aggregatorIdHash, string aggregatorId, bool status);
 
     /// @dev Emitted when the Signer API is updated.
     event SwapApiSignerUpdated(address indexed newSigner);
@@ -119,9 +96,6 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /// @dev Error when the tokenTo is not in the allow list.
     error TokenToIsNotAllowed(IERC20 token);
 
-    /// @dev Error when the aggregator ID is not in the allow list.
-    error AggregatorIdIsNotAllowed(string aggregatorId);
-
     /// @dev Error when the input arrays of a function have different lengths.
     error InputLengthsMismatch();
 
@@ -136,9 +110,6 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
 
     /// @dev Error when the amountFrom in the api data and swap data do not match.
     error AmountFromMismatch();
-
-    /// @dev Error when the delegations do not include the ArgsEqualityCheckEnforcer
-    error MissingArgsEqualityCheckEnforcer();
 
     /// @dev Error thrown when API signature is invalid.
     error InvalidApiSignature();
@@ -176,30 +147,25 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
      * @param _delegationManager The address of the trusted DelegationManager contract has privileged access to call
      *        executeByExecutor based on a given delegation.
      * @param _metaSwap The address of the trusted MetaSwap contract.
-     * @param _argsEqualityCheckEnforcer The address of the ArgsEqualityCheckEnforcer contract.
      */
     constructor(
         address _owner,
         address _swapApiSigner,
         IDelegationManager _delegationManager,
-        IMetaSwap _metaSwap,
-        address _argsEqualityCheckEnforcer
+        IMetaSwap _metaSwap
     )
         Ownable(_owner)
     {
-        if (
-            _swapApiSigner == address(0) || address(_delegationManager) == address(0) || address(_metaSwap) == address(0)
-                || _argsEqualityCheckEnforcer == address(0)
-        ) revert InvalidZeroAddress();
+        if (_swapApiSigner == address(0) || address(_delegationManager) == address(0) || address(_metaSwap) == address(0)) {
+            revert InvalidZeroAddress();
+        }
 
         swapApiSigner = _swapApiSigner;
         delegationManager = _delegationManager;
         metaSwap = _metaSwap;
-        argsEqualityCheckEnforcer = _argsEqualityCheckEnforcer;
         emit SwapApiSignerUpdated(_swapApiSigner);
         emit SetDelegationManager(_delegationManager);
         emit SetMetaSwap(_metaSwap);
-        emit SetArgsEqualityCheckEnforcer(_argsEqualityCheckEnforcer);
     }
 
     ////////////////////////////// External Methods //////////////////////////////
@@ -218,15 +184,8 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
      * - expiration Timestamp after which the signature is invalid.
      * - signature Signature validating the provided apiData.
      * @param _delegations Array of Delegation objects containing delegation-specific data, sorted leaf to root.
-     * @param _useTokenWhitelist Indicates whether the tokens must be validated or not.
      */
-    function swapByDelegation(
-        SignatureData calldata _signatureData,
-        Delegation[] memory _delegations,
-        bool _useTokenWhitelist
-    )
-        external
-    {
+    function swapByDelegation(SignatureData calldata _signatureData, Delegation[] memory _delegations) external {
         _validateSignature(_signatureData);
 
         (string memory aggregatorId_, IERC20 tokenFrom_, IERC20 tokenTo_, uint256 amountFrom_, bytes memory swapData_) =
@@ -235,10 +194,6 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
 
         if (delegationsLength_ == 0) revert InvalidEmptyDelegations();
         if (tokenFrom_ == tokenTo_) revert InvalidIdenticalTokens();
-
-        _validateTokens(tokenFrom_, tokenTo_, _delegations, _useTokenWhitelist);
-
-        if (!isAggregatorAllowed[keccak256(abi.encode(aggregatorId_))]) revert AggregatorIdIsNotAllowed(aggregatorId_);
         if (_delegations[0].delegator != msg.sender) revert NotLeafDelegator();
 
         // Prepare the call that will be executed internally via onlySelf
@@ -399,27 +354,6 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         }
     }
 
-    /**
-     * @notice Updates the allowed (whitelist) status of multiple aggregator IDs in a single call.
-     * @dev Only callable by the contract owner.
-     * @param _aggregatorIds Array of aggregator ID strings.
-     * @param _statuses Corresponding array of booleans (true = allowed, false = disallowed).
-     */
-    function updateAllowedAggregatorIds(string[] calldata _aggregatorIds, bool[] calldata _statuses) external onlyOwner {
-        uint256 aggregatorsLength_ = _aggregatorIds.length;
-        if (aggregatorsLength_ != _statuses.length) revert InputLengthsMismatch();
-
-        for (uint256 i = 0; i < aggregatorsLength_; ++i) {
-            bytes32 aggregatorIdHash_ = keccak256(abi.encode(_aggregatorIds[i]));
-            bool status_ = _statuses[i];
-            if (isAggregatorAllowed[aggregatorIdHash_] != status_) {
-                isAggregatorAllowed[aggregatorIdHash_] = status_;
-
-                emit ChangedAggregatorIdStatus(aggregatorIdHash_, _aggregatorIds[i], status_);
-            }
-        }
-    }
-
     ////////////////////////////// Private/Internal Methods //////////////////////////////
 
     /**
@@ -453,42 +387,6 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         }
 
         emit SentTokens(_token, _recipient, _amount);
-    }
-
-    /**
-     * @dev Validates that the tokens are whitelisted or not based on the _useTokenWhitelist flag.
-     * @dev Adds the argsCheckEnforcer args to later validate if the token whitelist must be have been used or not.
-     * @param _tokenFrom The input token of the swap.
-     * @param _tokenTo The output token of the swap.
-     * @param _delegations The delegation chain; the last delegation must include the ArgsEqualityCheckEnforcer.
-     * @param _useTokenWhitelist Flag indicating whether token whitelist checks should be enforced.
-     */
-    function _validateTokens(
-        IERC20 _tokenFrom,
-        IERC20 _tokenTo,
-        Delegation[] memory _delegations,
-        bool _useTokenWhitelist
-    )
-        private
-        view
-    {
-        // The Args Enforcer must be the first caveat in the root delegation
-        uint256 lastIndex_ = _delegations.length - 1;
-        if (
-            _delegations[lastIndex_].caveats.length == 0
-                || _delegations[lastIndex_].caveats[0].enforcer != argsEqualityCheckEnforcer
-        ) {
-            revert MissingArgsEqualityCheckEnforcer();
-        }
-
-        // The args are set by this contract depending on the useTokenWhitelist flag
-        if (_useTokenWhitelist) {
-            if (!isTokenAllowed[_tokenFrom]) revert TokenFromIsNotAllowed(_tokenFrom);
-            if (!isTokenAllowed[_tokenTo]) revert TokenToIsNotAllowed(_tokenTo);
-            _delegations[lastIndex_].caveats[0].args = abi.encode(WHITELIST_ENFORCED);
-        } else {
-            _delegations[lastIndex_].caveats[0].args = abi.encode(WHITELIST_NOT_ENFORCED);
-        }
     }
 
     /**
