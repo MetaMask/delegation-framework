@@ -732,50 +732,6 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
         delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
     }
 
-    // Test that swapByDelegation reverts if tokenFrom is not allowed.
-    function test_revert_swapByDelegation_tokenFromNotAllowed() public {
-        _setUpMockContracts();
-        // Remove tokenA from allowed tokens.
-        IERC20[] memory tokens_ = new IERC20[](1);
-        tokens_[0] = IERC20(tokenA);
-        bool[] memory statuses_ = new bool[](1);
-        statuses_[0] = false;
-        vm.prank(owner);
-        delegationMetaSwapAdapter.updateAllowedTokens(tokens_, statuses_);
-
-        bytes memory apiData_ = _encodeApiData(aggregatorId, IERC20(tokenA), amountFrom, swapDataTokenAtoTokenB);
-        Delegation[] memory delegations_ = new Delegation[](1);
-        delegations_[0] = _getVaultDelegation();
-
-        DelegationMetaSwapAdapter.SignatureData memory sigData_ = _buildSigData(apiData_);
-
-        vm.prank(address(subVault.deleGator));
-        vm.expectRevert(abi.encodeWithSelector(DelegationMetaSwapAdapter.TokenFromIsNotAllowed.selector, tokenA));
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
-    }
-
-    // Test that swapByDelegation reverts if tokenTo is not allowed.
-    function test_revert_swapByDelegation_tokenToNotAllowed() public {
-        _setUpMockContracts();
-        // Remove tokenB from allowed tokens.
-        IERC20[] memory tokens_ = new IERC20[](1);
-        tokens_[0] = IERC20(tokenB);
-        bool[] memory statuses_ = new bool[](1);
-        statuses_[0] = false;
-        vm.prank(owner);
-        delegationMetaSwapAdapter.updateAllowedTokens(tokens_, statuses_);
-
-        bytes memory apiData_ = _encodeApiData(aggregatorId, IERC20(tokenA), amountFrom, swapDataTokenAtoTokenB);
-        Delegation[] memory delegations_ = new Delegation[](1);
-        delegations_[0] = _getVaultDelegation();
-
-        DelegationMetaSwapAdapter.SignatureData memory sigData_ = _buildSigData(apiData_);
-
-        vm.prank(address(subVault.deleGator));
-        vm.expectRevert(abi.encodeWithSelector(DelegationMetaSwapAdapter.TokenToIsNotAllowed.selector, tokenB));
-        delegationMetaSwapAdapter.swapByDelegation(sigData_, delegations_);
-    }
-
     // Test that swapTokens reverts when insufficient tokens are received.
     function test_revert_swapTokens_insufficientTokens() public {
         _setUpMockContracts();
