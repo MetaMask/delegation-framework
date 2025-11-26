@@ -46,6 +46,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Ink
 - Sei
 - Sonic
+- Cronos
 
 ### Testnets
 
