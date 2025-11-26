@@ -37,6 +37,7 @@ CHAIN_IDS=(
   1328       # sei-testnet
   146        # sonic
   14601      # sonic-testnet
+  25         # cronos
 )
 
 ##########################################
@@ -81,6 +82,7 @@ get_chain_config() {
         1328)     config=("key" "custom" "$SEI_TESTNET_RPC_URL" "https://seitrace.com/atlantic-2/api") ;; # sei-testnet
         146)      config=("$ETHERSCAN_API_KEY" "etherscan" "$SONIC_RPC_URL" "https://api.etherscan.io/v2/api?chainid=146") ;; # sonic
         14601)    config=("$ETHERSCAN_API_KEY" "etherscan" "$SONIC_TESTNET_RPC_URL" "https://api.etherscan.io/v2/api?chainid=14601") ;; # sonic-testnet
+        25)       config=("$CRONOS_API_KEY" "custom" "$CRONOS_RPC_URL" "https://explorer-api.cronos.org/mainnet/api/v2?apikey=$CRONOS_API_KEY") ;; # cronos
         *)
             echo "Unknown chain ID: $chain_id" >&2
             return 1
