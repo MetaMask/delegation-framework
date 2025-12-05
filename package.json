@@ -1,0 +1,28 @@
+{
+  "name": "delegation-framework",
+  "version": "1.0.0",
+  "description": "> [!WARNING] > We use tags for audited versions of code releases and the `main` branch is the working development branch. All PRs should be based against `main` branch.",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MetaMask/delegation-framework.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/MetaMask/delegation-framework/issues"
+  },
+  "homepage": "https://github.com/MetaMask/delegation-framework#readme",
+  "devDependencies": {
+    "sol-merger": "^4.4.2"
+  }
+}

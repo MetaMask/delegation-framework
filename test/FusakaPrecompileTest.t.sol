@@ -4,6 +4,10 @@ pragma solidity 0.8.23;
 import { console2 } from "forge-std/console2.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { FCL_ecdsa_utils } from "@FCL/FCL_ecdsa_utils.sol";
+import { EntryPoint } from "@account-abstraction/core/EntryPoint.sol";
+import { SimpleFactory } from "../src/utils/SimpleFactory.sol";
+import { DelegationManager } from "../src/DelegationManager.sol";
+import { HybridDeleGator } from "../src/HybridDeleGator.sol";
 
 import { P256SCLVerifierLib } from "../src/libraries/P256SCLVerifierLib.sol";
 import { SigningUtilsLib } from "./utils/SigningUtilsLib.t.sol";
@@ -11,17 +15,16 @@ import { BaseTest } from "./utils/BaseTest.t.sol";
 import { Delegation, Caveat } from "../src/utils/Types.sol";
 import { EncoderLib } from "../src/libraries/EncoderLib.sol";
 import { Implementation, SignatureType } from "./utils/Types.t.sol";
-import { HybridDeleGator } from "../src/HybridDeleGator.sol";
 
 /**
  * @title FusakaPrecompileTest
- * @notice Tests the delegation framework on Ethereum mainnet fork to verify P256 precompile (EIP-7951) integration
- * @dev This test forks Ethereum mainnet and tests the delegation framework with P256 signatures.
+ * @notice Tests the delegation framework on Ethereum Sepolia fork to verify P256 precompile (EIP-7951) integration
+ * @dev This test forks Ethereum Sepolia (where Fusaka is currently active) and tests the delegation framework with P256 signatures.
  *      It REQUIRES Fusaka upgrade to be live - tests will FAIL if the precompile at address 0x100
  *      is not available. All tests expect the precompile to work correctly when available.
  *
  *      To run this test:
- *      forge test --match-contract FusakaPrecompileTest --fork-url $MAINNET_RPC_URL -vvv
+ *      forge test --match-contract FusakaPrecompileTest --fork-url $SEPOLIA_RPC_URL -vvv
  *
  *      According to EIP-7951:
  *      - Precompile address: 0x100
@@ -29,8 +32,8 @@ import { HybridDeleGator } from "../src/HybridDeleGator.sol";
  */
 contract FusakaPrecompileTest is BaseTest {
     using MessageHashUtils for bytes32;
-    // EIP-7951 precompile address
 
+    // EIP-7951 precompile address
     address constant P256_PRECOMPILE = address(0x100);
 
     ////////////////////// Configure BaseTest //////////////////////
@@ -55,25 +58,47 @@ contract FusakaPrecompileTest is BaseTest {
     ////////////////////// Set Up //////////////////////
 
     function setUp() public override {
-        // Fork mainnet at latest block FIRST, before deploying contracts
-        string memory rpcUrl = vm.envOr("MAINNET_RPC_URL", string(""));
-        require(bytes(rpcUrl).length > 0, "MAINNET_RPC_URL environment variable must be set");
+        // Fork Sepolia at latest block FIRST, before deploying contracts
+        // Sepolia has Fusaka upgrade active, mainnet does not yet
+        // Note: Use --fork-url flag when running: forge test --match-contract FusakaPrecompileTest --fork-url $SEPOLIA_RPC_URL
+        // The fork URL can be passed via command line or environment variable
+        string memory rpcUrl = vm.envOr("SEPOLIA_RPC_URL", vm.envOr("FORK_URL", string("")));
+        require(bytes(rpcUrl).length > 0, "SEPOLIA_RPC_URL or FORK_URL environment variable must be set, or use --fork-url flag");
 
         // Create and select fork at latest block
         uint256 forkId = vm.createFork(rpcUrl);
         vm.selectFork(forkId);
 
         uint256 forkBlockNumber = block.number;
-        console2.log("Forked mainnet at block:", forkBlockNumber);
+        console2.log("Forked Sepolia at block:", forkBlockNumber);
 
-        // NOTE: BaseTest.setUp() includes vm.etch() for precompile simulation, but we want
-        // to test the real precompile, so we'll skip that part by calling the parent setup
-        // and then manually removing the etch if needed.
-        super.setUp();
+        // Set up contracts manually (without calling super.setUp() to avoid vm.etch() for precompile simulation)
+        // This is similar to BaseTest.setUp() but without the precompile simulation
+        entryPoint = new EntryPoint();
+        vm.label(address(entryPoint), "EntryPoint");
 
-        // Remove the precompile simulation that BaseTest.setUp() added
-        vm.etch(P256SCLVerifierLib.VERIFIER, hex"");
+        simpleFactory = new SimpleFactory();
+        vm.label(address(simpleFactory), "Simple Factory");
 
+        delegationManager = new DelegationManager(makeAddr("DelegationManager Owner"));
+        vm.label(address(delegationManager), "Delegation Manager");
+
+        ROOT_AUTHORITY = delegationManager.ROOT_AUTHORITY();
+        ANY_DELEGATE = delegationManager.ANY_DELEGATE();
+
+        hybridDeleGatorImpl = new HybridDeleGator(delegationManager, entryPoint);
+        vm.label(address(hybridDeleGatorImpl), "Hybrid DeleGator");
+
+        // NOTE: We intentionally do NOT call super.setUp() to avoid vm.etch() for precompile simulation
+        // so we can test the real precompile on the fork
+
+        // // Mark the precompile address as persistent so Foundry allows access to it
+        // // Precompiles are special built-in addresses that need to be marked as persistent in forks
+        // vm.makePersistent(P256_PRECOMPILE);
+
+        // Create users using BaseTest's createUser (inherited)
+        users.alice = createUser("Alice");
+        users.bob = createUser("Bob");
         aliceDeleGator = HybridDeleGator(payable(address(users.alice.deleGator)));
 
         _initializeTestVariables();
@@ -112,16 +137,19 @@ contract FusakaPrecompileTest is BaseTest {
     /**
      * @notice Checks if the P256 precompile exists by attempting to call it
      * @dev This function REQUIRES the precompile to exist. It will revert if Fusaka isn't live.
+     *      Since we don't inherit from BaseTest, there's no etched code to worry about.
      */
-    function _checkPrecompileExists() internal view {
+    function _checkPrecompileExists() internal {
         // Prepare input according to EIP-7951: 160 bytes
         // 32 bytes message hash + 32 bytes r + 32 bytes s + 32 bytes qx + 32 bytes qy
         bytes memory input = abi.encodePacked(TEST_MESSAGE_HASH, TEST_R, TEST_S, TEST_QX, TEST_QY);
 
         require(input.length == 160, "Input must be exactly 160 bytes per EIP-7951");
 
-        // Attempt to call the precompile
+        console2.log("Calling precompile...");
+        // Call the real precompile directly
         (bool success, bytes memory ret) = P256_PRECOMPILE.staticcall(input);
+        console2.log("Calling after precompile...");
 
         // According to EIP-7951:
         // - Valid signature: returns 32 bytes with value 0x0000...0001
@@ -129,7 +157,7 @@ contract FusakaPrecompileTest is BaseTest {
         // - If precompile doesn't exist: staticcall succeeds but returns empty bytes
 
         // Require precompile to exist - revert if Fusaka isn't live
-        require(success && ret.length == 32, "Fusaka upgrade is NOT live on mainnet - EIP-7951 precompile not available");
+        require(success && ret.length == 32, "Fusaka upgrade is NOT live on Sepolia - EIP-7951 precompile not available");
 
         // Verify it returned the expected success value
         uint256 result = abi.decode(ret, (uint256));
@@ -137,14 +165,14 @@ contract FusakaPrecompileTest is BaseTest {
     }
 
     /**
-     * @notice Tests if the P256 precompile is available on mainnet
+     * @notice Tests if the P256 precompile is available on Sepolia
      * @dev This test REQUIRES Fusaka to be live. setUp() already verified the precompile exists.
      */
     function test_checkP256PrecompileAvailability() public {
         console2.log("=== Fusaka Precompile Check ===");
         console2.log("Block number:", block.number);
         console2.log("Precompile address:", uint160(P256_PRECOMPILE));
-        console2.log("SUCCESS: Fusaka upgrade is LIVE on mainnet!");
+        console2.log("SUCCESS: Fusaka upgrade is LIVE on Sepolia!");
         console2.log("EIP-7951 P256 precompile is available at 0x100");
     }
 
@@ -239,7 +267,7 @@ contract FusakaPrecompileTest is BaseTest {
         bool verificationResult = P256SCLVerifierLib.verifySignature(TEST_MESSAGE_HASH, TEST_R, TEST_S, TEST_QX, TEST_QY);
         assertTrue(verificationResult, "Signature verification should work with precompile");
 
-        console2.log("STATUS: Fusaka is LIVE on mainnet!");
+        console2.log("STATUS: Fusaka is LIVE on Sepolia!");
         console2.log("- EIP-7951 precompile is available");
         console2.log("- P256 signature verification is working");
         console2.log("- Gas cost should be ~6900 gas per EIP-7951");
