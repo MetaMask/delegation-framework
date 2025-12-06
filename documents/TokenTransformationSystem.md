@@ -15,6 +15,7 @@ Traditional delegation systems grant access to a fixed amount of a single token.
 - **Multi-Token Positions**: A single delegation may evolve to control multiple token types
 
 **Example Scenario:**
+
 1. User delegates 1000 USDC to an AI agent
 2. Agent deposits 500 USDC → receives 500 aUSDC (Aave)
 3. Agent uses 200 USDC to buy DAI via a swap
@@ -39,6 +40,7 @@ The solution consists of three main components:
 A caveat enforcer that tracks multiple tokens per delegation hash.
 
 **Key Features:**
+
 - Maps `delegationHash => token => availableAmount`
 - Initializes from delegation terms on first use
 - Validates token usage in `beforeHook`
@@ -46,12 +48,14 @@ A caveat enforcer that tracks multiple tokens per delegation hash.
 - Public view function: `getAvailableAmount(delegationHash, token)`
 
 **State Structure:**
+
 ```solidity
 mapping(bytes32 delegationHash => mapping(address token => uint256 amount)) public availableAmounts;
 mapping(bytes32 delegationHash => bool initialized) public isInitialized;
 ```
 
 **Initialization:**
+
 - Terms encode: `20 bytes token address + 32 bytes initial amount`
 - On first use of initial token, amount is initialized from terms
 - Subsequent uses deduct from available amount
@@ -61,6 +65,7 @@ mapping(bytes32 delegationHash => bool initialized) public isInitialized;
 Central coordinator that routes protocol interactions to specific adapters and updates enforcer state.
 
 **Key Responsibilities:**
+
 - Routes protocol calls to appropriate adapters via `protocolAdapters` mapping
 - Handles token approvals for protocol interactions
 - Measures token balances before/after protocol actions
@@ -68,6 +73,7 @@ Central coordinator that routes protocol interactions to specific adapters and u
 - Transfers all tokens to root delegator (never holds tokens)
 
 **Flow:**
+
 1. Receives delegation request with protocol address and action
 2. Routes to appropriate adapter based on protocol address
 3. Adapter executes protocol interaction and measures transformations
@@ -79,10 +85,12 @@ Central coordinator that routes protocol interactions to specific adapters and u
 Protocol-specific adapters that handle interactions with lending protocols.
 
 **Current Adapters:**
+
 - **AaveAdapter**: Handles Aave V3 deposits/withdrawals
 - **MorphoAdapter**: Handles Morpho market interactions
 
 **Adapter Interface:**
+
 ```solidity
 interface ILendingAdapter {
     struct TransformationInfo {
@@ -91,7 +99,7 @@ interface ILendingAdapter {
         address tokenTo;
         uint256 amountTo;
     }
-    
+
     function executeProtocolAction(
         address _protocolAddress,
         string calldata _action,
@@ -103,6 +111,7 @@ interface ILendingAdapter {
 ```
 
 **Adapter Responsibilities:**
+
 - Measure token balances before protocol interaction
 - Execute protocol function (deposit, withdraw, etc.)
 - Measure token balances after interaction
@@ -113,12 +122,14 @@ interface ILendingAdapter {
 ### Example Flow: Aave Deposit
 
 1. **Initial Delegation**:
+
    ```
    User delegates 1000 USDC with TokenTransformationEnforcer
    Terms: [USDC address, 1000]
    ```
 
 2. **Agent Initiates Deposit**:
+
    ```
    Agent calls AdapterManager.executeProtocolActionByDelegation(
        protocol: Aave Pool,
@@ -130,12 +141,14 @@ interface ILendingAdapter {
    ```
 
 3. **Delegation Redemption**:
+
    - DelegationManager validates delegations
    - TokenTransformationEnforcer.beforeHook() validates 500 USDC is available
    - Deducts 500 USDC from availableAmounts[delegationHash][USDC]
    - Transfers 500 USDC to AdapterManager
 
 4. **Protocol Interaction**:
+
    - AdapterManager approves Aave Pool
    - AaveAdapter measures aUSDC balance before
    - AaveAdapter calls Aave Pool.supply(USDC, 500, AdapterManager, 0)
@@ -144,10 +157,11 @@ interface ILendingAdapter {
    - Returns: tokenFrom=USDC, amountFrom=500, tokenTo=wrapped aUSDC, amountTo=500
 
 5. **State Update**:
+
    - AdapterManager calls TokenTransformationEnforcer.updateAssetState(
-       delegationHash,
-       wrapped aUSDC,
-       500
+     delegationHash,
+     wrapped aUSDC,
+     500
      )
    - Enforcer state: availableAmounts[delegationHash][wrapped aUSDC] = 500
 
@@ -162,12 +176,15 @@ interface ILendingAdapter {
 **Initial**: 1000 USDC delegated
 
 **Step 1**: Deposit 500 USDC → Aave
+
 - Result: 500 USDC + 500 wrapped aUSDC tracked
 
 **Step 2**: Use 200 USDC → Swap → DAI
+
 - Result: 300 USDC + 500 wrapped aUSDC + 200 DAI tracked
 
 **Step 3**: Use 100 wrapped aUSDC → Withdraw → USDC
+
 - Result: 400 USDC + 400 wrapped aUSDC + 200 DAI tracked
 
 All tokens remain under delegation control until expiration or revocation.
@@ -179,6 +196,7 @@ All tokens remain under delegation control until expiration or revocation.
 **Why**: Different protocols have different interfaces and behaviors. Adapters encapsulate protocol-specific logic while maintaining a consistent interface.
 
 **Benefits**:
+
 - Easy to add new protocols (just implement ILendingAdapter)
 - Protocol-specific logic isolated from core system
 - Consistent transformation tracking across protocols
@@ -188,6 +206,7 @@ All tokens remain under delegation control until expiration or revocation.
 **Why**: Only AdapterManager can update enforcer state to prevent unauthorized state changes.
 
 **Security**:
+
 - Enforcer validates `msg.sender == adapterManager` in `updateAssetState()`
 - Ensures state updates only occur after verified protocol interactions
 
@@ -196,6 +215,7 @@ All tokens remain under delegation control until expiration or revocation.
 **Why**: Maintains clear ownership - tokens never stay in adapters or enforcer contracts.
 
 **Flow**:
+
 - Tokens flow: Root Delegator → AdapterManager → Protocol → AdapterManager → Root Delegator
 - Enforcer only tracks amounts, never holds tokens
 
@@ -204,6 +224,7 @@ All tokens remain under delegation control until expiration or revocation.
 **Why**: Adapters know the expected output tokens and can measure accurately.
 
 **Implementation**:
+
 - Adapters measure balances before/after protocol interactions
 - Return actual transformation amounts
 - AdapterManager validates received amounts match reported amounts
@@ -213,6 +234,7 @@ All tokens remain under delegation control until expiration or revocation.
 **Why**: Rebasing tokens (like aTokens) change balance over time, complicating tracking.
 
 **Solution**:
+
 - AaveAdapter wraps aTokens into non-rebasing wrapped tokens
 - Wrapped tokens have fixed supply, easier to track
 - TODO: Investigate using Aave's ATokenVault (ERC-4626) for direct wrapped token support
@@ -305,4 +327,3 @@ uint256 wrappedAUsdcAvailable = tokenTransformationEnforcer.getAvailableAmount(
     wrappedAUsdcAddress
 ); // Returns: 500e6
 ```
-
