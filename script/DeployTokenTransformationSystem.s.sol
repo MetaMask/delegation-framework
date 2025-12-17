@@ -29,7 +29,7 @@ contract DeployTokenTransformationSystem is Script {
         delegationManager = IDelegationManager(vm.envAddress("DELEGATION_MANAGER_ADDRESS"));
         owner = vm.envAddress("OWNER_ADDRESS");
         deployer = msg.sender;
-        
+
         console2.log("~~~");
         console2.log("Deployer: %s", address(deployer));
         console2.log("Owner: %s", address(owner));
@@ -48,9 +48,7 @@ contract DeployTokenTransformationSystem is Script {
         console2.log("AdapterManager: %s", adapterManager);
 
         // Step 2: Deploy TokenTransformationEnforcer with the real AdapterManager address
-        address tokenTransformationEnforcer = address(
-            new TokenTransformationEnforcer{ salt: salt }(adapterManager)
-        );
+        address tokenTransformationEnforcer = address(new TokenTransformationEnforcer{ salt: salt }(adapterManager));
         console2.log("TokenTransformationEnforcer: %s", tokenTransformationEnforcer);
 
         vm.stopBroadcast();
@@ -59,15 +57,18 @@ contract DeployTokenTransformationSystem is Script {
         // If deployer is the owner, set it now. Otherwise, owner must call setTokenTransformationEnforcer separately
         if (deployer == owner) {
             vm.startBroadcast();
-            AdapterManager(payable(adapterManager)).setTokenTransformationEnforcer(
-                TokenTransformationEnforcer(tokenTransformationEnforcer)
-            );
+            AdapterManager(payable(adapterManager))
+                .setTokenTransformationEnforcer(TokenTransformationEnforcer(tokenTransformationEnforcer));
             vm.stopBroadcast();
             console2.log("Enforcer set in AdapterManager");
         } else {
             console2.log("WARNING: Deployer is not the owner.");
             console2.log("Owner must call setTokenTransformationEnforcer separately:");
-            console2.log("  AdapterManager(%s).setTokenTransformationEnforcer(TokenTransformationEnforcer(%s))", adapterManager, tokenTransformationEnforcer);
+            console2.log(
+                "  AdapterManager(%s).setTokenTransformationEnforcer(TokenTransformationEnforcer(%s))",
+                adapterManager,
+                tokenTransformationEnforcer
+            );
         }
 
         // Step 4: Verify the deployment (read-only, no broadcast needed)
@@ -89,8 +90,6 @@ contract DeployTokenTransformationSystem is Script {
         console2.log("Token Transformation System deployed successfully!");
         console2.log("AdapterManager: %s", adapterManager);
         console2.log("TokenTransformationEnforcer: %s", tokenTransformationEnforcer);
-
-        vm.stopBroadcast();
     }
 }
 

@@ -13,15 +13,9 @@ import { IDelegationManager } from "../../interfaces/IDelegationManager.sol";
 import { Delegation, ModeCode, CallType, ExecType } from "../../utils/Types.sol";
 import { TokenTransformationEnforcer } from "../../enforcers/TokenTransformationEnforcer.sol";
 import { IAdapter } from "../interfaces/IAdapter.sol";
+import { IAavePool } from "../interfaces/IAave.sol";
 import { EncoderLib } from "../../libraries/EncoderLib.sol";
 import { CALLTYPE_SINGLE, EXECTYPE_DEFAULT } from "../../utils/Constants.sol";
-
-/**
- * @notice Simplified Aave Pool interface for getting aToken address
- */
-interface IAavePool {
-    function getReserveAToken(address asset) external view returns (address);
-}
 
 /**
  * @title AdapterManager

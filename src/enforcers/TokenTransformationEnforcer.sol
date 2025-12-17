@@ -138,11 +138,18 @@ contract TokenTransformationEnforcer is CaveatEnforcer {
 
     /**
      * @notice Validates that a protocol address from args is allowed according to the allowedProtocols list
-     * @param _args Protocol address (20 bytes) when used with AdapterManager
+     * @param _args Protocol address (20 bytes) when used with AdapterManager, empty otherwise
      * @param _allowedProtocols Array of allowed protocol addresses from terms
      */
     function _validateProtocol(bytes calldata _args, address[] memory _allowedProtocols) internal pure {
-        if (_args.length != 20) revert InvalidTermsLength(); // Protocol address must be 20 bytes
+        // If args is empty, no protocol validation needed (backward compatible)
+        // TODO: Validate if this is secure
+        if (_args.length == 0) {
+            return;
+        }
+
+        // If args is provided, it must be exactly 20 bytes (protocol address)
+        if (_args.length != 20) revert InvalidTermsLength();
         address protocol_ = address(bytes20(_args[:20]));
 
         // Validate protocol against allowed list

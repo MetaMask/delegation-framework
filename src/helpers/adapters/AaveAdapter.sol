@@ -5,43 +5,14 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import { IAdapter } from "../interfaces/IAdapter.sol";
-
-/**
- * @notice Simplified Aave Pool interface for supply
- * @dev In production, use the official Aave IPool interface
- */
-interface IAavePool {
-    function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external;
-    function withdraw(address asset, uint256 amount, address to) external returns (uint256);
-}
-
-/**
- * @notice Aave Data Provider interface to get aToken address
- * @dev In production, use the official Aave IProtocolDataProvider interface
- */
-interface IAaveDataProvider {
-    function getReserveTokensAddresses(address asset) external view returns (address aTokenAddress, address, address);
-}
-
-/**
- * @notice Interface for wrapping/unwrapping aTokens
- * @dev Wraps rebasing aTokens into fixed-supply wrapped tokens for easier tracking
- */
-interface IATokenWrapper {
-    function wrap(address aToken, uint256 amount) external returns (uint256 wrappedAmount);
-    function unwrap(address aToken, uint256 wrappedAmount) external returns (uint256 aTokenAmount);
-    function getWrappedToken(address aToken) external view returns (address wrappedToken);
-}
+import { IAavePool, IAaveDataProvider, IStaticATokenFactory, IERC4626 } from "../interfaces/IAave.sol";
 
 /**
  * @title AaveAdapter
  * @notice Adapter for Aave lending protocol interactions
- * @dev Handles deposit, withdraw, borrow, and repay actions for Aave V3
- * @dev TODO: Validate and test using Aave's ATokenVault (ERC-4626) for direct deposit/withdraw
- *      of wrapped tokens without manual wrapping/unwrapping conversion steps. ATokenVault allows:
- *      - Direct deposit: underlying → vault.deposit() → wrapped token (no manual wrap needed)
- *      - Direct withdraw: wrapped token → vault.withdraw() → underlying (no manual unwrap needed)
- *      This would simplify the flow and eliminate the need for aTokenWrapper.
+ * @dev Handles deposit and withdraw actions for Aave V3
+ * @dev Wraps rebasing aTokens into static aTokens (stataTokens) using Aave's ERC-4626 wrapper
+ *      This converts rebasing tokens into fixed-supply tokens for easier tracking
  */
 contract AaveAdapter is IAdapter {
     using SafeERC20 for IERC20;
@@ -62,8 +33,8 @@ contract AaveAdapter is IAdapter {
     /// @dev Aave Data Provider contract address
     address public immutable aaveDataProvider;
 
-    /// @dev AToken Wrapper contract address
-    address public immutable aTokenWrapper;
+    /// @dev StaticATokenFactory contract address
+    address public immutable staticATokenFactory;
 
     ////////////////////////////// Errors //////////////////////////////
 
@@ -82,15 +53,15 @@ contract AaveAdapter is IAdapter {
      * @notice Initializes the AaveAdapter
      * @param _aavePool The Aave Pool contract address
      * @param _aaveDataProvider The Aave Data Provider contract address
-     * @param _aTokenWrapper The AToken Wrapper contract address
+     * @param _staticATokenFactory The StaticATokenFactory contract address
      */
-    constructor(address _aavePool, address _aaveDataProvider, address _aTokenWrapper) {
-        if (_aavePool == address(0) || _aaveDataProvider == address(0) || _aTokenWrapper == address(0)) {
+    constructor(address _aavePool, address _aaveDataProvider, address _staticATokenFactory) {
+        if (_aavePool == address(0) || _aaveDataProvider == address(0) || _staticATokenFactory == address(0)) {
             revert InvalidZeroAddress();
         }
         aavePool = _aavePool;
         aaveDataProvider = _aaveDataProvider;
-        aTokenWrapper = _aTokenWrapper;
+        staticATokenFactory = _staticATokenFactory;
     }
 
     ////////////////////////////// Public Methods //////////////////////////////
@@ -147,41 +118,44 @@ contract AaveAdapter is IAdapter {
         private
         returns (TransformationInfo memory transformationInfo_)
     {
+        address staticATokenAddress_ = IStaticATokenFactory(staticATokenFactory).getStataToken(address(_tokenFrom));
+        if (staticATokenAddress_ == address(0)) revert InvalidZeroAddress();
+
+        address wrapperAsset_ = IERC4626(staticATokenAddress_).asset();
         (address aTokenAddress_,,) = IAaveDataProvider(aaveDataProvider).getReserveTokensAddresses(address(_tokenFrom));
-        IERC20 aToken_ = IERC20(aTokenAddress_);
+        uint256 wrappedShares_;
 
-        // Supply underlying tokens to Aave Pool, receiving aTokens directly to this adapter
-        // The underlying tokens were already transferred from AdapterManager to this adapter
-        uint256 currentAllowance_ = _tokenFrom.allowance(address(this), aavePool);
-        if (currentAllowance_ < _amountFrom) {
-            if (currentAllowance_ > 0) {
-                _tokenFrom.safeDecreaseAllowance(aavePool, currentAllowance_);
+        if (wrapperAsset_ == aTokenAddress_) {
+            // Deposit to Aave first, then wrap aTokens
+            uint256 currentAllowance_ = _tokenFrom.allowance(address(this), aavePool);
+            if (currentAllowance_ < _amountFrom) {
+                if (currentAllowance_ > 0) {
+                    _tokenFrom.safeDecreaseAllowance(aavePool, currentAllowance_);
+                }
+                _tokenFrom.safeIncreaseAllowance(aavePool, _amountFrom);
             }
-            _tokenFrom.safeIncreaseAllowance(aavePool, _amountFrom);
+            IAavePool(aavePool).supply(address(_tokenFrom), _amountFrom, address(this), 0);
+
+            uint256 aTokenBalance_ = IERC20(aTokenAddress_).balanceOf(address(this));
+            IERC20(aTokenAddress_).safeIncreaseAllowance(staticATokenAddress_, aTokenBalance_);
+            wrappedShares_ = IERC4626(staticATokenAddress_).deposit(aTokenBalance_, _adapterManager);
+        } else if (wrapperAsset_ == address(_tokenFrom)) {
+            // Wrapper handles Aave deposit internally
+            _tokenFrom.safeIncreaseAllowance(staticATokenAddress_, _amountFrom);
+            wrappedShares_ = IERC4626(staticATokenAddress_).deposit(_amountFrom, _adapterManager);
+        } else {
+            revert InvalidProtocolAddress();
         }
-        IAavePool(aavePool).supply(address(_tokenFrom), _amountFrom, address(this), 0);
-
-        // Wrap the aTokens received from Aave
-        uint256 aTokenBalance_ = aToken_.balanceOf(address(this));
-        aToken_.safeIncreaseAllowance(aTokenWrapper, aTokenBalance_);
-        uint256 wrappedAmount_ = IATokenWrapper(aTokenWrapper).wrap(aTokenAddress_, aTokenBalance_);
-
-        address wrappedTokenAddress_ = IATokenWrapper(aTokenWrapper).getWrappedToken(aTokenAddress_);
-        if (wrappedTokenAddress_ == address(0)) revert InvalidZeroAddress();
-
-        // Transfer wrapped tokens back to AdapterManager
-        IERC20 wrappedToken_ = IERC20(wrappedTokenAddress_);
-        wrappedToken_.safeTransfer(_adapterManager, wrappedAmount_);
 
         return TransformationInfo({
-            tokenFrom: address(_tokenFrom), amountFrom: _amountFrom, tokenTo: wrappedTokenAddress_, amountTo: wrappedAmount_
+            tokenFrom: address(_tokenFrom), amountFrom: _amountFrom, tokenTo: staticATokenAddress_, amountTo: wrappedShares_
         });
     }
 
     /**
      * @notice Handles Aave withdraw action
-     * @param _wrappedToken The wrapped aToken to withdraw (already transferred to this adapter)
-     * @param _amountFrom The amount of wrapped token to withdraw
+     * @param _wrappedToken The wrapped static aToken to withdraw (already transferred to this adapter)
+     * @param _amountFrom The amount of wrapped token shares to withdraw
      * @param _actionData Additional data containing underlying token address and AdapterManager address
      * @param _adapterManager The AdapterManager address (for returning underlying tokens)
      * @return transformationInfo_ The transformation information
@@ -195,27 +169,36 @@ contract AaveAdapter is IAdapter {
         private
         returns (TransformationInfo memory transformationInfo_)
     {
-        // _actionData is: abi.encode(adapterManager, abi.encode(adapterManager, underlyingToken))
-        // Decode to get the originalActionData, then decode that to get underlyingToken
         (, bytes memory originalActionData_) = abi.decode(_actionData, (address, bytes));
         (, address underlyingToken_) = abi.decode(originalActionData_, (address, address));
+
+        address staticATokenAddress_ = IStaticATokenFactory(staticATokenFactory).getStataToken(underlyingToken_);
+        if (staticATokenAddress_ == address(0) || address(_wrappedToken) != staticATokenAddress_) {
+            revert InvalidProtocolAddress();
+        }
+
+        address wrapperAsset_ = IERC4626(staticATokenAddress_).asset();
         (address aTokenAddress_,,) = IAaveDataProvider(aaveDataProvider).getReserveTokensAddresses(underlyingToken_);
-        IERC20 aToken_ = IERC20(aTokenAddress_);
 
-        // Unwrap the wrapped tokens to get aTokens in this adapter's balance
-        uint256 aTokenBalanceBefore_ = aToken_.balanceOf(address(this));
-        _wrappedToken.safeIncreaseAllowance(aTokenWrapper, _amountFrom);
-        IATokenWrapper(aTokenWrapper).unwrap(aTokenAddress_, _amountFrom);
-        uint256 aTokenAmount_ = aToken_.balanceOf(address(this)) - aTokenBalanceBefore_;
+        uint256 underlyingAmount_;
 
-        // Withdraw underlying tokens from Aave Pool, receiving them directly to this adapter
-        IERC20 underlyingTokenContract_ = IERC20(underlyingToken_);
-        uint256 underlyingBalanceBefore_ = underlyingTokenContract_.balanceOf(address(this));
-        IAavePool(aavePool).withdraw(underlyingToken_, aTokenAmount_, address(this));
-        uint256 underlyingAmount_ = underlyingTokenContract_.balanceOf(address(this)) - underlyingBalanceBefore_;
+        if (wrapperAsset_ == aTokenAddress_) {
+            uint256 aTokenBalanceBefore_ = IERC20(aTokenAddress_).balanceOf(address(this));
+            IERC4626(staticATokenAddress_).redeem(_amountFrom, address(this), address(this));
+            uint256 aTokenAmount_ = IERC20(aTokenAddress_).balanceOf(address(this)) - aTokenBalanceBefore_;
 
-        // Transfer underlying tokens back to AdapterManager
-        underlyingTokenContract_.safeTransfer(_adapterManager, underlyingAmount_);
+            uint256 underlyingBalanceBefore_ = IERC20(underlyingToken_).balanceOf(address(this));
+            IAavePool(aavePool).withdraw(underlyingToken_, aTokenAmount_, address(this));
+            underlyingAmount_ = IERC20(underlyingToken_).balanceOf(address(this)) - underlyingBalanceBefore_;
+        } else if (wrapperAsset_ == underlyingToken_) {
+            uint256 underlyingBalanceBefore_ = IERC20(underlyingToken_).balanceOf(address(this));
+            IERC4626(staticATokenAddress_).redeem(_amountFrom, address(this), address(this));
+            underlyingAmount_ = IERC20(underlyingToken_).balanceOf(address(this)) - underlyingBalanceBefore_;
+        } else {
+            revert InvalidProtocolAddress();
+        }
+
+        IERC20(underlyingToken_).safeTransfer(_adapterManager, underlyingAmount_);
 
         transformationInfo_.tokenFrom = address(_wrappedToken);
         transformationInfo_.amountFrom = _amountFrom;

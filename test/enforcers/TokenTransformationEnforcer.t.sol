@@ -39,20 +39,17 @@ contract TokenTransformationEnforcerTest is CaveatEnforcerBaseTest {
 
         address owner_ = makeAddr("AdapterManager Owner");
 
-        // Deploy TokenTransformationEnforcer with placeholder address
-        // (AdapterManager will be deployed next, but enforcer needs its address)
-        // We'll use a placeholder and note that updateAssetState calls from real adapterManager will work
-        // because msg.sender will be the real adapterManager address
-        address placeholderAdapterManager_ = makeAddr("PlaceholderAdapterManager");
-        tokenTransformationEnforcer = new TokenTransformationEnforcer(placeholderAdapterManager_);
+        // Deploy AdapterManager first (needed for enforcer constructor)
+        adapterManager = new AdapterManager(owner_, delegationManager);
+        vm.label(address(adapterManager), "AdapterManager");
+
+        // Deploy TokenTransformationEnforcer with the real AdapterManager address
+        tokenTransformationEnforcer = new TokenTransformationEnforcer(address(adapterManager));
         vm.label(address(tokenTransformationEnforcer), "TokenTransformationEnforcer");
 
-        // Deploy AdapterManager with the real enforcer
-        adapterManager = new AdapterManager(owner_, delegationManager);
-
-        // Set the enforcer in the adapterManager
+        // Set the enforcer in the adapterManager (must be called by owner)
+        vm.prank(owner_);
         adapterManager.setTokenTransformationEnforcer(tokenTransformationEnforcer);
-        vm.label(address(adapterManager), "AdapterManager");
 
         // Deploy test tokens
         testToken = new BasicERC20(address(users.alice.deleGator), "TestToken", "TEST", INITIAL_AMOUNT);
@@ -86,6 +83,13 @@ contract TokenTransformationEnforcerTest is CaveatEnforcerBaseTest {
     /// @notice Test that initial amount is set on first use
     function test_initializesOnFirstUse() public {
         bytes memory terms_ = abi.encodePacked(address(testToken), INITIAL_AMOUNT);
+
+        // Verify terms are correct by calling getTermsInfo directly (this works)
+        (address token_, uint256 amount_,) = tokenTransformationEnforcer.getTermsInfo(terms_);
+        assertEq(token_, address(testToken));
+        assertEq(amount_, INITIAL_AMOUNT);
+        assertEq(terms_.length, 52, "Terms must be exactly 52 bytes");
+
         Execution memory execution_ = Execution({
             target: address(testToken),
             value: 0,
@@ -146,6 +150,7 @@ contract TokenTransformationEnforcerTest is CaveatEnforcerBaseTest {
         });
         bytes32 delegationHash_ = EncoderLib._getDelegationHash(delegation_);
 
+        // Execute beforeHook
         vm.prank(address(delegationManager));
         tokenTransformationEnforcer.beforeHook(
             terms_, hex"", singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
@@ -187,7 +192,7 @@ contract TokenTransformationEnforcerTest is CaveatEnforcerBaseTest {
                 delegationHash_,
                 address(testToken),
                 excessiveAmount_,
-                0
+                INITIAL_AMOUNT
             )
         );
         tokenTransformationEnforcer.beforeHook(
