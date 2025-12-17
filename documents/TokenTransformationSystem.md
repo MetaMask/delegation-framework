@@ -177,7 +177,7 @@ sequenceDiagram
 
     Agent->>AM: executeProtocolActionByDelegation(protocol, token, amount, delegations)
 
-    Note over AM: 1. Validate TTE at index 0<br/>2. Set protocol in args
+    Note over AM: 1. Validate TokenTransformationEnforcer<br/>is first caveat in root delegation<br/>2. Set protocol address in caveat args
 
     AM->>DM: redeemDelegations([delegations], [modes], [callDatas])
 
