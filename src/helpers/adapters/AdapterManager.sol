@@ -3,7 +3,8 @@ pragma solidity 0.8.23;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import { Ownable2Step } from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 import { ExecutionHelper } from "@erc7579/core/ExecutionHelper.sol";
@@ -11,9 +12,16 @@ import { ExecutionHelper } from "@erc7579/core/ExecutionHelper.sol";
 import { IDelegationManager } from "../../interfaces/IDelegationManager.sol";
 import { Delegation, ModeCode, CallType, ExecType } from "../../utils/Types.sol";
 import { TokenTransformationEnforcer } from "../../enforcers/TokenTransformationEnforcer.sol";
-import { ILendingAdapter } from "../interfaces/ILendingAdapter.sol";
+import { IAdapter } from "../interfaces/IAdapter.sol";
 import { EncoderLib } from "../../libraries/EncoderLib.sol";
 import { CALLTYPE_SINGLE, EXECTYPE_DEFAULT } from "../../utils/Constants.sol";
+
+/**
+ * @notice Simplified Aave Pool interface for getting aToken address
+ */
+interface IAavePool {
+    function getReserveAToken(address asset) external view returns (address);
+}
 
 /**
  * @title AdapterManager
@@ -31,13 +39,27 @@ contract AdapterManager is ExecutionHelper, Ownable2Step {
     /// @dev The DelegationManager contract
     IDelegationManager public immutable delegationManager;
 
-    /// @dev The TokenTransformationEnforcer contract
-    TokenTransformationEnforcer public immutable tokenTransformationEnforcer;
+    /// @dev The TokenTransformationEnforcer contract (settable by owner)
+    TokenTransformationEnforcer public tokenTransformationEnforcer;
 
     /// @dev Mapping from protocol address to adapter address
     mapping(address protocol => address adapter) public protocolAdapters;
 
+    /// @dev Struct to reduce stack depth
+    struct ExecutionCallDataParams {
+        IERC20 tokenFrom;
+        uint256 amountFrom;
+        address protocolAddress;
+        bytes actionData;
+        address rootDelegator;
+        bytes32 rootDelegationHash;
+        uint256 balanceBefore;
+    }
+
     ////////////////////////////// Events //////////////////////////////
+
+    /// @dev Emitted when the token transformation enforcer is set
+    event TokenTransformationEnforcerSet(address indexed oldEnforcer, address indexed newEnforcer);
 
     /// @dev Emitted when a protocol adapter is registered
     event ProtocolAdapterRegistered(address indexed protocol, address indexed adapter);
@@ -94,6 +116,12 @@ contract AdapterManager is ExecutionHelper, Ownable2Step {
     /// @dev Error thrown when unsupported execution type is used
     error UnsupportedExecType(ExecType execType);
 
+    /// @dev Error thrown when enforcer is not set
+    error EnforcerNotSet();
+
+    /// @dev Error thrown when TokenTransformationEnforcer is not found at index 0
+    error TokenTransformationEnforcerNotFound();
+
     ////////////////////////////// Modifiers //////////////////////////////
 
     modifier onlyDelegationManager() {
@@ -112,20 +140,13 @@ contract AdapterManager is ExecutionHelper, Ownable2Step {
      * @notice Initializes the AdapterManager
      * @param _owner The initial owner of the contract
      * @param _delegationManager The DelegationManager contract address
-     * @param _tokenTransformationEnforcer The TokenTransformationEnforcer contract address
      */
-    constructor(
-        address _owner,
-        IDelegationManager _delegationManager,
-        TokenTransformationEnforcer _tokenTransformationEnforcer
-    )
-        Ownable(_owner)
-    {
-        if (address(_delegationManager) == address(0) || address(_tokenTransformationEnforcer) == address(0)) {
+    constructor(address _owner, IDelegationManager _delegationManager) Ownable(_owner) {
+        if (address(_delegationManager) == address(0)) {
             revert InvalidZeroAddress();
         }
         delegationManager = _delegationManager;
-        tokenTransformationEnforcer = _tokenTransformationEnforcer;
+        // tokenTransformationEnforcer is set later by owner via setTokenTransformationEnforcer()
     }
 
     ////////////////////////////// External Methods //////////////////////////////
@@ -136,18 +157,31 @@ contract AdapterManager is ExecutionHelper, Ownable2Step {
     receive() external payable { }
 
     /**
+     * @notice Sets the TokenTransformationEnforcer contract address
+     * @dev Only callable by the contract owner
+     * @dev Can be called multiple times to update the enforcer address
+     * @param _tokenTransformationEnforcer The TokenTransformationEnforcer contract address
+     */
+    function setTokenTransformationEnforcer(TokenTransformationEnforcer _tokenTransformationEnforcer) external onlyOwner {
+        if (address(_tokenTransformationEnforcer) == address(0)) {
+            revert InvalidZeroAddress();
+        }
+        address oldEnforcer_ = address(tokenTransformationEnforcer);
+        tokenTransformationEnforcer = _tokenTransformationEnforcer;
+        emit TokenTransformationEnforcerSet(oldEnforcer_, address(_tokenTransformationEnforcer));
+    }
+
+    /**
      * @notice Executes a protocol action using delegations
      * @dev The msg.sender must be the leaf delegator
      * @param _protocolAddress The address of the lending protocol contract
-     * @param _action The action to perform (e.g., "deposit", "withdraw")
      * @param _tokenFrom The input token address
      * @param _amountFrom The amount of input tokens to use
-     * @param _actionData Additional data needed for the specific action
+     * @param _actionData Additional data needed for the specific action (first element should be the action string)
      * @param _delegations Array of Delegation objects, sorted leaf to root
      */
     function executeProtocolActionByDelegation(
         address _protocolAddress,
-        string calldata _action,
         IERC20 _tokenFrom,
         uint256 _amountFrom,
         bytes calldata _actionData,
@@ -155,74 +189,124 @@ contract AdapterManager is ExecutionHelper, Ownable2Step {
     )
         external
     {
-        uint256 delegationsLength_ = _delegations.length;
-        if (delegationsLength_ == 0) revert InvalidEmptyDelegations();
+        if (_delegations.length == 0) revert InvalidEmptyDelegations();
         if (_delegations[0].delegator != msg.sender) revert NotLeafDelegator();
+        if (protocolAdapters[_protocolAddress] == address(0)) revert NoAdapterForProtocol(_protocolAddress);
 
-        address rootDelegator_ = _delegations[delegationsLength_ - 1].delegator;
-        address adapter_ = protocolAdapters[_protocolAddress];
-        if (adapter_ == address(0)) revert NoAdapterForProtocol(_protocolAddress);
+        _validateAndSetProtocol(_delegations, _protocolAddress);
+        _executeWithDelegations(_delegations, _protocolAddress, _tokenFrom, _amountFrom, _actionData);
+    }
 
-        // Calculate root delegation hash
-        bytes32 rootDelegationHash_ = EncoderLib._getDelegationHash(_delegations[delegationsLength_ - 1]);
+    /**
+     * @notice Executes the protocol action using delegations
+     * @param _delegations The delegation chain
+     * @param _protocolAddress The protocol address
+     * @param _tokenFrom The input token
+     * @param _amountFrom The amount to use
+     * @param _actionData Additional action data (first element should be the action string)
+     */
+    function _executeWithDelegations(
+        Delegation[] memory _delegations,
+        address _protocolAddress,
+        IERC20 _tokenFrom,
+        uint256 _amountFrom,
+        bytes calldata _actionData
+    )
+        private
+    {
+        uint256 delegationsLength_ = _delegations.length;
+        Delegation memory rootDelegation_ = _delegations[delegationsLength_ - 1];
+        bytes32 rootDelegationHash_ = EncoderLib._getDelegationHash(rootDelegation_);
+        address rootDelegator_ = rootDelegation_.delegator;
+        uint256 balanceBefore_ = _getSelfBalance(_tokenFrom);
 
-        // Prepare the call that will be executed internally via onlySelf
-        bytes memory encodedExecute_ = abi.encodeCall(
-            this.executeProtocolActionInternal,
-            (
-                _protocolAddress,
-                _action,
-                _tokenFrom,
-                _amountFrom,
-                _actionData,
-                rootDelegator_,
-                rootDelegationHash_,
-                _getSelfBalance(_tokenFrom)
-            )
+        ExecutionCallDataParams memory params_;
+        params_.tokenFrom = _tokenFrom;
+        params_.amountFrom = _amountFrom;
+        params_.protocolAddress = _protocolAddress;
+        params_.actionData = _actionData;
+        params_.rootDelegator = rootDelegator_;
+        params_.rootDelegationHash = rootDelegationHash_;
+        params_.balanceBefore = balanceBefore_;
+
+        delegationManager.redeemDelegations(_buildPermissionContexts(_delegations), _buildModes(), _buildCallDatas(params_));
+    }
+
+    /**
+     * @notice Builds execution call datas array
+     */
+    function _buildCallDatas(ExecutionCallDataParams memory _params) private view returns (bytes[] memory executionCallDatas_) {
+        executionCallDatas_ = new bytes[](2);
+        executionCallDatas_[0] = _encodeTokenTransfer(_params.tokenFrom, _params.amountFrom);
+        executionCallDatas_[1] = _encodeInternalActionCall(_params);
+    }
+
+    /**
+     * @notice Encodes token transfer call data
+     */
+    function _encodeTokenTransfer(IERC20 _tokenFrom, uint256 _amountFrom) private view returns (bytes memory) {
+        if (address(_tokenFrom) == address(0)) {
+            return ExecutionLib.encodeSingle(address(this), _amountFrom, hex"");
+        }
+        return ExecutionLib.encodeSingle(address(_tokenFrom), 0, abi.encodeCall(IERC20.transfer, (address(this), _amountFrom)));
+    }
+
+    /**
+     * @notice Encodes internal action call data
+     */
+    function _encodeInternalActionCall(ExecutionCallDataParams memory _params) private view returns (bytes memory) {
+        bytes memory callData_ = abi.encodeWithSelector(
+            this.executeProtocolActionInternal.selector,
+            _params.protocolAddress,
+            _params.tokenFrom,
+            _params.amountFrom,
+            _params.actionData,
+            _params.rootDelegator,
+            _params.rootDelegationHash,
+            _params.balanceBefore
         );
+        return ExecutionLib.encodeSingle(address(this), 0, callData_);
+    }
 
+    /**
+     * @notice Builds permission contexts array
+     */
+    function _buildPermissionContexts(Delegation[] memory _delegations) private pure returns (bytes[] memory) {
         bytes[] memory permissionContexts_ = new bytes[](2);
         permissionContexts_[0] = abi.encode(_delegations);
         permissionContexts_[1] = abi.encode(new Delegation[](0));
+        return permissionContexts_;
+    }
 
+    /**
+     * @notice Builds modes array
+     */
+    function _buildModes() private pure returns (ModeCode[] memory) {
         ModeCode[] memory encodedModes_ = new ModeCode[](2);
         encodedModes_[0] = ModeLib.encodeSimpleSingle();
         encodedModes_[1] = ModeLib.encodeSimpleSingle();
-
-        bytes[] memory executionCallDatas_ = new bytes[](2);
-
-        if (address(_tokenFrom) == address(0)) {
-            executionCallDatas_[0] = ExecutionLib.encodeSingle(address(this), _amountFrom, hex"");
-        } else {
-            bytes memory encodedTransfer_ = abi.encodeCall(IERC20.transfer, (address(this), _amountFrom));
-            executionCallDatas_[0] = ExecutionLib.encodeSingle(address(_tokenFrom), 0, encodedTransfer_);
-        }
-        executionCallDatas_[1] = ExecutionLib.encodeSingle(address(this), 0, encodedExecute_);
-
-        delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
+        return encodedModes_;
     }
 
     /**
      * @notice Executes the protocol action internally and updates enforcer state
      * @dev Only callable internally by this contract (`onlySelf`)
-     * @param _protocolAddress The address of the lending protocol contract
-     * @param _action The action to perform
-     * @param _tokenFrom The input token address
-     * @param _amountFrom The amount of input tokens to use
-     * @param _actionData Additional data needed for the specific action
+     * @param _protocolAddress The protocol address
+     * @param _tokenFrom The input token
+     * @param _amountFrom The amount to use
+     * @param _actionData The action data (first element is the action string)
      * @param _rootDelegator The root delegator address
-     * @param _rootDelegationHash The hash of the root delegation
-     * @param _balanceFromBefore The contract's balance of _tokenFrom before the incoming token transfer
+     * @param _rootDelegationHash The root delegation hash
+     * @param _balanceBefore The balance before receiving tokens
      */
     function executeProtocolActionInternal(
         address _protocolAddress,
-        string calldata _action,
         IERC20 _tokenFrom,
         uint256 _amountFrom,
-        bytes calldata _actionData,
+        bytes memory _actionData,
         address _rootDelegator,
         bytes32 _rootDelegationHash,
-        uint256 _balanceFromBefore
+        uint256 _balanceBefore
     )
         external
         onlySelf
@@ -230,74 +314,17 @@ contract AdapterManager is ExecutionHelper, Ownable2Step {
         address adapter_ = protocolAdapters[_protocolAddress];
         if (adapter_ == address(0)) revert NoAdapterForProtocol(_protocolAddress);
 
-        // Verify we received the expected amount
-        uint256 tokenFromObtained_ = _getSelfBalance(_tokenFrom) - _balanceFromBefore;
-        if (tokenFromObtained_ < _amountFrom) {
-            revert InsufficientTokens();
-        }
+        (string memory action_, bytes memory originalActionData_) = abi.decode(_actionData, (string, bytes));
 
-        // If we received more than needed, send excess back to root delegator
-        if (tokenFromObtained_ > _amountFrom) {
-            _sendTokens(_tokenFrom, tokenFromObtained_ - _amountFrom, _rootDelegator);
-        }
+        _handleTokenReceipt(_tokenFrom, _amountFrom, _balanceBefore, _rootDelegator);
+        _tokenFrom.safeTransfer(adapter_, _amountFrom);
 
-        // Approve protocol to spend tokens (if needed)
-        // For Aave/Morpho, we need to approve the protocol contract
-        uint256 currentAllowance_ = _tokenFrom.allowance(address(this), _protocolAddress);
-        if (currentAllowance_ < _amountFrom) {
-            _tokenFrom.safeIncreaseAllowance(_protocolAddress, type(uint256).max);
-        }
+        IAdapter.TransformationInfo memory transformationInfo_ = IAdapter(adapter_)
+            .executeProtocolAction(
+                _protocolAddress, action_, _tokenFrom, _amountFrom, abi.encode(address(this), originalActionData_)
+            );
 
-        // Prepare actionData with AdapterManager address for balance measurement
-        bytes memory enhancedActionData_ = abi.encode(address(this), _actionData);
-
-        // Execute protocol action via adapter
-        // The adapter will measure balances of this contract and return transformation info
-        ILendingAdapter.TransformationInfo memory transformationInfo_ = ILendingAdapter(adapter_)
-            .executeProtocolAction(_protocolAddress, _action, _tokenFrom, _amountFrom, enhancedActionData_);
-
-        // Reset approval (if needed, though we use max allowance above)
-        // Note: In production, consider resetting to 0 for security, but requires handling non-zero to zero transitions
-
-        // Verify we received the output tokens from the adapter
-        address tokenToAddress_ = transformationInfo_.tokenTo;
-        IERC20 tokenTo_ = IERC20(tokenToAddress_);
-        uint256 tokenToBalance_ = _getSelfBalance(tokenTo_);
-
-        // The adapter should have transferred tokens to this contract
-        // Use the amount reported by the adapter
-        uint256 amountTo_ = transformationInfo_.amountTo;
-
-        // Verify we actually received the tokens (safety check)
-        if (tokenToBalance_ < amountTo_) {
-            revert InsufficientOutputTokens();
-        }
-
-        // Update enforcer state: deduct tokenFrom, add tokenTo
-        // Deduct the amount used from tokenFrom
-        if (_amountFrom > 0) {
-            // Note: The enforcer's beforeHook should have already validated and deducted tokenFrom
-            // But we need to handle the case where tokenFrom was transformed
-            // Actually, the enforcer tracks available amounts, so we need to:
-            // 1. The tokenFrom was already deducted by the enforcer's beforeHook when tokens were transferred to this contract
-            // 2. Now we need to add the tokenTo amount to the enforcer state
-            tokenTransformationEnforcer.updateAssetState(_rootDelegationHash, transformationInfo_.tokenTo, amountTo_);
-        }
-
-        // Transfer output tokens to root delegator
-        if (amountTo_ > 0) {
-            _sendTokens(tokenTo_, amountTo_, _rootDelegator);
-        }
-
-        emit ProtocolActionExecuted(
-            _rootDelegationHash,
-            _protocolAddress,
-            _action,
-            transformationInfo_.tokenFrom,
-            transformationInfo_.amountFrom,
-            transformationInfo_.tokenTo,
-            amountTo_
-        );
+        _handleTransformationResult(transformationInfo_, _rootDelegator, _rootDelegationHash, _protocolAddress, action_);
     }
 
     /**
@@ -354,6 +381,121 @@ contract AdapterManager is ExecutionHelper, Ownable2Step {
     }
 
     ////////////////////////////// Private/Internal Methods //////////////////////////////
+
+    /**
+     * @notice Validates that TokenTransformationEnforcer is at index 0 of root delegation caveats
+     *         and sets the protocol address in args
+     * @dev The TokenTransformationEnforcer must be the first caveat in the root delegation
+     * @param _delegations The delegation chain; the last delegation must include the TokenTransformationEnforcer
+     * @param _protocolAddress The protocol address to set in the enforcer's args
+     */
+    function _validateAndSetProtocol(Delegation[] memory _delegations, address _protocolAddress) private view {
+        // The TokenTransformationEnforcer must be the first caveat in the root delegation
+        uint256 lastIndex_ = _delegations.length - 1;
+        if (
+            _delegations[lastIndex_].caveats.length == 0
+                || _delegations[lastIndex_].caveats[0].enforcer != address(tokenTransformationEnforcer)
+        ) {
+            revert TokenTransformationEnforcerNotFound();
+        }
+
+        // Set protocol address in args of TokenTransformationEnforcer caveat
+        _delegations[lastIndex_].caveats[0].args = abi.encodePacked(_protocolAddress);
+    }
+
+    /**
+     * @notice Handles token receipt verification and excess token return
+     * @param _tokenFrom The input token
+     * @param _amountFrom The expected amount
+     * @param _balanceFromBefore The balance before receiving tokens
+     * @param _rootDelegator The root delegator to return excess tokens to
+     */
+    function _handleTokenReceipt(
+        IERC20 _tokenFrom,
+        uint256 _amountFrom,
+        uint256 _balanceFromBefore,
+        address _rootDelegator
+    )
+        private
+    {
+        uint256 tokenFromObtained_ = _getSelfBalance(_tokenFrom) - _balanceFromBefore;
+        if (tokenFromObtained_ < _amountFrom) revert InsufficientTokens();
+        if (tokenFromObtained_ > _amountFrom) {
+            _sendTokens(_tokenFrom, tokenFromObtained_ - _amountFrom, _rootDelegator);
+        }
+    }
+
+    /**
+     * @notice Approves protocol to spend tokens if needed
+     * @param _tokenFrom The input token
+     * @param _protocolAddress The protocol address
+     * @param _amountFrom The amount needed
+     */
+    function _approveProtocolIfNeeded(IERC20 _tokenFrom, address _protocolAddress, uint256 _amountFrom) private {
+        if (_tokenFrom.allowance(address(this), _protocolAddress) < _amountFrom) {
+            _tokenFrom.safeIncreaseAllowance(_protocolAddress, type(uint256).max);
+        }
+    }
+
+    /**
+     * @notice Approves adapter to transfer aTokens from this contract for wrapping
+     * @dev Only called for Aave deposits where aTokens need to be wrapped
+     * @param _adapter The adapter address
+     * @param _protocolAddress The Aave Pool address
+     * @param _tokenFrom The underlying token
+     * @param _amountFrom The amount to approve
+     */
+    function _approveAdapterForATokenTransfer(
+        address _adapter,
+        address _protocolAddress,
+        IERC20 _tokenFrom,
+        uint256 _amountFrom
+    )
+        private
+    {
+        address aTokenAddress_ = IAavePool(_protocolAddress).getReserveAToken(address(_tokenFrom));
+        IERC20(aTokenAddress_).safeIncreaseAllowance(_adapter, _amountFrom);
+    }
+
+    /**
+     * @notice Handles the transformation result: verifies output, updates enforcer, transfers tokens, and emits event
+     * @param _transformationInfo The transformation information from the adapter
+     * @param _rootDelegator The root delegator address
+     * @param _rootDelegationHash The root delegation hash
+     * @param _protocolAddress The protocol address
+     * @param _action The action string that was performed
+     */
+    function _handleTransformationResult(
+        IAdapter.TransformationInfo memory _transformationInfo,
+        address _rootDelegator,
+        bytes32 _rootDelegationHash,
+        address _protocolAddress,
+        string memory _action
+    )
+        private
+    {
+        uint256 amountTo_ = _transformationInfo.amountTo;
+        if (_getSelfBalance(IERC20(_transformationInfo.tokenTo)) < amountTo_) {
+            revert InsufficientOutputTokens();
+        }
+
+        if (address(tokenTransformationEnforcer) == address(0)) revert EnforcerNotSet();
+        tokenTransformationEnforcer.updateAssetState(_rootDelegationHash, _transformationInfo.tokenTo, amountTo_);
+
+        if (amountTo_ > 0) {
+            _sendTokens(IERC20(_transformationInfo.tokenTo), amountTo_, _rootDelegator);
+        }
+
+        emit ProtocolActionExecuted(
+            _rootDelegationHash,
+            _protocolAddress,
+            _action,
+            _transformationInfo.tokenFrom,
+            _transformationInfo.amountFrom,
+            _transformationInfo.tokenTo,
+            amountTo_
+        );
+    }
 
     /**
      * @notice Sends tokens or native token to a specified recipient

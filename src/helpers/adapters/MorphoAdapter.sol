@@ -4,7 +4,7 @@ pragma solidity 0.8.23;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import { ILendingAdapter } from "../interfaces/ILendingAdapter.sol";
+import { IAdapter } from "../interfaces/IAdapter.sol";
 
 /**
  * @notice Simplified Morpho Market interface
@@ -28,7 +28,7 @@ interface IMorphoPositionsManager {
  * @notice Adapter for Morpho lending protocol interactions
  * @dev Handles deposit and withdraw actions for Morpho markets
  */
-contract MorphoAdapter is ILendingAdapter {
+contract MorphoAdapter is IAdapter {
     using SafeERC20 for IERC20;
 
     ////////////////////////////// State //////////////////////////////
@@ -107,7 +107,11 @@ contract MorphoAdapter is ILendingAdapter {
      * @param _adapterManager The AdapterManager address to measure balances
      * @return transformationInfo_ The transformation information
      */
-    function _handleDeposit(IERC20 _tokenFrom, uint256 _amountFrom, address _adapterManager)
+    function _handleDeposit(
+        IERC20 _tokenFrom,
+        uint256 _amountFrom,
+        address _adapterManager
+    )
         private
         returns (TransformationInfo memory transformationInfo_)
     {
@@ -131,10 +135,7 @@ contract MorphoAdapter is ILendingAdapter {
         uint256 mTokenAmount_ = mTokenBalanceAfter_ - mTokenBalanceBefore_;
 
         return TransformationInfo({
-            tokenFrom: address(_tokenFrom),
-            amountFrom: _amountFrom,
-            tokenTo: marketAddress_,
-            amountTo: mTokenAmount_
+            tokenFrom: address(_tokenFrom), amountFrom: _amountFrom, tokenTo: marketAddress_, amountTo: mTokenAmount_
         });
     }
 
@@ -146,7 +147,12 @@ contract MorphoAdapter is ILendingAdapter {
      * @param _adapterManager The AdapterManager address to measure balances
      * @return transformationInfo_ The transformation information
      */
-    function _handleWithdraw(IERC20 _mToken, uint256 _amountFrom, bytes calldata _actionData, address _adapterManager)
+    function _handleWithdraw(
+        IERC20 _mToken,
+        uint256 _amountFrom,
+        bytes calldata _actionData,
+        address _adapterManager
+    )
         private
         returns (TransformationInfo memory transformationInfo_)
     {
@@ -165,10 +171,7 @@ contract MorphoAdapter is ILendingAdapter {
         uint256 underlyingAmount_ = underlyingBalanceAfter_ - underlyingBalanceBefore_;
 
         return TransformationInfo({
-            tokenFrom: address(_mToken),
-            amountFrom: _amountFrom,
-            tokenTo: underlyingToken_,
-            amountTo: underlyingAmount_
+            tokenFrom: address(_mToken), amountFrom: _amountFrom, tokenTo: underlyingToken_, amountTo: underlyingAmount_
         });
     }
 }

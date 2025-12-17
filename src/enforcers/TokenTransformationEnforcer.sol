@@ -48,6 +48,9 @@ contract TokenTransformationEnforcer is CaveatEnforcer {
     /// @dev Error thrown when invalid terms length is provided
     error InvalidTermsLength();
 
+    /// @dev Error thrown when protocol is not allowed
+    error ProtocolNotAllowed(address protocol);
+
     ////////////////////////////// Constructor //////////////////////////////
 
     /**
@@ -75,14 +78,18 @@ contract TokenTransformationEnforcer is CaveatEnforcer {
      *      - Protocol interaction delegations: Used with AdapterManager to track token transformations
      *        through lending protocols (e.g., USDC -> aUSDC via Aave deposit)
      *      - Multi-token delegations: Tracks multiple tokens per delegationHash as tokens are transformed
+     * @dev When used with AdapterManager, _args must contain the protocol address (20 bytes)
+     *      and the protocol will be validated against allowedProtocols from terms
      * @param _terms Encoded initial token address and amount (52 bytes: 20 bytes token + 32 bytes amount)
+     *               Extended format may include allowed protocol addresses
+     * @param _args Protocol address (20 bytes) when used with AdapterManager, empty otherwise
      * @param _mode The execution mode (must be Single callType, Default execType)
      * @param _executionCallData The execution call data containing the transfer
      * @param _delegationHash The hash of the delegation
      */
     function beforeHook(
         bytes calldata _terms,
-        bytes calldata,
+        bytes calldata _args,
         ModeCode _mode,
         bytes calldata _executionCallData,
         bytes32 _delegationHash,
@@ -94,12 +101,13 @@ contract TokenTransformationEnforcer is CaveatEnforcer {
         onlySingleCallTypeMode(_mode)
         onlyDefaultExecutionMode(_mode)
     {
-        (address initialToken_, uint256 initialAmount_) = getTermsInfo(_terms);
-        (address target_,, bytes calldata callData_) = _executionCallData.decodeSingle();
+        (address initialToken_, uint256 initialAmount_, address[] memory allowedProtocols_) = getTermsInfo(_terms);
+        _validateProtocol(_args, allowedProtocols_);
+
+        (address token_,, bytes calldata callData_) = _executionCallData.decodeSingle();
 
         // Validate that this is an ERC20 transfer
         require(callData_.length == 68, "TokenTransformationEnforcer:invalid-execution-length");
-        address token_ = target_; // Token being transferred
         require(bytes4(callData_[0:4]) == IERC20.transfer.selector, "TokenTransformationEnforcer:invalid-method");
 
         // Decode transfer amount
@@ -111,9 +119,9 @@ contract TokenTransformationEnforcer is CaveatEnforcer {
         // Initialize from terms only if this is the first use of the initial token
         // Only initialize if: token matches initial token AND delegationHash hasn't been initialized yet
         if (available_ == 0 && !isInitialized[_delegationHash] && token_ == initialToken_) {
-            available_ = initialAmount_;
             availableAmounts[_delegationHash][token_] = initialAmount_;
             isInitialized[_delegationHash] = true;
+            available_ = initialAmount_;
         }
 
         if (transferAmount_ > available_) {
@@ -125,6 +133,35 @@ contract TokenTransformationEnforcer is CaveatEnforcer {
 
         emit TokensSpent(_delegationHash, token_, transferAmount_, available_ - transferAmount_);
     }
+
+    ////////////////////////////// Private/Internal Methods //////////////////////////////
+
+    /**
+     * @notice Validates that a protocol address from args is allowed according to the allowedProtocols list
+     * @param _args Protocol address (20 bytes) when used with AdapterManager
+     * @param _allowedProtocols Array of allowed protocol addresses from terms
+     */
+    function _validateProtocol(bytes calldata _args, address[] memory _allowedProtocols) internal pure {
+        if (_args.length != 20) revert InvalidTermsLength(); // Protocol address must be 20 bytes
+        address protocol_ = address(bytes20(_args[:20]));
+
+        // Validate protocol against allowed list
+        if (_allowedProtocols.length > 0) {
+            bool isAllowed_ = false;
+            for (uint256 i = 0; i < _allowedProtocols.length; i++) {
+                if (_allowedProtocols[i] == protocol_) {
+                    isAllowed_ = true;
+                    break;
+                }
+            }
+            if (!isAllowed_) {
+                revert ProtocolNotAllowed(protocol_);
+            }
+        }
+        // If no protocols specified in terms, allow all (backward compatible)
+    }
+
+    ////////////////////////////// Public Methods //////////////////////////////
 
     /**
      * @notice Updates the asset state for a delegation after a protocol interaction
@@ -153,14 +190,52 @@ contract TokenTransformationEnforcer is CaveatEnforcer {
 
     /**
      * @notice Decodes the terms used in this CaveatEnforcer
-     * @param _terms Encoded data: 20 bytes token address + 32 bytes initial amount
+     * @dev Terms format:
+     *      - Base (52 bytes): 20 bytes token address + 32 bytes initial amount
+     *      - Extended (optional): 1 byte protocol count + N * 20 bytes protocol addresses
+     *      - Minimum length: 52 bytes (no protocols, backward compatible)
+     *      - Maximum length: 52 + 1 + (255 * 20) = 5162 bytes
+     * @param _terms Encoded data
      * @return token_ The initial token address
      * @return amount_ The initial amount
+     * @return allowedProtocols_ Array of allowed protocol addresses (empty if none specified)
      */
-    function getTermsInfo(bytes calldata _terms) public pure returns (address token_, uint256 amount_) {
-        if (_terms.length != 52) revert InvalidTermsLength();
+    function getTermsInfo(bytes calldata _terms)
+        public
+        pure
+        returns (address token_, uint256 amount_, address[] memory allowedProtocols_)
+    {
+        if (_terms.length < 52) revert InvalidTermsLength();
+
         token_ = address(bytes20(_terms[:20]));
-        amount_ = uint256(bytes32(_terms[20:]));
+        amount_ = uint256(bytes32(_terms[20:52]));
+
+        // Check if protocols are specified
+        if (_terms.length == 52) {
+            // No protocols specified (backward compatible)
+            allowedProtocols_ = new address[](0);
+        } else {
+            // Must have at least 53 bytes (base + count byte)
+            if (_terms.length < 53) revert InvalidTermsLength();
+
+            uint8 protocolCount_ = uint8(_terms[52]);
+
+            // Expected length: 52 (base) + 1 (count) + protocolCount * 20 (addresses)
+            uint256 expectedLength_ = 53 + (protocolCount_ * 20);
+            if (_terms.length != expectedLength_) {
+                revert InvalidTermsLength();
+            }
+
+            if (protocolCount_ == 0) {
+                allowedProtocols_ = new address[](0);
+            } else {
+                allowedProtocols_ = new address[](protocolCount_);
+                for (uint8 i = 0; i < protocolCount_; i++) {
+                    uint256 offset_ = 53 + (i * 20);
+                    allowedProtocols_[i] = address(bytes20(_terms[offset_:offset_ + 20]));
+                }
+            }
+        }
     }
 }
 

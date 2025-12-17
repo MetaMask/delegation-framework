@@ -5,10 +5,10 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Delegation } from "../../utils/Types.sol";
 
 /**
- * @title ILendingAdapter
- * @notice Interface for lending protocol adapters that handle token transformations
+ * @title IAdapter
+ * @notice Interface for protocol adapters that handle token transformations
  */
-interface ILendingAdapter {
+interface IAdapter {
     /**
      * @notice Struct representing token transformation information
      */
@@ -20,8 +20,8 @@ interface ILendingAdapter {
     }
 
     /**
-     * @notice Executes a lending protocol interaction and returns transformation info
-     * @param _protocolAddress The address of the lending protocol contract
+     * @notice Executes a protocol interaction and returns transformation info
+     * @param _protocolAddress The address of the protocol contract
      * @param _action The action to perform (e.g., "deposit", "withdraw", "borrow", "repay")
      * @param _tokenFrom The input token address
      * @param _amountFrom The amount of input tokens to use

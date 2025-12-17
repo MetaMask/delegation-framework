@@ -92,7 +92,7 @@ Protocol-specific adapters that handle interactions with lending protocols.
 **Adapter Interface:**
 
 ```solidity
-interface ILendingAdapter {
+interface IAdapter {
     struct TransformationInfo {
         address tokenFrom;
         uint256 amountFrom;
@@ -197,7 +197,7 @@ All tokens remain under delegation control until expiration or revocation.
 
 **Benefits**:
 
-- Easy to add new protocols (just implement ILendingAdapter)
+- Easy to add new protocols (just implement IAdapter)
 - Protocol-specific logic isolated from core system
 - Consistent transformation tracking across protocols
 
@@ -273,57 +273,3 @@ address adapter = adapterManager.protocolAdapters(protocolAddress);
 3. **Borrowing Support**: Extend adapters to handle borrowing and repayment
 4. **Multi-Step Strategies**: Support complex multi-protocol strategies
 5. **Gas Optimization**: Optimize state updates and balance measurements
-
-## Files Structure
-
-```
-src/
-├── enforcers/
-│   └── TokenTransformationEnforcer.sol    # Tracks multi-token state per delegation
-├── helpers/
-│   ├── adapters/
-│   │   ├── AdapterManager.sol             # Routes to adapters, updates state
-│   │   ├── AaveAdapter.sol                 # Aave V3 interactions
-│   │   └── MorphoAdapter.sol                # Morpho interactions
-│   └── interfaces/
-│       └── ILendingAdapter.sol             # Adapter interface
-```
-
-## Usage Example
-
-```solidity
-// 1. Create delegation with TokenTransformationEnforcer
-Delegation memory delegation = Delegation({
-    delegate: agentAddress,
-    delegator: userAddress,
-    authority: ROOT_AUTHORITY,
-    caveats: [Caveat({
-        enforcer: tokenTransformationEnforcer,
-        terms: abi.encodePacked(usdcAddress, 1000e6), // 1000 USDC
-        args: hex""
-    })],
-    salt: 0,
-    signature: hex""
-});
-
-// 2. Agent uses delegation to deposit to Aave
-adapterManager.executeProtocolActionByDelegation(
-    aavePoolAddress,
-    "deposit",
-    usdcToken,
-    500e6,
-    abi.encode(adapterManagerAddress),
-    delegations
-);
-
-// 3. Query available amounts
-uint256 usdcAvailable = tokenTransformationEnforcer.getAvailableAmount(
-    delegationHash,
-    usdcAddress
-); // Returns: 500e6
-
-uint256 wrappedAUsdcAvailable = tokenTransformationEnforcer.getAvailableAmount(
-    delegationHash,
-    wrappedAUsdcAddress
-); // Returns: 500e6
-```
