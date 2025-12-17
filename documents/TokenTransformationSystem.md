@@ -2,36 +2,24 @@
 
 ## Overview
 
-The Token Transformation System enables delegations to track and control token transformations through DeFi protocol interactions. This system allows AI agents and other automated systems to use delegated tokens in lending protocols (like Aave and Morpho) while maintaining granular control over the evolving token positions.
+The Token Transformation System enables delegations to track and control token transformations through DeFi protocol interactions. This system allows AI agents and other automated systems to use delegated tokens in lending protocols (like Aave) while maintaining granular control over the evolving token positions.
 
 ## Problem Statement
 
-### The Challenge
+When tokens are used in DeFi protocols, they often transform into different tokens:
 
-Traditional delegation systems grant access to a fixed amount of a single token. However, when tokens are used in DeFi protocols, they often transform into different tokens:
-
-- **Lending Protocols**: Depositing USDC into Aave yields aUSDC (a rebasing token that increases over time)
-- **Yield Strategies**: Tokens may be transformed through multiple protocol interactions
-- **Multi-Token Positions**: A single delegation may evolve to control multiple token types
+- **Lending Protocols**: Depositing USDC into Aave yields wrapped aUSDC (a non-rebasing token)
+- **Token Evolution**: A single delegation may evolve to control multiple token types
 
 **Example Scenario:**
 
 1. User delegates 1000 USDC to an AI agent
-2. Agent deposits 500 USDC → receives 500 aUSDC (Aave)
-3. Agent uses 200 USDC to buy DAI via a swap
-4. Final state: User should have control over 300 USDC + 500 aUSDC + 200 DAI
+2. Agent deposits 500 USDC → receives 500 wrapped aUSDC (Aave)
+3. Final state: User has control over 300 USDC + 500 wrapped aUSDC
 
-The challenge is maintaining permission over **all tokens derived from the original delegation** until the delegation expires or is revoked.
+The system maintains permission over **all tokens derived from the original delegation** until the delegation expires or is revoked.
 
-### Requirements
-
-1. **Track Transformations**: Monitor what tokens are generated from protocol interactions
-2. **Multi-Token Support**: Track multiple tokens per delegation simultaneously
-3. **Granular Control**: Maintain access control over each token type and amount
-4. **Protocol Agnostic**: Support multiple lending protocols (Aave, Morpho, etc.)
-5. **Public Visibility**: Allow anyone to query available token amounts per delegation
-
-## Solution Architecture
+## Architecture
 
 The solution consists of three main components:
 
@@ -39,46 +27,96 @@ The solution consists of three main components:
 
 A caveat enforcer that tracks multiple tokens per delegation hash.
 
-**Key Features:**
-
-- Maps `delegationHash => token => availableAmount`
-- Initializes from delegation terms on first use
-- Validates token usage in `beforeHook`
-- Updates state via `updateAssetState()` (only callable by AdapterManager)
-- Public view function: `getAvailableAmount(delegationHash, token)`
-
-**State Structure:**
+**State:**
 
 ```solidity
 mapping(bytes32 delegationHash => mapping(address token => uint256 amount)) public availableAmounts;
 mapping(bytes32 delegationHash => bool initialized) public isInitialized;
+address public immutable adapterManager;
 ```
+
+**Key Functions:**
+
+- `beforeHook()`: Validates token transfers and deducts from available amounts
+- `updateAssetState()`: Adds new tokens after protocol interactions (only callable by AdapterManager)
+- `getAvailableAmount()`: Public view function to query available amounts
+
+**Terms Format:**
+
+- Base (52 bytes): 20 bytes token address + 32 bytes initial amount
+- Extended (optional): 1 byte protocol count + N \* 20 bytes protocol addresses
+- Minimum: 52 bytes (no protocols)
+- Maximum: 52 + 1 + (255 \* 20) = 5162 bytes
 
 **Initialization:**
 
-- Terms encode: `20 bytes token address + 32 bytes initial amount`
-- On first use of initial token, amount is initialized from terms
+- On first use of the initial token, amount is initialized from terms
 - Subsequent uses deduct from available amount
+- Protocol addresses in `_args` are validated against `allowedProtocols` from terms
+
+**Design Pattern: State Tracking**
+
+The enforcer uses a state tracking pattern to maintain multiple tokens per delegation:
+
+- Tracks what tokens are **available**, not what tokens exist
+- Allows tracking multiple token types simultaneously
+- Initializes lazily on first use to save gas
+- Prevents double initialization with `isInitialized` mapping
 
 ### 2. AdapterManager
 
-Central coordinator that routes protocol interactions to specific adapters and updates enforcer state.
+Central coordinator that routes protocol interactions to adapters and updates enforcer state.
 
-**Key Responsibilities:**
+**State:**
 
-- Routes protocol calls to appropriate adapters via `protocolAdapters` mapping
-- Handles token approvals for protocol interactions
-- Measures token balances before/after protocol actions
-- Updates `TokenTransformationEnforcer` state after transformations
-- Transfers all tokens to root delegator (never holds tokens)
+```solidity
+IDelegationManager public immutable delegationManager;
+TokenTransformationEnforcer public tokenTransformationEnforcer; // Settable by owner
+mapping(address protocol => address adapter) public protocolAdapters;
+```
+
+**Key Functions:**
+
+- `executeProtocolActionByDelegation()`: Main entry point for protocol interactions
+- `registerProtocolAdapter()`: Register adapters for protocols (owner only)
+- `setTokenTransformationEnforcer()`: Set the enforcer address (owner only)
 
 **Flow:**
 
-1. Receives delegation request with protocol address and action
-2. Routes to appropriate adapter based on protocol address
-3. Adapter executes protocol interaction and measures transformations
-4. AdapterManager updates enforcer state: deducts `tokenFrom`, adds `tokenTo`
-5. Transfers output tokens to root delegator
+1. User calls `executeProtocolActionByDelegation()` with delegations
+2. AdapterManager validates TokenTransformationEnforcer is at index 0 of root delegation
+3. Sets protocol address in enforcer caveat args
+4. Creates two executions via delegation redemption:
+   - Execution 1: Transfer tokens from delegator to AdapterManager
+   - Execution 2: Internal call to `executeProtocolActionInternal()`
+5. Routes to adapter based on protocol address
+6. Adapter executes protocol interaction and returns transformation info
+7. AdapterManager updates enforcer state (adds output tokens)
+8. Transfers output tokens to root delegator
+
+**Design Pattern: Two-Phase Execution**
+
+The system uses a two-phase execution pattern:
+
+**Phase 1 - Token Transfer**: Validated through delegation redemption
+
+- TokenTransformationEnforcer validates availability in `beforeHook()`
+- Tokens are transferred from delegator to AdapterManager
+- Amount is deducted from availableAmounts
+
+**Phase 2 - Protocol Action**: Executed internally
+
+- AdapterManager calls adapter to execute protocol interaction
+- Adapter returns transformation information
+- AdapterManager updates enforcer state with new tokens
+
+**Why:** Separating validation from execution allows us to use the delegation framework's validation while maintaining control over protocol interactions.
+
+**Security:**
+
+- Only DelegationManager can call `executeFromExecutor()`
+- Only AdapterManager can update enforcer state
+- TokenTransformationEnforcer must be first caveat in root delegation
 
 ### 3. Protocol Adapters
 
@@ -87,7 +125,6 @@ Protocol-specific adapters that handle interactions with lending protocols.
 **Current Adapters:**
 
 - **AaveAdapter**: Handles Aave V3 deposits/withdrawals
-- **MorphoAdapter**: Handles Morpho market interactions
 
 **Adapter Interface:**
 
@@ -110,12 +147,64 @@ interface IAdapter {
 }
 ```
 
-**Adapter Responsibilities:**
+**AaveAdapter Details:**
 
-- Measure token balances before protocol interaction
-- Execute protocol function (deposit, withdraw, etc.)
-- Measure token balances after interaction
-- Return transformation information (tokenFrom, amountFrom, tokenTo, amountTo)
+- Supports "deposit" and "withdraw" actions
+- Wraps rebasing aTokens into non-rebasing stataTokens (ERC-4626)
+- Dynamically detects if wrapper accepts aTokens or underlying tokens directly
+- Returns transformation info: tokenFrom → tokenTo with amounts
+
+**Design Pattern: Adapter Pattern**
+
+Different DeFi protocols have different interfaces and behaviors. The adapter pattern:
+
+- Encapsulates protocol-specific logic
+- Provides a consistent interface for the AdapterManager
+- Makes it easy to add support for new protocols
+
+Each protocol has an adapter contract implementing `IAdapter` that handles protocol-specific details (approvals, wrapping, etc.) and returns standardized `TransformationInfo` structs.
+
+## Contract Interaction Diagram
+
+```mermaid
+sequenceDiagram
+    participant Agent as Agent/User
+    participant AM as AdapterManager
+    participant DM as DelegationManager
+    participant TTE as TokenTransformationEnforcer
+    participant AA as AaveAdapter
+    participant Aave as Aave Pool
+
+    Agent->>AM: executeProtocolActionByDelegation(protocol, token, amount, delegations)
+
+    Note over AM: 1. Validate TTE at index 0<br/>2. Set protocol in args
+
+    AM->>DM: redeemDelegations([delegations], [modes], [callDatas])
+
+    Note over DM: Execution 1: Token Transfer
+    DM->>TTE: beforeHook(terms, args, mode, transferCallData, delegationHash)
+    TTE->>TTE: Validate & deduct tokens
+    TTE-->>DM: ✓ Valid
+    DM->>AM: transfer(token, amount)
+
+    Note over DM: Execution 2: Internal Action
+    DM->>AM: executeFromExecutor(mode, internalCallData)
+    AM->>AM: executeProtocolActionInternal()
+
+    AM->>AA: transfer(token, amount)
+    AM->>AA: executeProtocolAction(protocol, action, token, amount, actionData)
+
+    AA->>Aave: supply(token, amount, ...)
+    Aave-->>AA: aTokens
+    AA->>Aave: wrap aTokens → stataTokens
+    Aave-->>AA: stataTokens
+    AA-->>AM: TransformationInfo(tokenFrom, amountFrom, tokenTo, amountTo)
+
+    AM->>TTE: updateAssetState(delegationHash, tokenTo, amountTo)
+    TTE->>TTE: Add tokens to availableAmounts
+
+    AM->>Agent: transfer(tokenTo, amountTo) to root delegator
+```
 
 ## How It Works
 
@@ -125,7 +214,7 @@ interface IAdapter {
 
    ```
    User delegates 1000 USDC with TokenTransformationEnforcer
-   Terms: [USDC address, 1000]
+   Terms: [USDC address (20 bytes), 1000 (32 bytes), protocol count (1 byte), Aave Pool address (20 bytes)]
    ```
 
 2. **Agent Initiates Deposit**:
@@ -133,7 +222,6 @@ interface IAdapter {
    ```
    Agent calls AdapterManager.executeProtocolActionByDelegation(
        protocol: Aave Pool,
-       action: "deposit",
        tokenFrom: USDC,
        amountFrom: 500,
        delegations: [...]
@@ -142,6 +230,8 @@ interface IAdapter {
 
 3. **Delegation Redemption**:
 
+   - AdapterManager validates TokenTransformationEnforcer is at index 0
+   - Sets protocol address in enforcer caveat args
    - DelegationManager validates delegations
    - TokenTransformationEnforcer.beforeHook() validates 500 USDC is available
    - Deducts 500 USDC from availableAmounts[delegationHash][USDC]
@@ -149,11 +239,9 @@ interface IAdapter {
 
 4. **Protocol Interaction**:
 
-   - AdapterManager approves Aave Pool
-   - AaveAdapter measures aUSDC balance before
-   - AaveAdapter calls Aave Pool.supply(USDC, 500, AdapterManager, 0)
-   - AaveAdapter wraps aUSDC → wrapped aUSDC (non-rebasing)
-   - AaveAdapter measures wrapped aUSDC balance after
+   - AdapterManager transfers tokens to AaveAdapter
+   - AaveAdapter calls Aave Pool.supply(USDC, 500, ...)
+   - AaveAdapter wraps aUSDC → wrapped aUSDC (stataToken)
    - Returns: tokenFrom=USDC, amountFrom=500, tokenTo=wrapped aUSDC, amountTo=500
 
 5. **State Update**:
@@ -166,6 +254,7 @@ interface IAdapter {
    - Enforcer state: availableAmounts[delegationHash][wrapped aUSDC] = 500
 
 6. **Token Transfer**:
+
    - AdapterManager transfers wrapped aUSDC to root delegator
    - Final state:
      - availableAmounts[delegationHash][USDC] = 500
@@ -179,71 +268,101 @@ interface IAdapter {
 
 - Result: 500 USDC + 500 wrapped aUSDC tracked
 
-**Step 2**: Use 200 USDC → Swap → DAI
+**Step 2**: Deposit 200 USDC → Aave
 
-- Result: 300 USDC + 500 wrapped aUSDC + 200 DAI tracked
+- Result: 300 USDC + 700 wrapped aUSDC tracked
 
-**Step 3**: Use 100 wrapped aUSDC → Withdraw → USDC
+**Step 3**: Withdraw 100 wrapped aUSDC → USDC
 
-- Result: 400 USDC + 400 wrapped aUSDC + 200 DAI tracked
+- Result: 400 USDC + 600 wrapped aUSDC tracked
 
 All tokens remain under delegation control until expiration or revocation.
 
 ## Key Design Decisions
 
-### 1. Adapter Pattern
+### 1. Wrapped Tokens for Rebasing Assets
 
-**Why**: Different protocols have different interfaces and behaviors. Adapters encapsulate protocol-specific logic while maintaining a consistent interface.
+**Problem:** Rebasing tokens (like aTokens) change balance over time, making tracking difficult.
 
-**Benefits**:
+**Solution:** Wrap rebasing tokens into non-rebasing tokens using ERC-4626 vaults.
 
-- Easy to add new protocols (just implement IAdapter)
-- Protocol-specific logic isolated from core system
-- Consistent transformation tracking across protocols
+**Implementation:** AaveAdapter wraps aTokens into stataTokens (StaticAToken), which have fixed supply and are easier to track.
 
 ### 2. AdapterManager as State Updater
 
-**Why**: Only AdapterManager can update enforcer state to prevent unauthorized state changes.
+**Problem:** Who can update the enforcer state after protocol interactions?
 
-**Security**:
+**Solution:** Only AdapterManager can call `updateAssetState()`.
 
-- Enforcer validates `msg.sender == adapterManager` in `updateAssetState()`
-- Ensures state updates only occur after verified protocol interactions
+**Rationale:**
+
+- Ensures state updates only happen after verified protocol interactions
+- Prevents unauthorized state manipulation
+- Clear security boundary
+
+**Implementation:** TokenTransformationEnforcer validates `msg.sender == adapterManager` in `updateAssetState()`.
 
 ### 3. Tokens Always Go to Root Delegator
 
-**Why**: Maintains clear ownership - tokens never stay in adapters or enforcer contracts.
+**Problem:** Where should tokens be stored after protocol interactions?
 
-**Flow**:
+**Solution:** All tokens are transferred to the root delegator.
 
-- Tokens flow: Root Delegator → AdapterManager → Protocol → AdapterManager → Root Delegator
-- Enforcer only tracks amounts, never holds tokens
+**Rationale:**
 
-### 4. Balance Measurement in Adapters
+- Clear ownership model
+- Tokens never stay in contracts
+- Simplifies accounting
 
-**Why**: Adapters know the expected output tokens and can measure accurately.
+**Flow:** Root Delegator → AdapterManager → Protocol → AdapterManager → Root Delegator
 
-**Implementation**:
+### 4. Terms Format Design
 
-- Adapters measure balances before/after protocol interactions
-- Return actual transformation amounts
-- AdapterManager validates received amounts match reported amounts
+**Problem:** How to encode initial token, amount, and optional protocol restrictions?
 
-### 5. Wrapped Tokens for Rebasing Assets
+**Solution:** Variable-length encoding with backward compatibility.
 
-**Why**: Rebasing tokens (like aTokens) change balance over time, complicating tracking.
+**Format:**
 
-**Solution**:
+- Base (52 bytes): token address (20 bytes) + amount (32 bytes)
+- Extended (optional): protocol count (1 byte) + protocol addresses (20 bytes each)
 
-- AaveAdapter wraps aTokens into non-rebasing wrapped tokens
-- Wrapped tokens have fixed supply, easier to track
-- TODO: Investigate using Aave's ATokenVault (ERC-4626) for direct wrapped token support
+**Benefits:**
+
+- Backward compatible (52 bytes minimum)
+- Flexible (up to 255 protocols)
+- Efficient encoding
+
+### 5. Initialization on First Use
+
+**Problem:** When should initial token amounts be set from terms?
+
+**Solution:** Initialize on first use of the initial token.
+
+**Rationale:**
+
+- Lazy initialization saves gas
+- Only initializes when actually needed
+- Prevents double initialization
+
+**Implementation:** Check `isInitialized[delegationHash]` and `token == initialToken` before initializing.
+
+### 6. Protocol Validation Pattern
+
+**Why:** Users may want to restrict which protocols can be used with their delegations.
+
+**How it works:**
+
+- Terms can include an optional list of allowed protocol addresses
+- Protocol address is passed in `_args` when used with AdapterManager
+- TokenTransformationEnforcer validates protocol against allowed list
+- If no protocols specified, all protocols are allowed (backward compatible)
+
+**Example:** Terms encode `[token, amount, protocolCount, protocol1, protocol2, ...]`
 
 ## Public API
 
 ### Query Available Amounts
-
-Anyone can query available token amounts for a delegation:
 
 ```solidity
 uint256 available = tokenTransformationEnforcer.getAvailableAmount(
@@ -262,14 +381,55 @@ address adapter = adapterManager.protocolAdapters(protocolAddress);
 
 1. **State Updates**: Only AdapterManager can update enforcer state
 2. **Token Validation**: Enforcer validates all token transfers before execution
-3. **Balance Verification**: AdapterManager verifies received tokens match adapter reports
+3. **Protocol Validation**: Protocol addresses are validated against allowed list in terms
 4. **Ownership**: All tokens always belong to root delegator
 5. **Initialization Protection**: Initial amount only set once per delegationHash
+6. **Enforcer Position**: TokenTransformationEnforcer must be first caveat in root delegation
 
-## Future Enhancements
+## Extensibility
 
-1. **ATokenVault Support**: Use Aave's native ATokenVault for direct wrapped token deposits/withdrawals
-2. **Additional Protocols**: Add adapters for more lending protocols
-3. **Borrowing Support**: Extend adapters to handle borrowing and repayment
-4. **Multi-Step Strategies**: Support complex multi-protocol strategies
-5. **Gas Optimization**: Optimize state updates and balance measurements
+### Adding New Protocols
+
+To add support for a new protocol:
+
+1. Create adapter contract implementing `IAdapter`
+2. Implement `executeProtocolAction()` returning `TransformationInfo`
+3. Register adapter in AdapterManager via `registerProtocolAdapter()`
+
+### Adding New Actions
+
+To add new actions to an existing adapter:
+
+1. Add action string constant (e.g., `ACTION_BORROW`)
+2. Add handler function (e.g., `_handleBorrow()`)
+3. Route action in `executeProtocolAction()`
+
+## Usage Example
+
+```solidity
+// 1. Create delegation with initial token
+Delegation memory delegation = Delegation({
+    delegator: user,
+    delegate: agent,
+    caveats: [Caveat({
+        enforcer: address(tokenTransformationEnforcer),
+        terms: abi.encodePacked(token, amount, protocolCount, protocolAddress),
+        args: hex""
+    })]
+});
+
+// 2. Agent calls AdapterManager
+adapterManager.executeProtocolActionByDelegation(
+    protocolAddress,
+    token,
+    amount,
+    actionData,
+    [delegation]
+);
+
+// 3. System handles:
+//    - Validation through delegation redemption
+//    - Protocol interaction via adapter
+//    - State update in enforcer
+//    - Token transfer to root delegator
+```
