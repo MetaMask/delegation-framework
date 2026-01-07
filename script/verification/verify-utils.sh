@@ -84,7 +84,7 @@ get_chain_config() {
         146)      config=("$ETHERSCAN_API_KEY" "etherscan" "$SONIC_RPC_URL" "https://api.etherscan.io/v2/api?chainid=146") ;; # sonic
         14601)    config=("$ETHERSCAN_API_KEY" "etherscan" "$SONIC_TESTNET_RPC_URL" "https://api.etherscan.io/v2/api?chainid=14601") ;; # sonic-testnet
         143)      config=("key" "sourcify" "$MONAD_RPC_URL" "https://sourcify-api-monad.blockvision.org/") ;; # monad
-        2020)      config=("key" "sourcify" "$RONIN_RPC_URL" "https://sourcify.dev/server/") ;; # monad
+        2020)      config=("key" "sourcify" "$RONIN_RPC_URL" "https://sourcify.dev/server/") ;; # ronin
         *)
             echo "Unknown chain ID: $chain_id" >&2
             return 1
