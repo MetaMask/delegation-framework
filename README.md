@@ -80,6 +80,10 @@ Delegation Adapters are specialized contracts that bridge the gap between the de
 
 [Read more on "Delegation Adapters" ->](/documents/Adapters.md)
 
+### Security
+
+See [Security Guidelines](/documents/Security.md) for security considerations.
+
 ## Development
 
 ### Third Party Developers

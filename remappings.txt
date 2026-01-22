@@ -8,3 +8,4 @@ forge-std/=lib/forge-std/src/
 @FCL/=lib/FCL/solidity/src/
 @erc7579/=lib/erc7579-implementation/src/
 @SCL=lib/SCL/src
+FreshCryptoLib/=lib/FreshCryptoLib/solidity/src/
