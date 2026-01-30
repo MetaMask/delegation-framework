@@ -378,6 +378,80 @@ contract AaveLendingTest is BaseTest {
         _assertBalances(INITIAL_USD_BALANCE - DEPOSIT_AMOUNT, DEPOSIT_AMOUNT);
     }
 
+    // Testing delegating transfer to adapter using LogicalOrWrapperEnforcer with USDC and aUSDC groups
+    function test_deposit_viaAdapterDelegation_usdc_withLogicalOrWrapperEnforcer() public {
+        _assertBalances(INITIAL_USD_BALANCE, 0);
+
+        // Create Group 0 - USDC Transfer caveats
+        Caveat[] memory usdcCaveats_ = new Caveat[](2);
+        usdcCaveats_[0] = Caveat({
+            args: hex"", enforcer: address(erc20TransferAmountEnforcer), terms: abi.encodePacked(address(USDC), type(uint256).max)
+        });
+        usdcCaveats_[1] =
+            Caveat({ args: hex"", enforcer: address(redeemerEnforcer), terms: abi.encodePacked(address(aaveAdapter)) });
+
+        // Create Group 1 - aUSDC Transfer caveats
+        Caveat[] memory aUsdcCaveats_ = new Caveat[](2);
+        aUsdcCaveats_[0] = Caveat({
+            args: hex"", enforcer: address(erc20TransferAmountEnforcer), terms: abi.encodePacked(address(aUSDC), type(uint256).max)
+        });
+        aUsdcCaveats_[1] =
+            Caveat({ args: hex"", enforcer: address(redeemerEnforcer), terms: abi.encodePacked(address(aaveAdapter)) });
+
+        // Wrap groups in LogicalOrWrapperEnforcer
+        LogicalOrWrapperEnforcer.CaveatGroup[] memory groups_ = new LogicalOrWrapperEnforcer.CaveatGroup[](2);
+        groups_[0] = LogicalOrWrapperEnforcer.CaveatGroup({ caveats: usdcCaveats_ });
+        groups_[1] = LogicalOrWrapperEnforcer.CaveatGroup({ caveats: aUsdcCaveats_ });
+
+        Caveat[] memory orCaveats_ = new Caveat[](1);
+        orCaveats_[0] = Caveat({ args: hex"", enforcer: address(logicalOrWrapperEnforcer), terms: abi.encode(groups_) });
+
+        // Create root delegation with LogicalOrWrapperEnforcer
+        Delegation memory delegation_ = Delegation({
+            delegate: address(users.bob.deleGator),
+            delegator: address(users.alice.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: orCaveats_,
+            salt: 0,
+            signature: hex""
+        });
+        delegation_ = signDelegation(users.alice, delegation_);
+
+        // Create manual redelegation with ERC20TransferAmountEnforcer and AllowedMethodsEnforcer
+        Caveat[] memory redelegationCaveats_ = new Caveat[](2);
+        redelegationCaveats_[0] = Caveat({
+            args: hex"", enforcer: address(erc20TransferAmountEnforcer), terms: abi.encodePacked(address(USDC), DEPOSIT_AMOUNT)
+        });
+        redelegationCaveats_[1] = Caveat({
+            args: hex"",
+            enforcer: address(allowedMethodsEnforcer),
+            terms: abi.encodePacked(IERC20.transfer.selector, AaveAdapter.supply.selector)
+        });
+
+        Delegation memory redelegation_ = Delegation({
+            delegate: address(aaveAdapter),
+            delegator: address(users.bob.deleGator),
+            authority: EncoderLib._getDelegationHash(delegation_),
+            caveats: redelegationCaveats_,
+            salt: 0,
+            signature: hex""
+        });
+        redelegation_ = signDelegation(users.bob, redelegation_);
+
+        // Set args to select Group 0 (USDC) for the LogicalOrWrapperEnforcer
+        delegation_.caveats[0].args =
+            abi.encode(LogicalOrWrapperEnforcer.SelectedGroup({ groupIndex: 0, caveatArgs: new bytes[](2) }));
+
+        Delegation[] memory delegations_ = new Delegation[](2);
+        delegations_[1] = delegation_;
+        delegations_[0] = redelegation_;
+
+        vm.prank(address(users.bob.deleGator));
+        aaveAdapter.supplyByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
+
+        _assertBalances(INITIAL_USD_BALANCE - DEPOSIT_AMOUNT, DEPOSIT_AMOUNT);
+    }
+
     // Testing delegating transfer to adapter and then supply by delegation (MUSD)
     function test_deposit_viaAdapterDelegation_musd() public {
         _assertBalancesMUSD(INITIAL_USD_BALANCE, 0);
