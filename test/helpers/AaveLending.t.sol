@@ -378,6 +378,40 @@ contract AaveLendingTest is BaseTest {
         _assertBalances(INITIAL_USD_BALANCE - DEPOSIT_AMOUNT, DEPOSIT_AMOUNT);
     }
 
+    function test_deposit_viaAdapterMultipleDelegation_usdc() public {
+        _assertBalances(INITIAL_USD_BALANCE, 0);
+
+        // Create transfer delegation from Alice to Bob for USDC transfer
+        Delegation memory delegation_ =
+            _createTransferDelegation(address(users.carol.deleGator), address(aaveAdapter), address(USDC), type(uint256).max);
+
+        Delegation memory delegation2_ = Delegation({
+            delegate: address(users.bob.deleGator),
+            delegator: address(users.carol.deleGator),
+            authority: EncoderLib._getDelegationHash(delegation_),
+            caveats: new Caveat[](0),
+            salt: 0,
+            signature: hex""
+        });
+
+        delegation2_ = signDelegation(users.carol, delegation2_);
+
+        // Create adapter redelegation from Bob to MorphoAdapter allowing deposit()
+        Delegation memory redelegation_ =
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation2_), false, address(USDC), DEPOSIT_AMOUNT);
+
+        // Arrange delegations array: [redelegation, delegation2, rootDelegation]
+        Delegation[] memory delegations_ = new Delegation[](3);
+        delegations_[2] = delegation_;
+        delegations_[1] = delegation2_;
+        delegations_[0] = redelegation_;
+
+        vm.prank(address(users.bob.deleGator));
+        aaveAdapter.supplyByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
+
+        _assertBalances(INITIAL_USD_BALANCE - DEPOSIT_AMOUNT, DEPOSIT_AMOUNT);
+    }
+
     // Testing delegating transfer to adapter using LogicalOrWrapperEnforcer with USDC and aUSDC groups
     function test_deposit_viaAdapterDelegation_usdc_withLogicalOrWrapperEnforcer() public {
         _assertBalances(INITIAL_USD_BALANCE, 0);
@@ -592,21 +626,11 @@ contract AaveLendingTest is BaseTest {
         vm.prank(address(users.bob.deleGator));
         aaveAdapter.supplyByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
 
-        // Create delegations array with 1 element (needs exactly 2)
+        // Create delegations array with 1 element (needs 2 or more)
         Delegation memory delegation_ =
             _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(USDC), DEPOSIT_AMOUNT);
         delegations_ = new Delegation[](1);
         delegations_[0] = delegation_;
-
-        vm.expectRevert(AaveAdapter.InvalidDelegationsLength.selector);
-        vm.prank(address(users.bob.deleGator));
-        aaveAdapter.supplyByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
-
-        // Create delegations array with 3 elements (needs exactly 2)
-        delegations_ = new Delegation[](3);
-        delegations_[0] = delegation_;
-        delegations_[1] = delegation_;
-        delegations_[2] = delegation_;
 
         vm.expectRevert(AaveAdapter.InvalidDelegationsLength.selector);
         vm.prank(address(users.bob.deleGator));
@@ -709,21 +733,11 @@ contract AaveLendingTest is BaseTest {
         vm.prank(address(users.bob.deleGator));
         aaveAdapter.withdrawByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
 
-        // Create delegations array with 1 element (needs exactly 2)
+        // Create delegations array with 1 element (needs exactly 2 or more)
         Delegation memory delegation_ =
             _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(aUSDC), DEPOSIT_AMOUNT);
         delegations_ = new Delegation[](1);
         delegations_[0] = delegation_;
-
-        vm.expectRevert(AaveAdapter.InvalidDelegationsLength.selector);
-        vm.prank(address(users.bob.deleGator));
-        aaveAdapter.withdrawByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
-
-        // Create delegations array with 3 elements (needs exactly 2)
-        delegations_ = new Delegation[](3);
-        delegations_[0] = delegation_;
-        delegations_[1] = delegation_;
-        delegations_[2] = delegation_;
 
         vm.expectRevert(AaveAdapter.InvalidDelegationsLength.selector);
         vm.prank(address(users.bob.deleGator));

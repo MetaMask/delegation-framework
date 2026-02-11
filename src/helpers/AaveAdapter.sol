@@ -189,12 +189,13 @@ contract AaveAdapter is Ownable2Step, ExecutionHelper {
      * @param _amount Amount of tokens to supply (use type(uint256).max for full balance)
      */
     function supplyByDelegation(Delegation[] memory _delegations, address _token, uint256 _amount) external {
-        if (_delegations.length != 2) revert InvalidDelegationsLength();
+        uint256 length_ = _delegations.length;
+        if (length_ < 2) revert InvalidDelegationsLength();
         if (_delegations[0].delegator != msg.sender) revert UnauthorizedCaller();
         if (_token == address(0)) revert InvalidZeroAddress();
 
         // Root delegator is the original token owner (last in the delegation chain)
-        address rootDelegator_ = _delegations[1].delegator;
+        address rootDelegator_ = _delegations[length_ - 1].delegator;
 
         bytes[] memory permissionContexts_ = new bytes[](2);
         permissionContexts_[0] = abi.encode(_delegations);
@@ -205,10 +206,6 @@ contract AaveAdapter is Ownable2Step, ExecutionHelper {
         encodedModes_[1] = ModeLib.encodeSimpleSingle();
 
         bytes[] memory executionCallDatas_ = new bytes[](2);
-
-        if (_amount == type(uint256).max) {
-            _amount = IERC20(_token).balanceOf(rootDelegator_);
-        }
 
         bytes memory encodedTransfer_ = abi.encodeCall(IERC20.transfer, (address(this), _amount));
         executionCallDatas_[0] = ExecutionLib.encodeSingle(address(_token), 0, encodedTransfer_);
@@ -230,12 +227,13 @@ contract AaveAdapter is Ownable2Step, ExecutionHelper {
      * @param _amount Amount of tokens to withdraw (use type(uint256).max for full balance)
      */
     function withdrawByDelegation(Delegation[] memory _delegations, address _token, uint256 _amount) external {
-        if (_delegations.length != 2) revert InvalidDelegationsLength();
+        uint256 length_ = _delegations.length;
+        if (length_ < 2) revert InvalidDelegationsLength();
         if (_delegations[0].delegator != msg.sender) revert UnauthorizedCaller();
         if (_token == address(0)) revert InvalidZeroAddress();
 
         // Root delegator is the original token owner (last in the delegation chain)
-        address rootDelegator_ = _delegations[1].delegator;
+        address rootDelegator_ = _delegations[length_ - 1].delegator;
 
         bytes[] memory permissionContexts_ = new bytes[](2);
         permissionContexts_[0] = abi.encode(_delegations);
@@ -249,10 +247,6 @@ contract AaveAdapter is Ownable2Step, ExecutionHelper {
 
         // Get the aToken address for the underlying token
         IERC20 aToken_ = IERC20(aavePool.getReserveAToken(_token));
-
-        if (_amount == type(uint256).max) {
-            _amount = aToken_.balanceOf(rootDelegator_);
-        }
 
         bytes memory encodedTransfer_ = abi.encodeCall(IERC20.transfer, (address(this), _amount));
         executionCallDatas_[0] = ExecutionLib.encodeSingle(address(aToken_), 0, encodedTransfer_);
