@@ -24,6 +24,7 @@ contract DeployDelegationMetaSwapAdapter is Script {
     IDelegationManager delegationManager;
     IMetaSwap metaSwap;
     address argsEqualityCheckEnforcer;
+    address metaSwapParamsEnforcer;
 
     function setUp() public {
         salt = bytes32(abi.encodePacked(vm.envString("SALT")));
@@ -32,11 +33,13 @@ contract DeployDelegationMetaSwapAdapter is Script {
         metaSwap = IMetaSwap(vm.envAddress("METASWAP_ADDRESS"));
         swapApiSignerEnforcer = vm.envAddress("SWAPS_API_SIGNER_ADDRESS");
         argsEqualityCheckEnforcer = vm.envAddress("ARGS_EQUALITY_CHECK_ENFORCER_ADDRESS");
+        metaSwapParamsEnforcer = vm.envAddress("META_SWAP_PARAMS_ENFORCER_ADDRESS");
         deployer = msg.sender;
         console2.log("~~~");
         console2.log("MetaSwap: %s", address(metaSwap));
         console2.log("SwapApiSignerEnforcer: %s", address(swapApiSignerEnforcer));
         console2.log("ArgsEqualityCheckEnforcer: %s", address(argsEqualityCheckEnforcer));
+        console2.log("MetaSwapParamsEnforcer: %s", address(metaSwapParamsEnforcer));
         console2.log("DelegationManager: %s", address(delegationManager));
         console2.log("Deployer: %s", address(deployer));
         console2.log("DelegationMetaSwapAdapter Owner %s", address(metaSwapAdapterOwner));
@@ -50,7 +53,7 @@ contract DeployDelegationMetaSwapAdapter is Script {
 
         address delegationMetaSwapAdapter = address(
             new DelegationMetaSwapAdapter{ salt: salt }(
-                metaSwapAdapterOwner, swapApiSignerEnforcer, delegationManager, metaSwap, argsEqualityCheckEnforcer
+                metaSwapAdapterOwner, swapApiSignerEnforcer, delegationManager, metaSwap, argsEqualityCheckEnforcer, metaSwapParamsEnforcer
             )
         );
         console2.log("DelegationMetaSwapAdapter: %s", delegationMetaSwapAdapter);

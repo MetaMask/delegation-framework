@@ -11,8 +11,9 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 import { ExecutionHelper } from "@erc7579/core/ExecutionHelper.sol";
 
 import { IMetaSwap } from "./interfaces/IMetaSwap.sol";
+import { IMetaSwapParamsEnforcer } from "./interfaces/IMetaSwapParamsEnforcer.sol";
 import { IDelegationManager } from "../interfaces/IDelegationManager.sol";
-import { CallType, ExecType, Delegation, ModeCode } from "../utils/Types.sol";
+import { CallType, ExecType, Caveat, Delegation, ModeCode } from "../utils/Types.sol";
 import { CALLTYPE_SINGLE, EXECTYPE_DEFAULT } from "../utils/Constants.sol";
 
 /**
@@ -38,13 +39,32 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         bytes signature;
     }
 
+    /// @dev Packed params for _executeSwap to avoid stack-too-deep.
+    struct SwapParams {
+        string aggregatorId;
+        IERC20 tokenFrom;
+        IERC20 tokenTo;
+        address recipient;
+        uint256 amountFrom;
+        uint256 balanceFromBefore;
+        bytes swapData;
+        uint256 minAmountOut;
+        uint256 effectiveMaxSlippagePercent;
+    }
+
     ////////////////////////////// State //////////////////////////////
+
+    /// @dev Pre-encoded empty delegations context for the second permission context in redeemDelegations (avoids allocation per call).
+    bytes private emptyDelegationsContext = abi.encode(new Delegation[](0));
 
     /// @dev Constant value used to enforce the token whitelist
     string public constant WHITELIST_ENFORCED = "Token-Whitelist-Enforced";
 
     /// @dev Constant value used to avoid enforcing the token whitelist
     string public constant WHITELIST_NOT_ENFORCED = "Token-Whitelist-Not-Enforced";
+
+    /// @dev 100% in 18-decimal fixed point. Slippage format: 100e18 = 100%, 10e18 = 10%.
+    uint256 private constant PERCENT_100 = 100e18;
 
     /// @dev The DelegationManager contract that has root access to this contract
     IDelegationManager public immutable delegationManager;
@@ -55,14 +75,23 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /// @dev The enforcer used to compare args and terms
     address public immutable argsEqualityCheckEnforcer;
 
+    /// @dev Enforcer for root swap params (allowed output tokens, recipient, max slippage).
+    address public immutable metaSwapParamsEnforcer;
+
     /// @dev Address of the API signer account.
     address public swapApiSigner;
 
     /// @dev Indicates if a token is allowed to be used in the swaps
     mapping(IERC20 token => bool allowed) public isTokenAllowed;
 
+    /// @dev Admin-set max slippage per output token (100e18 = 100%; 0 = no check).
+    mapping(IERC20 token => uint256) public maxSlippagePercentPerToken;
+
     /// @dev A mapping indicating if an aggregator ID hash is allowed.
     mapping(bytes32 aggregatorIdHash => bool allowed) public isAggregatorAllowed;
+
+    /// @dev Allowed operators that may call swapByDelegation.
+    mapping(address operator => bool allowed) public allowedOperators;
 
     ////////////////////////////// Events //////////////////////////////
 
@@ -75,6 +104,9 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /// @dev Emitted when the Args Equality Check Enforcer contract address is set.
     event SetArgsEqualityCheckEnforcer(address indexed newArgsEqualityCheckEnforcer);
 
+    /// @dev Emitted when the MetaSwapParamsEnforcer contract address is set.
+    event SetMetaSwapParamsEnforcer(address indexed newMetaSwapParamsEnforcer);
+
     /// @dev Emitted when the contract sends tokens (or native tokens) to a recipient.
     event SentTokens(IERC20 indexed token, address indexed recipient, uint256 amount);
 
@@ -86,6 +118,12 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
 
     /// @dev Emitted when the Signer API is updated.
     event SwapApiSignerUpdated(address indexed newSigner);
+
+    /// @dev Emitted when the max slippage for a token is set by the owner.
+    event MaxSlippagePercentSet(IERC20 indexed token, uint256 maxSlippagePercent);
+
+    /// @dev Emitted when an operator's allowed status is changed.
+    event OperatorStatusChanged(address indexed operator, bool status);
 
     ////////////////////////////// Errors //////////////////////////////
 
@@ -149,6 +187,21 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /// @dev Error thrown when the address is zero.
     error InvalidZeroAddress();
 
+    /// @dev Error thrown when the swap output is below the minimum allowed by slippage tolerance.
+    error SlippageExceeded(uint256 minAmountOut, uint256 obtainedAmount, uint256 maxSlippagePercent);
+
+    /// @dev Error thrown when max slippage percent exceeds PERCENT_100 (100e18).
+    error InvalidMaxSlippage(uint256 percent);
+
+    /// @dev Error thrown when delegation's max slippage exceeds the per-token cap.
+    error DelegationSlippageExceedsTokenCap(uint256 delegationSlippagePercent, uint256 tokenCapPercent);
+
+    /// @dev Error thrown when swap output token has no per-token slippage cap set (must be > 0).
+    error PerTokenSlippageNotSet(IERC20 token);
+
+    /// @dev Error thrown when the caller is not an allowed operator.
+    error NotAllowedOperator(address operator);
+
     ////////////////////////////// Modifiers //////////////////////////////
 
     /**
@@ -167,6 +220,14 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         _;
     }
 
+    /**
+     * @notice Require the caller to be an allowed operator for swapByDelegation.
+     */
+    modifier onlyAllowedOperator() {
+        if (!allowedOperators[msg.sender]) revert NotAllowedOperator(msg.sender);
+        _;
+    }
+
     ////////////////////////////// Constructor //////////////////////////////
 
     /**
@@ -177,29 +238,33 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
      *        executeByExecutor based on a given delegation.
      * @param _metaSwap The address of the trusted MetaSwap contract.
      * @param _argsEqualityCheckEnforcer The address of the ArgsEqualityCheckEnforcer contract.
+     * @param _metaSwapParamsEnforcer Address of the MetaSwapParamsEnforcer (allowed output tokens, recipient, slippage).
      */
     constructor(
         address _owner,
         address _swapApiSigner,
         IDelegationManager _delegationManager,
         IMetaSwap _metaSwap,
-        address _argsEqualityCheckEnforcer
+        address _argsEqualityCheckEnforcer,
+        address _metaSwapParamsEnforcer
     )
         Ownable(_owner)
     {
         if (
             _swapApiSigner == address(0) || address(_delegationManager) == address(0) || address(_metaSwap) == address(0)
-                || _argsEqualityCheckEnforcer == address(0)
+                || _argsEqualityCheckEnforcer == address(0) || _metaSwapParamsEnforcer == address(0)
         ) revert InvalidZeroAddress();
 
         swapApiSigner = _swapApiSigner;
         delegationManager = _delegationManager;
         metaSwap = _metaSwap;
         argsEqualityCheckEnforcer = _argsEqualityCheckEnforcer;
+        metaSwapParamsEnforcer = _metaSwapParamsEnforcer;
         emit SwapApiSignerUpdated(_swapApiSigner);
         emit SetDelegationManager(_delegationManager);
         emit SetMetaSwap(_metaSwap);
         emit SetArgsEqualityCheckEnforcer(_argsEqualityCheckEnforcer);
+        emit SetMetaSwapParamsEnforcer(_metaSwapParamsEnforcer);
     }
 
     ////////////////////////////// External Methods //////////////////////////////
@@ -212,7 +277,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /**
      * @notice Executes a token swap using a delegation and transfers the swapped tokens to the root delegator, after validating
      * signature and expiration.
-     * @dev The msg.sender must be the leaf delegator
+     * @dev Only callable by allowed operators. The msg.sender must be the leaf delegator (enforced after operator check).
      * @param _signatureData Includes:
      * - apiData Encoded swap parameters, used by the aggregator.
      * - expiration Timestamp after which the signature is invalid.
@@ -226,11 +291,18 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         bool _useTokenWhitelist
     )
         external
+        onlyAllowedOperator
     {
         _validateSignature(_signatureData);
 
-        (string memory aggregatorId_, IERC20 tokenFrom_, IERC20 tokenTo_, uint256 amountFrom_, bytes memory swapData_) =
-            _decodeApiData(_signatureData.apiData);
+        (
+            string memory aggregatorId_,
+            IERC20 tokenFrom_,
+            IERC20 tokenTo_,
+            uint256 amountFrom_,
+            uint256 minAmountOut_,
+            bytes memory swapData_
+        ) = _decodeApiData(_signatureData.apiData);
         uint256 delegationsLength_ = _delegations.length;
 
         if (delegationsLength_ == 0) revert InvalidEmptyDelegations();
@@ -241,23 +313,23 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         if (!isAggregatorAllowed[keccak256(abi.encode(aggregatorId_))]) revert AggregatorIdIsNotAllowed(aggregatorId_);
         if (_delegations[0].delegator != msg.sender) revert NotLeafDelegator();
 
-        // Prepare the call that will be executed internally via onlySelf
-        bytes memory encodedSwap_ = abi.encodeCall(
-            this.swapTokens,
-            (
-                aggregatorId_,
-                tokenFrom_,
-                tokenTo_,
-                _delegations[delegationsLength_ - 1].delegator,
-                amountFrom_,
-                _getSelfBalance(tokenFrom_),
-                swapData_
-            )
+        address rootDelegator_ = _delegations[delegationsLength_ - 1].delegator;
+        (address recipient_, uint256 effectiveMaxSlippagePercent_) = _getRootSwapParams(_delegations, tokenTo_, rootDelegator_);
+
+        bytes memory encodedSwap_ = _encodeSwapCall(
+            aggregatorId_,
+            tokenFrom_,
+            tokenTo_,
+            recipient_,
+            amountFrom_,
+            swapData_,
+            minAmountOut_,
+            effectiveMaxSlippagePercent_
         );
 
         bytes[] memory permissionContexts_ = new bytes[](2);
         permissionContexts_[0] = abi.encode(_delegations);
-        permissionContexts_[1] = abi.encode(new Delegation[](0));
+        permissionContexts_[1] = emptyDelegationsContext;
 
         ModeCode[] memory encodedModes_ = new ModeCode[](2);
         encodedModes_[0] = ModeLib.encodeSimpleSingle();
@@ -279,13 +351,6 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     /**
      * @notice Executes the actual token swap via the MetaSwap contract and transfer the output tokens to the recipient.
      * @dev This function can only be called internally by this contract (`onlySelf`).
-     * @param _aggregatorId The identifier for the swap aggregator/DEX aggregator.
-     * @param _tokenFrom The input token of the swap.
-     * @param _tokenTo The output token of the swap.
-     * @param _recipient The address that will receive the swapped tokens.
-     * @param _amountFrom The amount of tokens to be swapped.
-     * @param _balanceFromBefore The contract's balance of _tokenFrom before the incoming token transfer is credited.
-     * @param _swapData Arbitrary data required by the aggregator (e.g. encoded swap params).
      */
     function swapTokens(
         string calldata _aggregatorId,
@@ -294,36 +359,61 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         address _recipient,
         uint256 _amountFrom,
         uint256 _balanceFromBefore,
-        bytes calldata _swapData
+        bytes calldata _swapData,
+        uint256 _minAmountOut,
+        uint256 _effectiveMaxSlippagePercent
     )
         external
         onlySelf
     {
-        uint256 tokenFromObtained_ = _getSelfBalance(_tokenFrom) - _balanceFromBefore;
-        if (tokenFromObtained_ < _amountFrom) revert InsufficientTokens();
+        SwapParams memory p_ = SwapParams({
+            aggregatorId: _aggregatorId,
+            tokenFrom: _tokenFrom,
+            tokenTo: _tokenTo,
+            recipient: _recipient,
+            amountFrom: _amountFrom,
+            balanceFromBefore: _balanceFromBefore,
+            swapData: _swapData,
+            minAmountOut: _minAmountOut,
+            effectiveMaxSlippagePercent: _effectiveMaxSlippagePercent
+        });
+        _executeSwap(p_);
+    }
 
-        if (tokenFromObtained_ > _amountFrom) {
-            _sendTokens(_tokenFrom, tokenFromObtained_ - _amountFrom, _recipient);
+    /**
+     * @dev Internal swap execution and slippage check (single struct param to avoid stack-too-deep).
+     */
+    function _executeSwap(SwapParams memory p_) internal {
+        uint256 tokenFromObtained_ = _getSelfBalance(p_.tokenFrom) - p_.balanceFromBefore;
+        if (tokenFromObtained_ < p_.amountFrom) revert InsufficientTokens();
+
+        if (tokenFromObtained_ > p_.amountFrom) {
+            _sendTokens(p_.tokenFrom, tokenFromObtained_ - p_.amountFrom, p_.recipient);
         }
 
-        uint256 balanceToBefore_ = _getSelfBalance(_tokenTo);
+        uint256 balanceToBefore_ = _getSelfBalance(p_.tokenTo);
 
-        uint256 value_ = 0;
-
-        if (address(_tokenFrom) == address(0)) {
-            value_ = _amountFrom;
+        if (address(p_.tokenFrom) == address(0)) {
+            metaSwap.swap{ value: p_.amountFrom }(p_.aggregatorId, p_.tokenFrom, p_.amountFrom, p_.swapData);
         } else {
-            uint256 allowance_ = _tokenFrom.allowance(address(this), address(metaSwap));
-            if (allowance_ < _amountFrom) {
-                _tokenFrom.safeIncreaseAllowance(address(metaSwap), type(uint256).max);
+            uint256 allowance_ = p_.tokenFrom.allowance(address(this), address(metaSwap));
+            if (allowance_ < p_.amountFrom) {
+                p_.tokenFrom.safeIncreaseAllowance(address(metaSwap), type(uint256).max);
             }
+            metaSwap.swap(p_.aggregatorId, p_.tokenFrom, p_.amountFrom, p_.swapData);
         }
 
-        metaSwap.swap{ value: value_ }(_aggregatorId, _tokenFrom, _amountFrom, _swapData);
+        uint256 obtainedAmount_ = _getSelfBalance(p_.tokenTo) - balanceToBefore_;
 
-        uint256 obtainedAmount_ = _getSelfBalance(_tokenTo) - balanceToBefore_;
+        // Post-swap slippage check disabled for now. Re-enable when desired.
+        // if (p_.minAmountOut > 0 && p_.effectiveMaxSlippagePercent > 0) {
+        //     uint256 minAllowed_ = p_.minAmountOut * (PERCENT_100 - p_.effectiveMaxSlippagePercent) / PERCENT_100;
+        //     if (obtainedAmount_ < minAllowed_) {
+        //         revert SlippageExceeded(p_.minAmountOut, obtainedAmount_, p_.effectiveMaxSlippagePercent);
+        //     }
+        // }
 
-        _sendTokens(_tokenTo, obtainedAmount_, _recipient);
+        _sendTokens(p_.tokenTo, obtainedAmount_, p_.recipient);
     }
 
     /**
@@ -395,6 +485,44 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
                 isTokenAllowed[token] = status_;
 
                 emit ChangedTokenStatus(token, status_);
+            }
+        }
+    }
+
+    /**
+     * @notice Sets the maximum slippage for multiple output tokens (admin default).
+     * @dev When per-delegation maxSlippagePercent is 0, these values are used. 0 = no check. Each must be <= 100e18.
+     * @param _tokens Output tokens (tokenTo) to set slippage for.
+     * @param _maxSlippagePercents Max slippage per token (100e18 = 100%, 10e18 = 10%). Length must match _tokens.
+     */
+    function setMaxSlippagePercentForToken(IERC20[] calldata _tokens, uint256[] calldata _maxSlippagePercents) external onlyOwner {
+        uint256 length_ = _tokens.length;
+        if (length_ != _maxSlippagePercents.length) revert InputLengthsMismatch();
+
+        for (uint256 i = 0; i < length_; ++i) {
+            uint256 percent_ = _maxSlippagePercents[i];
+            if (percent_ > PERCENT_100) revert InvalidMaxSlippage(percent_);
+            maxSlippagePercentPerToken[_tokens[i]] = percent_;
+            emit MaxSlippagePercentSet(_tokens[i], percent_);
+        }
+    }
+
+    /**
+     * @notice Updates the allowed operator status for addresses that may call swapByDelegation.
+     * @dev Only callable by the contract owner.
+     * @param _operators Array of operator addresses.
+     * @param _statuses Corresponding array of booleans (true = allowed, false = disallowed).
+     */
+    function updateAllowedOperators(address[] calldata _operators, bool[] calldata _statuses) external onlyOwner {
+        uint256 length_ = _operators.length;
+        if (length_ != _statuses.length) revert InputLengthsMismatch();
+
+        for (uint256 i = 0; i < length_; ++i) {
+            address operator_ = _operators[i];
+            bool status_ = _statuses[i];
+            if (allowedOperators[operator_] != status_) {
+                allowedOperators[operator_] = status_;
+                emit OperatorStatusChanged(operator_, status_);
             }
         }
     }
@@ -492,13 +620,127 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
     }
 
     /**
+     * @dev Builds the encoded swapTokens call for redeemDelegations (reduces stack depth in swapByDelegation).
+     */
+    function _encodeSwapCall(
+        string memory _aggregatorId,
+        IERC20 _tokenFrom,
+        IERC20 _tokenTo,
+        address _recipient,
+        uint256 _amountFrom,
+        bytes memory _swapData,
+        uint256 _minAmountOut,
+        uint256 _effectiveMaxSlippagePercent
+    )
+        private
+        view
+        returns (bytes memory)
+    {
+        return abi.encodeCall(
+            this.swapTokens,
+            (
+                _aggregatorId,
+                _tokenFrom,
+                _tokenTo,
+                _recipient,
+                _amountFrom,
+                _getSelfBalance(_tokenFrom),
+                _swapData,
+                _minAmountOut,
+                _effectiveMaxSlippagePercent
+            )
+        );
+    }
+
+    /**
+     * @dev Resolves recipient and effective max slippage from root delegation's MetaSwapParamsEnforcer caveat (if present).
+     * Sets that caveat's args to tokenTo so the enforcer can validate during redeem.
+     * Effective slippage = delegation slippage if non-zero, else maxSlippagePercentPerToken[tokenTo] (same as used in _executeSwap).
+     * @return recipient_ Address to receive swap output (root delegator if no params or recipient zero).
+     * @return effectiveMaxSlippagePercent_ Slippage that will be used for the swap (delegation or per-token default). Format: 100e18 = 100%.
+     */
+    function _getRootSwapParams(
+        Delegation[] memory _delegations,
+        IERC20 _tokenTo,
+        address _rootDelegator
+    )
+        private
+        view
+        returns (address recipient_, uint256 effectiveMaxSlippagePercent_)
+    {
+        recipient_ = _rootDelegator;
+        uint256 maxSlippagePercentFromDelegation_ = 0;
+
+        // Root delegation must have caveat[0] = ArgsEqualityCheckEnforcer (enforced in _validateTokens), so start at 1.
+        uint256 lastIndex_ = _delegations.length - 1;
+        Caveat[] memory caveats_ = _delegations[lastIndex_].caveats;
+        uint256 caveatsLength_ = caveats_.length;
+
+        for (uint256 i = 1; i < caveatsLength_; ++i) {
+            if (caveats_[i].enforcer != metaSwapParamsEnforcer) continue;
+
+            (, address recipientFromTerms, uint256 maxSlippagePercent) =
+                IMetaSwapParamsEnforcer(caveats_[i].enforcer).getTermsInfo(caveats_[i].terms);
+
+            _delegations[lastIndex_].caveats[i].args = abi.encode(_tokenTo);
+            recipient_ = recipientFromTerms != address(0) ? recipientFromTerms : _rootDelegator;
+            maxSlippagePercentFromDelegation_ = maxSlippagePercent;
+            break;
+        }
+
+        uint256 perTokenCap_ = maxSlippagePercentPerToken[_tokenTo];
+        if (perTokenCap_ == 0) {
+            revert PerTokenSlippageNotSet(_tokenTo);
+        }
+        if (maxSlippagePercentFromDelegation_ > perTokenCap_) {
+            revert DelegationSlippageExceedsTokenCap(maxSlippagePercentFromDelegation_, perTokenCap_);
+        }
+        effectiveMaxSlippagePercent_ =
+            maxSlippagePercentFromDelegation_ != 0 ? maxSlippagePercentFromDelegation_ : perTokenCap_;
+        return (recipient_, effectiveMaxSlippagePercent_);
+    }
+
+    /**
+     * @notice Decodes apiData (selector + abi.encode(aggregatorId, tokenFrom, amountFrom, swapData)). Same logic as internal
+     * decode.
+     * @param _apiData Calldata passed to swap or used in swapByDelegation.
+     * @return aggregatorId_ aggregatorId from apiData.
+     * @return tokenFrom_ tokenFrom from apiData.
+     * @return tokenTo_ tokenTo derived from swapData.
+     * @return amountFrom_ amountFrom from apiData.
+     * @return amountTo_ amountTo from swapData.
+     * @return swapData_ raw swapData bytes.
+     */
+    function decodeApiData(bytes calldata _apiData)
+        external
+        pure
+        returns (
+            string memory aggregatorId_,
+            IERC20 tokenFrom_,
+            IERC20 tokenTo_,
+            uint256 amountFrom_,
+            uint256 amountTo_,
+            bytes memory swapData_
+        )
+    {
+        return _decodeApiData(_apiData);
+    }
+
+    /**
      * @dev Internal helper to decode aggregator data from `apiData`.
      * @param _apiData Bytes that includes aggregatorId, tokenFrom, amountFrom, and the aggregator swap data.
      */
     function _decodeApiData(bytes calldata _apiData)
-        private
+        internal
         pure
-        returns (string memory aggregatorId_, IERC20 tokenFrom_, IERC20 tokenTo_, uint256 amountFrom_, bytes memory swapData_)
+        returns (
+            string memory aggregatorId_,
+            IERC20 tokenFrom_,
+            IERC20 tokenTo_,
+            uint256 amountFrom_,
+            uint256 amountTo_,
+            bytes memory swapData_
+        )
     {
         bytes4 functionSelector_ = bytes4(_apiData[:4]);
         if (functionSelector_ != IMetaSwap.swap.selector) revert InvalidSwapFunctionSelector();
@@ -508,15 +750,12 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         (aggregatorId_, tokenFrom_, amountFrom_, swapData_) = abi.decode(paramTerms_, (string, IERC20, uint256, bytes));
 
         // Note: Prepend address(0) to format the data correctly because of the Swaps API. See internal docs.
-        (
-            , // address(0)
+        (, // address(0)
             IERC20 swapTokenFrom_,
             IERC20 swapTokenTo_,
             uint256 swapAmountFrom_,
-            , // AmountTo
-            , // Metadata
-            uint256 feeAmount_,
-            , // FeeWallet
+            uint256 swapAmountTo_,, // Metadata
+            uint256 feeAmount_,, // FeeWallet
             bool feeTo_
         ) = abi.decode(
             abi.encodePacked(abi.encode(address(0)), swapData_),
@@ -530,6 +769,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         if (!feeTo_ && (feeAmount_ + swapAmountFrom_ != amountFrom_)) revert AmountFromMismatch();
 
         tokenTo_ = swapTokenTo_;
+        amountTo_ = swapAmountTo_;
     }
 
     /**

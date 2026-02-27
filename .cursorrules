@@ -2,6 +2,10 @@
 
 This guide focuses on creating smart contracts that work seamlessly with the MetaMask Delegation Toolkit. The key principle is to keep your contracts simple, focused on core functionality, and completely unaware of the delegation system itself.
 
+## Build / Tooling
+
+- Do **not** use `via_ir = true` (or `viaIR: true`) in Foundry/Hardhat config. Resolve stack-too-deep by refactoring (e.g. structs, internal helpers) instead.
+
 ## Core Principles
 
 1. **Simplicity**: Contracts should focus solely on their core business logic.
