@@ -79,7 +79,7 @@ contract MorphoLendingTest is BaseTest {
         // Call parent setup to initialize delegation framework
         super.setUp();
 
-        owner = makeAddr("AaveAdapter Owner");
+        owner = makeAddr("MorphoAdapter Owner");
 
         // Deploy enforcers
         allowedTargetsEnforcer = new AllowedTargetsEnforcer();

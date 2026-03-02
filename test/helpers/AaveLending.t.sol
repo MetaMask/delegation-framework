@@ -366,7 +366,7 @@ contract AaveLendingTest is BaseTest {
         Delegation memory delegation_ =
             _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(USDC), type(uint256).max);
         Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), false, address(USDC), DEPOSIT_AMOUNT);
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(USDC), DEPOSIT_AMOUNT);
 
         Delegation[] memory delegations_ = new Delegation[](2);
         delegations_[1] = delegation_;
@@ -398,7 +398,7 @@ contract AaveLendingTest is BaseTest {
 
         // Create adapter redelegation from Bob to MorphoAdapter allowing deposit()
         Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation2_), false, address(USDC), DEPOSIT_AMOUNT);
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation2_), address(USDC), DEPOSIT_AMOUNT);
 
         // Arrange delegations array: [redelegation, delegation2, rootDelegation]
         Delegation[] memory delegations_ = new Delegation[](3);
@@ -410,6 +410,58 @@ contract AaveLendingTest is BaseTest {
         aaveAdapter.supplyByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
 
         _assertBalances(INITIAL_USD_BALANCE - DEPOSIT_AMOUNT, DEPOSIT_AMOUNT);
+    }
+
+    /// @notice Tests supplyByDelegationBatch with 3 delegation chains executed sequentially
+    function test_supplyByDelegationBatch_threeChains() public {
+        _assertBalances(INITIAL_USD_BALANCE, 0);
+        _assertBalancesMUSD(INITIAL_USD_BALANCE, 0);
+
+        uint256 amount1_ = 300 * 1e6; // 300 USDC
+        uint256 amount2_ = 400 * 1e6; // 400 USDC
+        uint256 amount3_ = 500 * 1e6; // 500 MUSD
+
+        // Chain 1: Alice -> Bob -> AaveAdapter (USDC)
+        Delegation memory delegation1_ = _createTransferDelegationWithSalt(
+            address(users.bob.deleGator), address(aaveAdapter), address(USDC), type(uint256).max, 0
+        );
+        Delegation memory redelegation1_ =
+            _createAdapterRedelegationWithSalt(EncoderLib._getDelegationHash(delegation1_), address(USDC), amount1_, 0);
+        Delegation[] memory delegations1_ = new Delegation[](2);
+        delegations1_[1] = delegation1_;
+        delegations1_[0] = redelegation1_;
+
+        // Chain 2: Alice -> Bob -> AaveAdapter (USDC, different salt)
+        Delegation memory delegation2_ = _createTransferDelegationWithSalt(
+            address(users.bob.deleGator), address(aaveAdapter), address(USDC), type(uint256).max, 1
+        );
+        Delegation memory redelegation2_ =
+            _createAdapterRedelegationWithSalt(EncoderLib._getDelegationHash(delegation2_), address(USDC), amount2_, 1);
+        Delegation[] memory delegations2_ = new Delegation[](2);
+        delegations2_[1] = delegation2_;
+        delegations2_[0] = redelegation2_;
+
+        // Chain 3: Alice -> Bob -> AaveAdapter (MUSD)
+        Delegation memory delegation3_ = _createTransferDelegationWithSalt(
+            address(users.bob.deleGator), address(aaveAdapter), address(MUSD), type(uint256).max, 2
+        );
+        Delegation memory redelegation3_ =
+            _createAdapterRedelegationWithSalt(EncoderLib._getDelegationHash(delegation3_), address(MUSD), amount3_, 2);
+        Delegation[] memory delegations3_ = new Delegation[](2);
+        delegations3_[1] = delegation3_;
+        delegations3_[0] = redelegation3_;
+
+        AaveAdapter.SupplyParams[] memory streams_ = new AaveAdapter.SupplyParams[](3);
+        streams_[0] = AaveAdapter.SupplyParams({ delegations: delegations1_, token: address(USDC), amount: amount1_ });
+        streams_[1] = AaveAdapter.SupplyParams({ delegations: delegations2_, token: address(USDC), amount: amount2_ });
+        streams_[2] = AaveAdapter.SupplyParams({ delegations: delegations3_, token: address(MUSD), amount: amount3_ });
+
+        vm.prank(address(users.bob.deleGator));
+        aaveAdapter.supplyByDelegationBatch(streams_);
+
+        // 700 USDC supplied (300 + 400), 500 MUSD supplied
+        _assertBalances(INITIAL_USD_BALANCE - amount1_ - amount2_, amount1_ + amount2_);
+        _assertBalancesMUSD(INITIAL_USD_BALANCE - amount3_, amount3_);
     }
 
     // Testing delegating transfer to adapter using LogicalOrWrapperEnforcer with USDC and aUSDC groups
@@ -452,14 +504,9 @@ contract AaveLendingTest is BaseTest {
         delegation_ = signDelegation(users.alice, delegation_);
 
         // Create manual redelegation with ERC20TransferAmountEnforcer and AllowedMethodsEnforcer
-        Caveat[] memory redelegationCaveats_ = new Caveat[](2);
+        Caveat[] memory redelegationCaveats_ = new Caveat[](1);
         redelegationCaveats_[0] = Caveat({
             args: hex"", enforcer: address(erc20TransferAmountEnforcer), terms: abi.encodePacked(address(USDC), DEPOSIT_AMOUNT)
-        });
-        redelegationCaveats_[1] = Caveat({
-            args: hex"",
-            enforcer: address(allowedMethodsEnforcer),
-            terms: abi.encodePacked(IERC20.transfer.selector, AaveAdapter.supply.selector)
         });
 
         Delegation memory redelegation_ = Delegation({
@@ -495,7 +542,7 @@ contract AaveLendingTest is BaseTest {
             _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(MUSD), type(uint256).max);
         // Redelegation restricts to DEPOSIT_AMOUNT
         Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), false, address(MUSD), DEPOSIT_AMOUNT);
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(MUSD), DEPOSIT_AMOUNT);
 
         Delegation[] memory delegations_ = new Delegation[](2);
         delegations_[1] = delegation_;
@@ -520,7 +567,7 @@ contract AaveLendingTest is BaseTest {
             _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(aUSDC), type(uint256).max);
         // Redelegation restricts to DEPOSIT_AMOUNT
         Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), true, address(aUSDC), DEPOSIT_AMOUNT);
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(aUSDC), DEPOSIT_AMOUNT);
 
         Delegation[] memory delegations_ = new Delegation[](2);
         delegations_[1] = delegation_;
@@ -545,7 +592,7 @@ contract AaveLendingTest is BaseTest {
             _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(aMUSD), type(uint256).max);
         // Redelegation restricts to DEPOSIT_AMOUNT
         Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), true, address(aMUSD), DEPOSIT_AMOUNT);
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(aMUSD), DEPOSIT_AMOUNT);
 
         Delegation[] memory delegations_ = new Delegation[](2);
         delegations_[1] = delegation_;
@@ -568,7 +615,7 @@ contract AaveLendingTest is BaseTest {
             _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(USDC), type(uint256).max);
         // Redelegation restricts to DEPOSIT_AMOUNT
         Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), false, address(USDC), DEPOSIT_AMOUNT);
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(USDC), DEPOSIT_AMOUNT);
 
         Delegation[] memory delegations_ = new Delegation[](2);
         delegations_[1] = delegation_;
@@ -597,7 +644,7 @@ contract AaveLendingTest is BaseTest {
             _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(aUSDC), type(uint256).max);
         // Redelegation restricts to DEPOSIT_AMOUNT
         Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), true, address(aUSDC), DEPOSIT_AMOUNT);
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(aUSDC), DEPOSIT_AMOUNT);
 
         Delegation[] memory delegations_ = new Delegation[](2);
         delegations_[1] = delegation_;
@@ -643,7 +690,7 @@ contract AaveLendingTest is BaseTest {
         Delegation memory delegation_ =
             _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(USDC), type(uint256).max);
         Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), false, address(USDC), DEPOSIT_AMOUNT);
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(USDC), DEPOSIT_AMOUNT);
 
         Delegation[] memory delegations_ = new Delegation[](2);
         delegations_[1] = delegation_;
@@ -661,7 +708,7 @@ contract AaveLendingTest is BaseTest {
         Delegation memory delegation_ =
             _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(USDC), DEPOSIT_AMOUNT);
         Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), false, address(USDC), DEPOSIT_AMOUNT);
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(USDC), DEPOSIT_AMOUNT);
 
         Delegation[] memory delegations_ = new Delegation[](2);
         delegations_[1] = delegation_;
@@ -681,7 +728,7 @@ contract AaveLendingTest is BaseTest {
             _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(USDC), type(uint256).max);
         // Redelegation restricts to DEPOSIT_AMOUNT
         Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), false, address(USDC), DEPOSIT_AMOUNT);
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(USDC), DEPOSIT_AMOUNT);
 
         Delegation[] memory delegations_ = new Delegation[](2);
         delegations_[1] = delegation_;
@@ -706,7 +753,7 @@ contract AaveLendingTest is BaseTest {
             _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(MUSD), type(uint256).max);
         // Redelegation restricts to DEPOSIT_AMOUNT
         Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), false, address(MUSD), DEPOSIT_AMOUNT);
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(MUSD), DEPOSIT_AMOUNT);
 
         Delegation[] memory delegations_ = new Delegation[](2);
         delegations_[1] = delegation_;
@@ -752,7 +799,7 @@ contract AaveLendingTest is BaseTest {
         Delegation memory delegation_ =
             _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(aUSDC), type(uint256).max);
         Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), true, address(aUSDC), DEPOSIT_AMOUNT);
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(aUSDC), DEPOSIT_AMOUNT);
 
         Delegation[] memory delegations_ = new Delegation[](2);
         delegations_[1] = delegation_;
@@ -772,7 +819,7 @@ contract AaveLendingTest is BaseTest {
         Delegation memory delegation_ =
             _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(aUSDC), type(uint256).max);
         Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), true, address(aUSDC), DEPOSIT_AMOUNT);
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(aUSDC), DEPOSIT_AMOUNT);
 
         Delegation[] memory delegations_ = new Delegation[](2);
         delegations_[1] = delegation_;
@@ -831,7 +878,7 @@ contract AaveLendingTest is BaseTest {
             _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(USDC), type(uint256).max);
         // Redelegation restricts to testAmount_
         Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), false, address(USDC), testAmount_);
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(USDC), testAmount_);
 
         Delegation[] memory delegations_ = new Delegation[](2);
         delegations_[1] = delegation_;
@@ -856,7 +903,7 @@ contract AaveLendingTest is BaseTest {
             _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(aUSDC), type(uint256).max);
         // Redelegation with high limit for max amount withdrawal
         Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), true, address(aUSDC), type(uint128).max);
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(aUSDC), type(uint128).max);
 
         Delegation[] memory delegations_ = new Delegation[](2);
         delegations_[1] = delegation_;
@@ -877,7 +924,7 @@ contract AaveLendingTest is BaseTest {
             _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(USDC), type(uint256).max);
         // Redelegation restricts to DEPOSIT_AMOUNT
         Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), false, address(USDC), DEPOSIT_AMOUNT);
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(USDC), DEPOSIT_AMOUNT);
 
         Delegation[] memory delegations_ = new Delegation[](2);
         delegations_[1] = delegation_;
@@ -907,9 +954,8 @@ contract AaveLendingTest is BaseTest {
             address(users.bob.deleGator), address(aaveAdapter), address(USDC), type(uint256).max, 0
         );
         // Redelegation restricts to DEPOSIT_AMOUNT
-        Delegation memory redelegation1_ = _createAdapterRedelegationWithSalt(
-            EncoderLib._getDelegationHash(delegation1_), false, address(USDC), DEPOSIT_AMOUNT, 0
-        );
+        Delegation memory redelegation1_ =
+            _createAdapterRedelegationWithSalt(EncoderLib._getDelegationHash(delegation1_), address(USDC), DEPOSIT_AMOUNT, 0);
 
         Delegation[] memory delegations1_ = new Delegation[](2);
         delegations1_[1] = delegation1_;
@@ -927,9 +973,8 @@ contract AaveLendingTest is BaseTest {
             address(users.bob.deleGator), address(aaveAdapter), address(USDC), type(uint256).max, 1
         );
         // Redelegation restricts to DEPOSIT_AMOUNT
-        Delegation memory redelegation2_ = _createAdapterRedelegationWithSalt(
-            EncoderLib._getDelegationHash(delegation2_), false, address(USDC), DEPOSIT_AMOUNT, 1
-        );
+        Delegation memory redelegation2_ =
+            _createAdapterRedelegationWithSalt(EncoderLib._getDelegationHash(delegation2_), address(USDC), DEPOSIT_AMOUNT, 1);
 
         Delegation[] memory delegations2_ = new Delegation[](2);
         delegations2_[1] = delegation2_;
@@ -1036,54 +1081,6 @@ contract AaveLendingTest is BaseTest {
         aaveAdapter.withdrawEmergency(testToken_, 50 ether, address(0));
     }
 
-    ////////////////////// onlySelf Modifier Tests //////////////////////
-
-    /// @notice Tests that supply function reverts when called externally (not by self)
-    function test_supply_revertsOnNotSelf() public {
-        vm.expectRevert(AaveAdapter.NotSelf.selector);
-        aaveAdapter.supply(address(USDC), DEPOSIT_AMOUNT, address(users.alice.deleGator));
-    }
-
-    /// @notice Tests that withdraw function (not withdrawEmergency) reverts when called externally
-    function test_aaveWithdraw_revertsOnNotSelf() public {
-        vm.expectRevert(AaveAdapter.NotSelf.selector);
-        aaveAdapter.withdraw(address(USDC), DEPOSIT_AMOUNT, address(users.alice.deleGator));
-    }
-
-    ////////////////////// executeFromExecutor Tests //////////////////////
-
-    /// @notice Tests that executeFromExecutor reverts when caller is not the delegation manager
-    function test_executeFromExecutor_revertsOnNotDelegationManager() public {
-        ModeCode mode_ = ModeLib.encodeSimpleSingle();
-        bytes memory executionCallData_ = ExecutionLib.encodeSingle(address(USDC), 0, hex"");
-
-        vm.expectRevert(AaveAdapter.NotDelegationManager.selector);
-        vm.prank(address(users.alice.deleGator));
-        aaveAdapter.executeFromExecutor(mode_, executionCallData_);
-    }
-
-    /// @notice Tests that executeFromExecutor reverts on unsupported call type (batch)
-    function test_executeFromExecutor_revertsOnUnsupportedCallType() public {
-        // Create a mode with CALLTYPE_BATCH instead of CALLTYPE_SINGLE
-        ModeCode mode_ = ModeLib.encode(CALLTYPE_BATCH, ExecType.wrap(0x00), MODE_DEFAULT, ModePayload.wrap(0x00));
-        bytes memory executionCallData_ = ExecutionLib.encodeSingle(address(USDC), 0, hex"");
-
-        vm.expectRevert(abi.encodeWithSelector(AaveAdapter.UnsupportedCallType.selector, CALLTYPE_BATCH));
-        vm.prank(address(delegationManager));
-        aaveAdapter.executeFromExecutor(mode_, executionCallData_);
-    }
-
-    /// @notice Tests that executeFromExecutor reverts on unsupported exec type (try)
-    function test_executeFromExecutor_revertsOnUnsupportedExecType() public {
-        // Create a mode with EXECTYPE_TRY instead of EXECTYPE_DEFAULT
-        ModeCode mode_ = ModeLib.encode(CallType.wrap(0x00), EXECTYPE_TRY, MODE_DEFAULT, ModePayload.wrap(0x00));
-        bytes memory executionCallData_ = ExecutionLib.encodeSingle(address(USDC), 0, hex"");
-
-        vm.expectRevert(abi.encodeWithSelector(AaveAdapter.UnsupportedExecType.selector, EXECTYPE_TRY));
-        vm.prank(address(delegationManager));
-        aaveAdapter.executeFromExecutor(mode_, executionCallData_);
-    }
-
     ////////////////////// Helpers //////////////////////
 
     /// @notice Creates a transfer delegation with ERC20TransferAmountEnforcer
@@ -1143,7 +1140,6 @@ contract AaveLendingTest is BaseTest {
 
     function _createAdapterRedelegation(
         bytes32 _authority,
-        bool withdrawDeposit,
         address _token,
         uint256 _amount
     )
@@ -1151,12 +1147,11 @@ contract AaveLendingTest is BaseTest {
         view
         returns (Delegation memory)
     {
-        return _createAdapterRedelegationWithSalt(_authority, withdrawDeposit, _token, _amount, 0);
+        return _createAdapterRedelegationWithSalt(_authority, _token, _amount, 0);
     }
 
     function _createAdapterRedelegationWithSalt(
         bytes32 _authority,
-        bool withdrawDeposit,
         address _token,
         uint256 _amount,
         uint256 _salt
@@ -1165,16 +1160,9 @@ contract AaveLendingTest is BaseTest {
         view
         returns (Delegation memory)
     {
-        Caveat[] memory caveats_ = new Caveat[](2);
+        Caveat[] memory caveats_ = new Caveat[](1);
         caveats_[0] =
             Caveat({ args: hex"", enforcer: address(erc20TransferAmountEnforcer), terms: abi.encodePacked(_token, _amount) });
-        caveats_[1] = Caveat({
-            args: hex"",
-            enforcer: address(allowedMethodsEnforcer),
-            terms: withdrawDeposit
-                ? abi.encodePacked(IERC20.transfer.selector, AaveAdapter.withdraw.selector)
-                : abi.encodePacked(IERC20.transfer.selector, AaveAdapter.supply.selector)
-        });
 
         Delegation memory delegation_ = Delegation({
             delegate: address(aaveAdapter),

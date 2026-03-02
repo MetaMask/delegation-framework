@@ -8,8 +8,6 @@ import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 import { CallType, ExecType, Delegation, ModeCode } from "../utils/Types.sol";
 import { CALLTYPE_SINGLE, EXECTYPE_DEFAULT } from "../utils/Constants.sol";
-import { ExecutionHelper } from "@erc7579/core/ExecutionHelper.sol";
-
 import { IDelegationManager } from "../interfaces/IDelegationManager.sol";
 import { IAavePool } from "./interfaces/IAavePool.sol";
 
@@ -43,7 +41,7 @@ import { IAavePool } from "./interfaces/IAavePool.sol";
  *      - The contract is designed to never hold tokens during normal operation, making owner functions
  *        purely for exceptional circumstances
  */
-contract AaveAdapter is Ownable2Step, ExecutionHelper {
+contract AaveAdapter is Ownable2Step {
     using SafeERC20 for IERC20;
     using ExecutionLib for bytes;
     using ModeLib for ModeCode;
@@ -94,6 +92,11 @@ contract AaveAdapter is Ownable2Step, ExecutionHelper {
     error InvalidDelegationsLength();
 
     /**
+     * @notice Thrown when the batch array is empty or lengths don't match
+     */
+    error InvalidBatchLength();
+
+    /**
      * @notice Thrown when the caller is not the delegator for restricted functions
      */
     error UnauthorizedCaller();
@@ -117,24 +120,6 @@ contract AaveAdapter is Ownable2Step, ExecutionHelper {
      * @notice Thrown when an execution with an unsupported ExecType is made.
      */
     error UnsupportedExecType(ExecType execType);
-
-    ////////////////////// Modifiers //////////////////////
-
-    /**
-     * @notice Require the function call to come from the DelegationManager.
-     */
-    modifier onlyDelegationManager() {
-        if (msg.sender != address(delegationManager)) revert NotDelegationManager();
-        _;
-    }
-
-    /**
-     * @notice Require the function call to come from this contract itself
-     */
-    modifier onlySelf() {
-        if (msg.sender != address(this)) revert NotSelf();
-        _;
-    }
 
     ////////////////////// State //////////////////////
 
@@ -181,6 +166,15 @@ contract AaveAdapter is Ownable2Step, ExecutionHelper {
     ////////////////////// Public Functions //////////////////////
 
     /**
+     * @notice Parameters for a single supply operation in a batch
+     */
+    struct SupplyParams {
+        Delegation[] delegations;
+        address token;
+        uint256 amount;
+    }
+
+    /**
      * @notice Supplies tokens to Aave using delegation-based token transfer
      * @dev Only the delegator can execute this function, ensuring full control over supply parameters.
      *      Requires exactly 2 delegations forming a chain from user to operator to this adapter.
@@ -189,33 +183,69 @@ contract AaveAdapter is Ownable2Step, ExecutionHelper {
      * @param _amount Amount of tokens to supply (use type(uint256).max for full balance)
      */
     function supplyByDelegation(Delegation[] memory _delegations, address _token, uint256 _amount) external {
+        _executeSupplyByDelegation(_delegations, _token, _amount, msg.sender);
+    }
+
+    /**
+     * @notice Supplies tokens to Aave using multiple delegation streams, executed sequentially
+     * @dev Each element in _supplyStreams is executed one after the other. The caller must be the delegator
+     *      (first delegate in the chain) for each stream. Useful for batch operations across multiple users/tokens.
+     * @param _supplyStreams Array of supply parameters, each containing delegations, token, and amount
+     */
+    function supplyByDelegationBatch(SupplyParams[] memory _supplyStreams) external {
+        uint256 streamsLength_ = _supplyStreams.length;
+        if (streamsLength_ == 0) revert InvalidBatchLength();
+
+        address caller_ = msg.sender;
+        for (uint256 i = 0; i < streamsLength_;) {
+            SupplyParams memory params_ = _supplyStreams[i];
+            _executeSupplyByDelegation(params_.delegations, params_.token, params_.amount, caller_);
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    /**
+     * @notice Internal implementation of supply by delegation
+     * @param _delegations Delegation chain for the redelegation pattern
+     * @param _token Token to supply
+     * @param _amount Amount to supply
+     * @param _caller Authorized caller (must match first delegator in chain)
+     */
+    function _executeSupplyByDelegation(
+        Delegation[] memory _delegations,
+        address _token,
+        uint256 _amount,
+        address _caller
+    )
+        internal
+    {
         uint256 length_ = _delegations.length;
         if (length_ < 2) revert InvalidDelegationsLength();
-        if (_delegations[0].delegator != msg.sender) revert UnauthorizedCaller();
+        if (_delegations[0].delegator != _caller) revert UnauthorizedCaller();
         if (_token == address(0)) revert InvalidZeroAddress();
 
         // Root delegator is the original token owner (last in the delegation chain)
         address rootDelegator_ = _delegations[length_ - 1].delegator;
 
-        bytes[] memory permissionContexts_ = new bytes[](2);
+        bytes[] memory permissionContexts_ = new bytes[](1);
         permissionContexts_[0] = abi.encode(_delegations);
-        permissionContexts_[1] = abi.encode(new Delegation[](0));
 
-        ModeCode[] memory encodedModes_ = new ModeCode[](2);
+        ModeCode[] memory encodedModes_ = new ModeCode[](1);
         encodedModes_[0] = ModeLib.encodeSimpleSingle();
-        encodedModes_[1] = ModeLib.encodeSimpleSingle();
 
-        bytes[] memory executionCallDatas_ = new bytes[](2);
+        bytes[] memory executionCallDatas_ = new bytes[](1);
 
         bytes memory encodedTransfer_ = abi.encodeCall(IERC20.transfer, (address(this), _amount));
         executionCallDatas_[0] = ExecutionLib.encodeSingle(address(_token), 0, encodedTransfer_);
-        executionCallDatas_[1] = ExecutionLib.encodeSingle(
-            address(this), 0, abi.encodeWithSelector(this.supply.selector, _token, _amount, rootDelegator_)
-        );
 
         delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
 
-        emit SupplyExecuted(rootDelegator_, msg.sender, _token, _amount);
+        _ensureAllowance(IERC20(_token), _amount);
+        aavePool.supply(_token, _amount, rootDelegator_, 0);
+
+        emit SupplyExecuted(rootDelegator_, _caller, _token, _amount);
     }
 
     /**
@@ -227,89 +257,32 @@ contract AaveAdapter is Ownable2Step, ExecutionHelper {
      * @param _amount Amount of tokens to withdraw (use type(uint256).max for full balance)
      */
     function withdrawByDelegation(Delegation[] memory _delegations, address _token, uint256 _amount) external {
-        uint256 length_ = _delegations.length;
-        if (length_ < 2) revert InvalidDelegationsLength();
+        if (_delegations.length < 2) revert InvalidDelegationsLength();
         if (_delegations[0].delegator != msg.sender) revert UnauthorizedCaller();
         if (_token == address(0)) revert InvalidZeroAddress();
 
         // Root delegator is the original token owner (last in the delegation chain)
-        address rootDelegator_ = _delegations[length_ - 1].delegator;
+        address rootDelegator_ = _delegations[1].delegator;
 
-        bytes[] memory permissionContexts_ = new bytes[](2);
+        bytes[] memory permissionContexts_ = new bytes[](1);
         permissionContexts_[0] = abi.encode(_delegations);
-        permissionContexts_[1] = abi.encode(new Delegation[](0));
 
-        ModeCode[] memory encodedModes_ = new ModeCode[](2);
+        ModeCode[] memory encodedModes_ = new ModeCode[](1);
         encodedModes_[0] = ModeLib.encodeSimpleSingle();
-        encodedModes_[1] = ModeLib.encodeSimpleSingle();
 
-        bytes[] memory executionCallDatas_ = new bytes[](2);
+        bytes[] memory executionCallDatas_ = new bytes[](1);
 
         // Get the aToken address for the underlying token
         IERC20 aToken_ = IERC20(aavePool.getReserveAToken(_token));
 
         bytes memory encodedTransfer_ = abi.encodeCall(IERC20.transfer, (address(this), _amount));
         executionCallDatas_[0] = ExecutionLib.encodeSingle(address(aToken_), 0, encodedTransfer_);
-        executionCallDatas_[1] = ExecutionLib.encodeSingle(
-            address(this), 0, abi.encodeWithSelector(this.withdraw.selector, _token, _amount, rootDelegator_)
-        );
 
         delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
 
+        aavePool.withdraw(_token, _amount, rootDelegator_);
+
         emit WithdrawExecuted(rootDelegator_, msg.sender, _token, _amount);
-    }
-
-    /**
-     * @notice Calls the actual supply function on the Aave pool
-     * @dev This function can only be called internally by this contract (`onlySelf`).
-     * @param _token Address of the token to supply
-     * @param _amount Amount of tokens to supply
-     * @param _onBehalfOf Address that will receive the aTokens
-     */
-    function supply(address _token, uint256 _amount, address _onBehalfOf) external onlySelf {
-        _ensureAllowance(IERC20(_token), _amount);
-        aavePool.supply(_token, _amount, _onBehalfOf, 0);
-    }
-
-    /**
-     * @notice Calls the actual withdraw function on the Aave pool
-     * @dev This function can only be called internally by this contract (`onlySelf`).
-     * @param _token Address of the underlying token to withdraw
-     * @param _amount Amount of tokens to withdraw
-     * @param _to Address that will receive the withdrawn tokens
-     */
-    function withdraw(address _token, uint256 _amount, address _to) external onlySelf {
-        aavePool.withdraw(_token, _amount, _to);
-    }
-
-    /**
-     * @notice Executes a call on behalf of this contract, authorized by the DelegationManager
-     * @dev Only callable by the DelegationManager. Supports single-call execution
-     *      and handles the revert logic via ExecType.
-     * @dev Related: @erc7579/MSAAdvanced.sol
-     * @param _mode The encoded execution mode of the transaction (CallType, ExecType, etc.)
-     * @param _executionCalldata The encoded call data (single) to be executed
-     * @return returnData_ An array of returned data from the executed call
-     */
-    function executeFromExecutor(
-        ModeCode _mode,
-        bytes calldata _executionCalldata
-    )
-        external
-        payable
-        onlyDelegationManager
-        returns (bytes[] memory returnData_)
-    {
-        (CallType callType_, ExecType execType_,,) = _mode.decode();
-
-        /* Only support single call type with default execution */
-        if (CallType.unwrap(CALLTYPE_SINGLE) != CallType.unwrap(callType_)) revert UnsupportedCallType(callType_);
-        if (ExecType.unwrap(EXECTYPE_DEFAULT) != ExecType.unwrap(execType_)) revert UnsupportedExecType(execType_);
-        /* Process single execution directly without additional checks */
-        (address target_, uint256 value_, bytes calldata callData_) = _executionCalldata.decodeSingle();
-        returnData_ = new bytes[](1);
-        returnData_[0] = _execute(target_, value_, callData_);
-        return returnData_;
     }
 
     /**
