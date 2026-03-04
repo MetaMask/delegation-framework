@@ -42,6 +42,8 @@ CHAIN_IDS=(
   6343       # megaeth-testnet
   2021       # ronin saigon testnet
   2020       # ronin
+  11142220   # celo sepolia
+  42220      # celo
 )
 
 ##########################################
@@ -91,6 +93,8 @@ get_chain_config() {
         6343)     config=("key" "blockscout" "$MEGA_ETH_TESTNET_RPC_URL" "https://megaeth.blockscout.com/api/") ;; # megaeth-testnet
         2021)     config=("key" "sourcify" "$RONIN_SAIGON_RPC_URL" "https://sourcify.dev/server/") ;; # ronin saigon testnet
         2020)     config=("key" "sourcify" "$RONIN_RPC_URL" "https://sourcify.dev/server/v2/verify") ;; # ronin
+        11142220) config=("$ETHERSCAN_API_KEY" "etherscan" "$CELO_SEPOLIA_RPC_URL" "https://api.etherscan.io/v2/api?chainid=11142220") ;; # celo sepolia
+        42220)    config=("$ETHERSCAN_API_KEY" "etherscan" "$CELO_RPC_URL" "https://api.etherscan.io/v2/api?chainid=42220") ;; # celo
         *)
             echo "Unknown chain ID: $chain_id" >&2
             return 1
