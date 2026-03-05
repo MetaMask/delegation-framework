@@ -50,6 +50,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - MegaETH
 - Ronin
 - Celo
+- Citrea
 
 ### Testnets
 
