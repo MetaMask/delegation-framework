@@ -54,6 +54,7 @@ contract VedaLendingTest is BaseTest {
     // Restricted vault - cannot set on behalfOf
     IVedaTeller public constant VEDA_TELLER = IVedaTeller(0xc46f2443b3521632E2E2a903D6da8f965B46f6a0);
     IERC20 public constant BORING_VAULT = IERC20(0xDbD87325D7b1189Dcc9255c4926076fF4a96A271);
+    address public constant BORING_QUEUE = 0x406E63323EF5d39D41C6fD895Ef9665AF926184c;
 
     address public constant ROLES_AUTHORITY = 0x1F53135155d6fF516bCcfDd9424fcdB8AD1eFB77;
     address public constant ROLES_AUTHORITY_OWNER = 0x846abf72fE789cf52FDefB0e924bE9E3670667DA;
@@ -102,7 +103,7 @@ contract VedaLendingTest is BaseTest {
         redeemerEnforcer = new RedeemerEnforcer();
         limitedCallsEnforcer = new LimitedCallsEnforcer();
         logicalOrWrapperEnforcer = new LogicalOrWrapperEnforcer(delegationManager);
-        vedaAdapter = new VedaAdapter(owner, address(delegationManager), address(BORING_VAULT), address(VEDA_TELLER));
+        vedaAdapter = new VedaAdapter(owner, address(delegationManager), address(BORING_VAULT), address(VEDA_TELLER), BORING_QUEUE);
 
         vm.label(address(allowedTargetsEnforcer), "AllowedTargetsEnforcer");
         vm.label(address(allowedMethodsEnforcer), "AllowedMethodsEnforcer");
@@ -111,6 +112,7 @@ contract VedaLendingTest is BaseTest {
         vm.label(address(logicalOrWrapperEnforcer), "LogicalOrWrapperEnforcer");
         vm.label(address(erc20TransferAmountEnforcer), "ERC20TransferAmountEnforcer");
         vm.label(address(vedaAdapter), "VedaAdapter");
+        vm.label(BORING_QUEUE, "Veda BoringQueue");
         vm.label(address(BORING_VAULT), "Veda BoringVault");
         vm.label(address(VEDA_TELLER), "Veda Teller");
         vm.label(address(USDC), "USDC");
@@ -247,34 +249,42 @@ contract VedaLendingTest is BaseTest {
     /// @notice Constructor must revert when delegationManager is zero address
     function test_constructor_revertsOnZeroDelegationManager() public {
         vm.expectRevert(VedaAdapter.InvalidZeroAddress.selector);
-        new VedaAdapter(owner, address(0), address(BORING_VAULT), address(VEDA_TELLER));
+        new VedaAdapter(owner, address(0), address(BORING_VAULT), address(VEDA_TELLER), BORING_QUEUE);
     }
 
     /// @notice Constructor must revert when boringVault is zero address
     function test_constructor_revertsOnZeroBoringVault() public {
         vm.expectRevert(VedaAdapter.InvalidZeroAddress.selector);
-        new VedaAdapter(owner, address(delegationManager), address(0), address(VEDA_TELLER));
+        new VedaAdapter(owner, address(delegationManager), address(0), address(VEDA_TELLER), BORING_QUEUE);
     }
 
     /// @notice Constructor must revert when teller is zero address
     function test_constructor_revertsOnZeroTeller() public {
         vm.expectRevert(VedaAdapter.InvalidZeroAddress.selector);
-        new VedaAdapter(owner, address(delegationManager), address(BORING_VAULT), address(0));
+        new VedaAdapter(owner, address(delegationManager), address(BORING_VAULT), address(0), BORING_QUEUE);
+    }
+
+    /// @notice Constructor must revert when boringQueue is zero address
+    function test_constructor_revertsOnZeroBoringQueue() public {
+        vm.expectRevert(VedaAdapter.InvalidZeroAddress.selector);
+        new VedaAdapter(owner, address(delegationManager), address(BORING_VAULT), address(VEDA_TELLER), address(0));
     }
 
     /// @notice Constructor must revert when owner is zero address (OZ Ownable)
     function test_constructor_revertsOnZeroOwner() public {
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableInvalidOwner.selector, address(0)));
-        new VedaAdapter(address(0), address(delegationManager), address(BORING_VAULT), address(VEDA_TELLER));
+        new VedaAdapter(address(0), address(delegationManager), address(BORING_VAULT), address(VEDA_TELLER), BORING_QUEUE);
     }
 
     /// @notice Constructor must store immutable state correctly with valid inputs
     function test_constructor_successWithValidAddresses() public {
-        VedaAdapter newAdapter_ = new VedaAdapter(owner, address(delegationManager), address(BORING_VAULT), address(VEDA_TELLER));
+        VedaAdapter newAdapter_ =
+            new VedaAdapter(owner, address(delegationManager), address(BORING_VAULT), address(VEDA_TELLER), BORING_QUEUE);
 
         assertEq(address(newAdapter_.delegationManager()), address(delegationManager));
         assertEq(newAdapter_.boringVault(), address(BORING_VAULT));
         assertEq(address(newAdapter_.teller()), address(VEDA_TELLER));
+        assertEq(address(newAdapter_.boringQueue()), BORING_QUEUE);
         assertEq(newAdapter_.owner(), owner);
     }
 
@@ -571,7 +581,40 @@ contract VedaLendingTest is BaseTest {
     }
 
     // ==================================================================================
-    // Section 8: Emergency Withdraw Tests
+    // Section 8: Queue Withdraw Tests
+    // Validates queueWithdrawByDelegation using the deployed BoringOnChainQueue.
+    // ==================================================================================
+
+    /// @notice Queuing a withdrawal via delegation should transfer shares to the queue and return a valid requestId
+    function test_queueWithdraw_viaAdapterDelegation() public {
+        _depositViaAdapter(DEPOSIT_AMOUNT, 50);
+
+        uint256 aliceShares_ = BORING_VAULT.balanceOf(address(users.alice.deleGator));
+        assertGt(aliceShares_, 0, "Alice should have vault shares after deposit");
+
+        uint128 shareAmount_ = uint128(aliceShares_);
+        uint256 queueSharesBefore_ = BORING_VAULT.balanceOf(BORING_QUEUE);
+
+        Delegation memory delegation_ = _createTransferDelegation(
+            address(users.bob.deleGator), address(vedaAdapter), address(BORING_VAULT), type(uint256).max
+        );
+        Delegation memory redelegation_ =
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(BORING_VAULT), uint256(shareAmount_));
+
+        Delegation[] memory delegations_ = new Delegation[](2);
+        delegations_[0] = redelegation_;
+        delegations_[1] = delegation_;
+
+        vm.prank(address(users.bob.deleGator));
+        bytes32 requestId_ = vedaAdapter.queueWithdrawByDelegation(delegations_, address(USDC), shareAmount_);
+
+        assertEq(BORING_VAULT.balanceOf(address(users.alice.deleGator)), 0, "Alice should have no shares after queue");
+        assertEq(BORING_VAULT.balanceOf(BORING_QUEUE) - queueSharesBefore_, aliceShares_, "Queue should receive the shares");
+        assertTrue(requestId_ != bytes32(0), "Request ID should be non-zero");
+    }
+
+    // ==================================================================================
+    // Section 9: Emergency Withdraw Tests
     // Validates the owner-only withdrawEmergency function for recovering stuck tokens.
     // ==================================================================================
 
@@ -616,7 +659,7 @@ contract VedaLendingTest is BaseTest {
     }
 
     // ==================================================================================
-    // Section 9: Edge Cases and Security Validation
+    // Section 10: Edge Cases and Security Validation
     // Tests for subtle behaviors, allowance management, chain integrity, and token mismatch.
     // ==================================================================================
 
@@ -887,3 +930,4 @@ contract VedaLendingTest is BaseTest {
 interface IRolesAuthority {
     function setPublicCapability(address target, bytes4 functionSig, bool enabled) external;
 }
+

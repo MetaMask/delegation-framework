@@ -9,6 +9,7 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 import { Delegation, ModeCode } from "../utils/Types.sol";
 import { IDelegationManager } from "../interfaces/IDelegationManager.sol";
 import { IVedaTeller } from "./interfaces/IVedaTeller.sol";
+import { IBoringOnChainQueue } from "./interfaces/IBoringOnChainQueue.sol";
 
 /**
  * @title VedaAdapter
@@ -68,6 +69,15 @@ contract VedaAdapter is Ownable2Step {
         uint256 minimumAssets;
     }
 
+    /**
+     * @notice Parameters for a single queued withdrawal operation in a batch
+     */
+    struct QueueWithdrawParams {
+        Delegation[] delegations;
+        address token;
+        uint128 shareAmount;
+    }
+
     ////////////////////////////// Events //////////////////////////////
 
     /**
@@ -95,6 +105,18 @@ contract VedaAdapter is Ownable2Step {
     );
 
     /**
+     * @notice Emitted when a queued withdrawal is created via delegation
+     * @param delegator Address of the share owner (delegator)
+     * @param delegate Address of the executor (delegate)
+     * @param token Address of the underlying token requested
+     * @param shareAmount Amount of vault shares queued
+     * @param requestId The queue request identifier
+     */
+    event QueueWithdrawExecuted(
+        address indexed delegator, address indexed delegate, address indexed token, uint128 shareAmount, bytes32 requestId
+    );
+
+    /**
      * @notice Emitted when stuck tokens are withdrawn by owner
      * @param token Address of the token withdrawn
      * @param recipient Address of the recipient
@@ -119,6 +141,11 @@ contract VedaAdapter is Ownable2Step {
     /// @dev Thrown when msg.sender is not the leaf delegator
     error NotLeafDelegator();
 
+    ////////////////////////////// Constants //////////////////////////////
+
+    uint16 public constant QUEUE_DISCOUNT = 0;
+    uint24 public constant QUEUE_SECONDS_TO_DEADLINE = 864000; // 10 days
+
     ////////////////////////////// State //////////////////////////////
 
     /**
@@ -136,23 +163,38 @@ contract VedaAdapter is Ownable2Step {
      */
     IVedaTeller public immutable teller;
 
+    /**
+     * @notice The BoringOnChainQueue contract for queued withdrawals
+     */
+    IBoringOnChainQueue public immutable boringQueue;
+
     ////////////////////////////// Constructor //////////////////////////////
 
     /**
-     * @notice Initializes the adapter with delegation manager, BoringVault, and Teller addresses
+     * @notice Initializes the adapter with delegation manager, BoringVault, Teller, and Queue addresses
      * @param _owner Address of the contract owner
      * @param _delegationManager Address of the delegation manager contract
      * @param _boringVault Address of the BoringVault (token approval target)
      * @param _teller Address of the Teller contract (deposit entry point)
+     * @param _boringQueue Address of the BoringOnChainQueue contract (queued withdrawals)
      */
-    constructor(address _owner, address _delegationManager, address _boringVault, address _teller) Ownable(_owner) {
-        if (_delegationManager == address(0) || _boringVault == address(0) || _teller == address(0)) {
+    constructor(
+        address _owner,
+        address _delegationManager,
+        address _boringVault,
+        address _teller,
+        address _boringQueue
+    )
+        Ownable(_owner)
+    {
+        if (_delegationManager == address(0) || _boringVault == address(0) || _teller == address(0) || _boringQueue == address(0)) {
             revert InvalidZeroAddress();
         }
 
         delegationManager = IDelegationManager(_delegationManager);
         boringVault = _boringVault;
         teller = IVedaTeller(_teller);
+        boringQueue = IBoringOnChainQueue(_boringQueue);
     }
 
     ////////////////////////////// External Methods //////////////////////////////
@@ -233,6 +275,45 @@ contract VedaAdapter is Ownable2Step {
     }
 
     /**
+     * @notice Queues a withdrawal from the BoringVault on-chain queue using delegation-based share transfer
+     * @dev Redeems the delegation to transfer vault shares to this adapter, approves the queue,
+     *      then calls requestOnChainWithdraw. Funds are NOT automatically withdrawn; the request
+     *      must be solved/settled separately after maturity.
+     * @param _delegations Array of Delegation objects, sorted leaf to root
+     * @param _token Address of the underlying token to receive upon settlement
+     * @param _shareAmount Amount of vault shares to queue for withdrawal
+     * @return requestId The queue request identifier
+     */
+    function queueWithdrawByDelegation(
+        Delegation[] memory _delegations,
+        address _token,
+        uint128 _shareAmount
+    )
+        external
+        returns (bytes32 requestId)
+    {
+        return _executeQueueWithdrawByDelegation(_delegations, _token, _shareAmount, msg.sender);
+    }
+
+    /**
+     * @notice Queues multiple withdrawals using delegation streams, executed sequentially
+     * @param _queueWithdrawStreams Array of queue withdraw parameters
+     */
+    function queueWithdrawByDelegationBatch(QueueWithdrawParams[] memory _queueWithdrawStreams) external {
+        uint256 streamsLength_ = _queueWithdrawStreams.length;
+        if (streamsLength_ == 0) revert InvalidBatchLength();
+
+        address caller_ = msg.sender;
+        for (uint256 i = 0; i < streamsLength_;) {
+            QueueWithdrawParams memory params_ = _queueWithdrawStreams[i];
+            _executeQueueWithdrawByDelegation(params_.delegations, params_.token, params_.shareAmount, caller_);
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    /**
      * @notice Emergency function to recover tokens accidentally sent to this contract
      * @dev This contract should never hold ERC20 tokens as all token operations are handled
      *      through delegation-based transfers that move tokens directly between users and the BoringVault.
@@ -252,15 +333,16 @@ contract VedaAdapter is Ownable2Step {
     ////////////////////////////// Private/Internal Methods //////////////////////////////
 
     /**
-     * @notice Ensures sufficient token allowance for BoringVault to pull tokens
+     * @notice Ensures sufficient token allowance for a spender to pull tokens
      * @dev Checks current allowance and sets exact amount if insufficient, avoiding accumulation
      * @param _token Token to manage allowance for
+     * @param _spender Address that needs to spend the tokens
      * @param _amount Amount needed for the operation
      */
-    function _ensureAllowance(IERC20 _token, uint256 _amount) private {
-        uint256 allowance_ = _token.allowance(address(this), boringVault);
+    function _ensureAllowance(IERC20 _token, address _spender, uint256 _amount) private {
+        uint256 allowance_ = _token.allowance(address(this), _spender);
         if (allowance_ < _amount) {
-            _token.forceApprove(boringVault, _amount);
+            _token.forceApprove(_spender, _amount);
         }
     }
 
@@ -302,7 +384,7 @@ contract VedaAdapter is Ownable2Step {
         delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
 
         // Approve BoringVault to pull tokens, then deposit via Teller
-        _ensureAllowance(IERC20(_token), _amount);
+        _ensureAllowance(IERC20(_token), boringVault, _amount);
         uint256 shares_ = teller.bulkDeposit(_token, _amount, _minimumMint, rootDelegator_);
 
         emit DepositExecuted(rootDelegator_, _caller, _token, _amount, shares_);
@@ -349,5 +431,49 @@ contract VedaAdapter is Ownable2Step {
         uint256 assetsOut_ = teller.withdraw(_token, _shareAmount, _minimumAssets, rootDelegator_);
 
         emit WithdrawExecuted(rootDelegator_, _caller, _token, _shareAmount, assetsOut_);
+    }
+
+    /**
+     * @notice Internal implementation of queued withdraw by delegation
+     * @param _delegations Delegation chain, sorted leaf to root
+     * @param _token Underlying token to receive upon settlement
+     * @param _shareAmount Amount of vault shares to queue
+     * @param _caller Authorized caller (must match leaf delegator)
+     * @return requestId The queue request identifier
+     */
+    function _executeQueueWithdrawByDelegation(
+        Delegation[] memory _delegations,
+        address _token,
+        uint128 _shareAmount,
+        address _caller
+    )
+        internal
+        returns (bytes32 requestId)
+    {
+        uint256 length_ = _delegations.length;
+        if (length_ < 2) revert InvalidDelegationsLength();
+        if (_delegations[0].delegator != _caller) revert NotLeafDelegator();
+        if (_token == address(0)) revert InvalidZeroAddress();
+
+        address rootDelegator_ = _delegations[length_ - 1].delegator;
+
+        // Redeem delegation: transfer vault shares from user to this adapter
+        bytes[] memory permissionContexts_ = new bytes[](1);
+        permissionContexts_[0] = abi.encode(_delegations);
+
+        ModeCode[] memory encodedModes_ = new ModeCode[](1);
+        encodedModes_[0] = ModeLib.encodeSimpleSingle();
+
+        bytes[] memory executionCallDatas_ = new bytes[](1);
+        bytes memory encodedTransfer_ = abi.encodeCall(IERC20.transfer, (address(this), uint256(_shareAmount)));
+        executionCallDatas_[0] = ExecutionLib.encodeSingle(boringVault, 0, encodedTransfer_);
+
+        delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
+
+        // Approve queue to pull vault shares, then create the queued withdrawal
+        _ensureAllowance(IERC20(boringVault), address(boringQueue), uint256(_shareAmount));
+        requestId = boringQueue.requestOnChainWithdraw(_token, _shareAmount, QUEUE_DISCOUNT, QUEUE_SECONDS_TO_DEADLINE);
+
+        emit QueueWithdrawExecuted(rootDelegator_, _caller, _token, _shareAmount, requestId);
     }
 }
