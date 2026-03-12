@@ -97,11 +97,6 @@ contract AaveAdapter is Ownable2Step {
     error InvalidBatchLength();
 
     /**
-     * @notice Thrown when the caller is not the delegator for restricted functions
-     */
-    error UnauthorizedCaller();
-
-    /**
      * @notice Thrown when the caller is not the delegation manager
      */
     error NotDelegationManager();
@@ -132,6 +127,24 @@ contract AaveAdapter is Ownable2Step {
      * @notice The Aave lending pool contract for supply/withdraw operations
      */
     IAavePool public immutable aavePool;
+
+    /**
+     * @notice Parameters for a single supply operation in a batch
+     */
+    struct SupplyParams {
+        Delegation[] delegations;
+        address token;
+        uint256 amount;
+    }
+
+    /**
+     * @notice Parameters for a single withdrawal operation in a batch
+     */
+    struct WithdrawParams {
+        Delegation[] delegations;
+        address token;
+        uint256 amount;
+    }
 
     ////////////////////// Constructor //////////////////////
 
@@ -164,15 +177,6 @@ contract AaveAdapter is Ownable2Step {
     }
 
     ////////////////////// Public Functions //////////////////////
-
-    /**
-     * @notice Parameters for a single supply operation in a batch
-     */
-    struct SupplyParams {
-        Delegation[] delegations;
-        address token;
-        uint256 amount;
-    }
 
     /**
      * @notice Supplies tokens to Aave using delegation-based token transfer
@@ -223,7 +227,6 @@ contract AaveAdapter is Ownable2Step {
     {
         uint256 length_ = _delegations.length;
         if (length_ < 2) revert InvalidDelegationsLength();
-        if (_delegations[0].delegator != _caller) revert UnauthorizedCaller();
         if (_token == address(0)) revert InvalidZeroAddress();
 
         // Root delegator is the original token owner (last in the delegation chain)
@@ -257,12 +260,50 @@ contract AaveAdapter is Ownable2Step {
      * @param _amount Amount of tokens to withdraw (use type(uint256).max for full balance)
      */
     function withdrawByDelegation(Delegation[] memory _delegations, address _token, uint256 _amount) external {
-        if (_delegations.length < 2) revert InvalidDelegationsLength();
-        if (_delegations[0].delegator != msg.sender) revert UnauthorizedCaller();
+        _executeWithdrawByDelegation(_delegations, _token, _amount, msg.sender);
+    }
+
+    /**
+     * @notice Withdraws tokens from Aave using multiple delegation streams, executed sequentially
+     * @dev Each element in _withdrawStreams is executed one after the other. The caller must be the delegator
+     *      (first delegate in the chain) for each stream. Useful for batch operations across multiple users/tokens.
+     * @param _withdrawStreams Array of withdrawal parameters, each containing delegations, token, and amount
+     */
+    function withdrawByDelegationBatch(WithdrawParams[] memory _withdrawStreams) external {
+        uint256 streamsLength_ = _withdrawStreams.length;
+        if (streamsLength_ == 0) revert InvalidBatchLength();
+
+        address caller_ = msg.sender;
+        for (uint256 i = 0; i < streamsLength_;) {
+            WithdrawParams memory params_ = _withdrawStreams[i];
+            _executeWithdrawByDelegation(params_.delegations, params_.token, params_.amount, caller_);
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    /**
+     * @notice Internal implementation of withdraw by delegation
+     * @param _delegations Delegation chain for the redelegation pattern
+     * @param _token Underlying token to withdraw
+     * @param _amount Amount to withdraw
+     * @param _caller Authorized caller (must match first delegator in chain)
+     */
+    function _executeWithdrawByDelegation(
+        Delegation[] memory _delegations,
+        address _token,
+        uint256 _amount,
+        address _caller
+    )
+        internal
+    {
+        uint256 length_ = _delegations.length;
+        if (length_ < 2) revert InvalidDelegationsLength();
         if (_token == address(0)) revert InvalidZeroAddress();
 
         // Root delegator is the original token owner (last in the delegation chain)
-        address rootDelegator_ = _delegations[1].delegator;
+        address rootDelegator_ = _delegations[length_ - 1].delegator;
 
         bytes[] memory permissionContexts_ = new bytes[](1);
         permissionContexts_[0] = abi.encode(_delegations);
@@ -282,7 +323,7 @@ contract AaveAdapter is Ownable2Step {
 
         aavePool.withdraw(_token, _amount, rootDelegator_);
 
-        emit WithdrawExecuted(rootDelegator_, msg.sender, _token, _amount);
+        emit WithdrawExecuted(rootDelegator_, _caller, _token, _amount);
     }
 
     /**

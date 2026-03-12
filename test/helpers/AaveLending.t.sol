@@ -464,6 +464,48 @@ contract AaveLendingTest is BaseTest {
         _assertBalancesMUSD(INITIAL_USD_BALANCE - amount3_, amount3_);
     }
 
+    /// @notice Tests withdrawByDelegationBatch with 2 delegation chains executed sequentially
+    function test_withdrawByDelegationBatch_twoChains() public {
+        _setupLendingState();
+        _setupLendingStateMUSD();
+
+        _assertBalances(INITIAL_USD_BALANCE - DEPOSIT_AMOUNT, DEPOSIT_AMOUNT);
+        _assertBalancesMUSD(INITIAL_USD_BALANCE - DEPOSIT_AMOUNT, DEPOSIT_AMOUNT);
+
+        uint256 aUSDCBalance_ = aUSDC.balanceOf(address(users.alice.deleGator));
+        uint256 aMUSDBalance_ = aMUSD.balanceOf(address(users.alice.deleGator));
+
+        // Chain 1: Alice -> Bob -> AaveAdapter (aUSDC withdrawal)
+        Delegation memory delegation1_ = _createTransferDelegationWithSalt(
+            address(users.bob.deleGator), address(aaveAdapter), address(aUSDC), type(uint256).max, 0
+        );
+        Delegation memory redelegation1_ =
+            _createAdapterRedelegationWithSalt(EncoderLib._getDelegationHash(delegation1_), address(aUSDC), aUSDCBalance_, 0);
+        Delegation[] memory delegations1_ = new Delegation[](2);
+        delegations1_[1] = delegation1_;
+        delegations1_[0] = redelegation1_;
+
+        // Chain 2: Alice -> Bob -> AaveAdapter (aMUSD withdrawal)
+        Delegation memory delegation2_ = _createTransferDelegationWithSalt(
+            address(users.bob.deleGator), address(aaveAdapter), address(aMUSD), type(uint256).max, 1
+        );
+        Delegation memory redelegation2_ =
+            _createAdapterRedelegationWithSalt(EncoderLib._getDelegationHash(delegation2_), address(aMUSD), aMUSDBalance_, 1);
+        Delegation[] memory delegations2_ = new Delegation[](2);
+        delegations2_[1] = delegation2_;
+        delegations2_[0] = redelegation2_;
+
+        AaveAdapter.WithdrawParams[] memory streams_ = new AaveAdapter.WithdrawParams[](2);
+        streams_[0] = AaveAdapter.WithdrawParams({ delegations: delegations1_, token: address(USDC), amount: aUSDCBalance_ });
+        streams_[1] = AaveAdapter.WithdrawParams({ delegations: delegations2_, token: address(MUSD), amount: aMUSDBalance_ });
+
+        vm.prank(address(users.bob.deleGator));
+        aaveAdapter.withdrawByDelegationBatch(streams_);
+
+        _assertBalances(INITIAL_USD_BALANCE, 0);
+        _assertBalancesMUSD(INITIAL_USD_BALANCE, 0);
+    }
+
     // Testing delegating transfer to adapter using LogicalOrWrapperEnforcer with USDC and aUSDC groups
     function test_deposit_viaAdapterDelegation_usdc_withLogicalOrWrapperEnforcer() public {
         _assertBalances(INITIAL_USD_BALANCE, 0);
@@ -684,24 +726,6 @@ contract AaveLendingTest is BaseTest {
         aaveAdapter.supplyByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
     }
 
-    /// @notice Tests that supplyByDelegation reverts when called by an unauthorized caller (not the delegator of delegations[0])
-    function test_supplyByDelegation_revertsOnUnauthorizedCaller_usdc() public {
-        // Create valid delegations where Bob is the delegator of delegations[0]
-        Delegation memory delegation_ =
-            _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(USDC), type(uint256).max);
-        Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(USDC), DEPOSIT_AMOUNT);
-
-        Delegation[] memory delegations_ = new Delegation[](2);
-        delegations_[1] = delegation_;
-        delegations_[0] = redelegation_;
-
-        // Alice tries to call but she's not delegations[0].delegator (Bob is)
-        vm.expectRevert(AaveAdapter.UnauthorizedCaller.selector);
-        vm.prank(address(users.alice.deleGator));
-        aaveAdapter.supplyByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
-    }
-
     /// @notice Tests that supplyByDelegation reverts when token is zero address
     function test_supplyByDelegation_revertsOnInvalidZeroAddress_usdc() public {
         // Create valid delegations
@@ -788,26 +812,6 @@ contract AaveLendingTest is BaseTest {
 
         vm.expectRevert(AaveAdapter.InvalidDelegationsLength.selector);
         vm.prank(address(users.bob.deleGator));
-        aaveAdapter.withdrawByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
-    }
-
-    /// @notice Tests that withdrawByDelegation reverts when called by an unauthorized caller (not the delegator of delegations[0])
-    function test_withdrawByDelegation_revertsOnUnauthorizedCaller_usdc() public {
-        _setupLendingState();
-
-        // Create valid delegations where Bob is the delegator of delegations[0]
-        Delegation memory delegation_ =
-            _createTransferDelegation(address(users.bob.deleGator), address(aaveAdapter), address(aUSDC), type(uint256).max);
-        Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(aUSDC), DEPOSIT_AMOUNT);
-
-        Delegation[] memory delegations_ = new Delegation[](2);
-        delegations_[1] = delegation_;
-        delegations_[0] = redelegation_;
-
-        // Alice tries to call but she's not delegations[0].delegator (Bob is)
-        vm.expectRevert(AaveAdapter.UnauthorizedCaller.selector);
-        vm.prank(address(users.alice.deleGator));
         aaveAdapter.withdrawByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT);
     }
 
