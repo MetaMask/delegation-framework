@@ -37,7 +37,8 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Binance Smart Chain
 - Optimism
 - Abitrum One
-- Abitrum Nova
+- Arbitrum One
+- Arbitrum Nova
 - Linea
 - Base
 - Gnosis Chain
