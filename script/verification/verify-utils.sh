@@ -31,6 +31,7 @@ CHAIN_IDS=(
   1301       # unichain-sepolia
   10143      # monad-testnet
   5115       # citrea-testnet
+  4114       # citrea
   57073      # ink
   763373     # ink-sepolia
   1329       # sei
@@ -84,6 +85,7 @@ get_chain_config() {
         1301)     config=("$UNICHAIN_API_KEY" "custom" "$UNICHAIN_SEPOLIA_RPC_URL" "https://api-sepolia.uniscan.xyz/api") ;; # unichain-sepolia
         10143)    config=("$ETHERSCAN_API_KEY" "etherscan" "$MONAD_TESTNET_RPC_URL" "") ;; # monad-testnet
         5115)     config=("key" "blockscout" "$CITREA_TESTNET_RPC_URL" "https://explorer.testnet.citrea.xyz/api") ;; # citrea-testnet
+        4114)     config=("key" "blockscout" "$CITREA_RPC_URL" "https://explorer.mainnet.citrea.xyz/api") ;; # citrea
         57073)    config=("key" "blockscout" "$INK_RPC_URL" "https://explorer.inkonchain.com/api") ;; # ink
         763373)   config=("key" "blockscout" "$INK_SEPOLIA_RPC_URL" "https://explorer-sepolia.inkonchain.com/api") ;; # ink-sepolia
         1329)     config=("key" "custom" "$SEI_RPC_URL" "https://seitrace.com/pacific-1/api") ;; # sei

@@ -37,7 +37,8 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Binance Smart Chain
 - Optimism
 - Abitrum One
-- Abitrum Nova
+- Arbitrum One
+- Arbitrum Nova
 - Linea
 - Base
 - Gnosis Chain
@@ -51,6 +52,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Ronin
 - Tempo
 - Celo
+- Citrea
 
 ### Testnets
 
@@ -66,7 +68,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Berachain testnet
 - Unichain Sepolia
 - Monad testnet
-- Citera testnet
+- Citrea testnet
 - Ink Sepolia
 - Sei testnet
 - Sonic testnet
