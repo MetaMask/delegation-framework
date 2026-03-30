@@ -153,8 +153,6 @@ contract VedaLendingTest is BaseTest {
 
         // Withdraw all shares back to USDC
         vm.prank(address(users.alice.deleGator));
-        BORING_VAULT.approve(address(BORING_VAULT), aliceShares_);
-        vm.prank(address(users.alice.deleGator));
         uint256 assetsOut_ = VEDA_TELLER.withdraw(address(USDC), aliceShares_, 0, address(users.alice.deleGator));
 
         assertGt(assetsOut_, 0, "Should receive assets back");
@@ -525,6 +523,9 @@ contract VedaLendingTest is BaseTest {
         streams_[1] =
             VedaAdapter.DepositParams({ delegations: delegations2_, token: address(USDC), amount: amount2_, minimumMint: 0 });
 
+        vm.expectEmit(true, true, true, true, address(vedaAdapter));
+        emit VedaAdapter.BatchDepositExecuted(address(users.bob.deleGator), 2);
+
         vm.prank(address(users.bob.deleGator));
         vedaAdapter.depositByDelegationBatch(streams_);
 
@@ -550,6 +551,9 @@ contract VedaLendingTest is BaseTest {
         VedaAdapter.WithdrawParams[] memory wdStreams_ = new VedaAdapter.WithdrawParams[](2);
         wdStreams_[0] = _buildWithdrawParams(sharesPart1_, 20);
         wdStreams_[1] = _buildWithdrawParams(sharesPart2_, 21);
+
+        vm.expectEmit(true, true, true, true, address(vedaAdapter));
+        emit VedaAdapter.BatchWithdrawExecuted(address(users.bob.deleGator), 2);
 
         vm.prank(address(users.bob.deleGator));
         vedaAdapter.withdrawByDelegationBatch(wdStreams_);
@@ -653,7 +657,7 @@ contract VedaLendingTest is BaseTest {
         assertEq(BORING_VAULT.balanceOf(address(vedaAdapter)), 0, "Adapter must not retain any vault shares after withdraw");
     }
 
-    /// @notice BoringVault must fully consume the allowance granted by the adapter during bulkDeposit.
+    /// @notice BoringVault must fully consume the allowance granted by the adapter during deposit.
     ///         Verifies that _ensureAllowance does not cause unbounded allowance accumulation.
     function test_allowanceFullyConsumedAfterDeposit() public {
         assertEq(USDC.allowance(address(vedaAdapter), address(BORING_VAULT)), 0, "Initial allowance should be 0");
@@ -673,7 +677,7 @@ contract VedaLendingTest is BaseTest {
         assertEq(
             USDC.allowance(address(vedaAdapter), address(BORING_VAULT)),
             0,
-            "Allowance must be fully consumed after bulkDeposit -- no residual accumulation"
+            "Allowance must be fully consumed after deposit -- no residual accumulation"
         );
     }
 
@@ -865,8 +869,3 @@ contract VedaLendingTest is BaseTest {
         return signDelegation(users.bob, delegation_);
     }
 }
-
-interface IRolesAuthority {
-    function setPublicCapability(address target, bytes4 functionSig, bool enabled) external;
-}
-

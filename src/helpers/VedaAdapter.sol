@@ -20,8 +20,8 @@ import { IVedaTeller } from "./interfaces/IVedaTeller.sol";
  *      Architecture:
  *      - BoringVault: The ERC20 vault share token that also custodies assets. On deposit, the vault pulls
  *        tokens from the caller via `safeTransferFrom`, so this adapter must approve the BoringVault.
- *      - Teller: The contract that orchestrates deposits/withdrawals. The adapter calls `teller.bulkDeposit()`
- *        for deposits (requires SOLVER_ROLE) and `teller.withdraw()` for withdrawals (user-facing, no special
+ *      - Teller: The contract that orchestrates deposits/withdrawals. The adapter calls `teller.deposit()`
+ *        for deposits and `teller.withdraw()` for withdrawals (user-facing, no special
  *        role needed).
  *
  *      Delegation Flow:
@@ -67,15 +67,6 @@ contract VedaAdapter is Ownable2Step {
         uint256 minimumAssets;
     }
 
-    /**
-     * @notice Parameters for a single queued withdrawal operation in a batch
-     */
-    struct QueueWithdrawParams {
-        Delegation[] delegations;
-        address token;
-        uint128 shareAmount;
-    }
-
     ////////////////////////////// Events //////////////////////////////
 
     /**
@@ -103,16 +94,18 @@ contract VedaAdapter is Ownable2Step {
     );
 
     /**
-     * @notice Emitted when a queued withdrawal is created via delegation
-     * @param delegator Address of the share owner (delegator)
-     * @param delegate Address of the executor (delegate)
-     * @param token Address of the underlying token requested
-     * @param shareAmount Amount of vault shares queued
-     * @param requestId The queue request identifier
+     * @notice Emitted when a batch deposit is completed
+     * @param caller Address of the batch executor
+     * @param count Number of deposit streams executed
      */
-    event QueueWithdrawExecuted(
-        address indexed delegator, address indexed delegate, address indexed token, uint128 shareAmount, bytes32 requestId
-    );
+    event BatchDepositExecuted(address indexed caller, uint256 count);
+
+    /**
+     * @notice Emitted when a batch withdrawal is completed
+     * @param caller Address of the batch executor
+     * @param count Number of withdrawal streams executed
+     */
+    event BatchWithdrawExecuted(address indexed caller, uint256 count);
 
     /**
      * @notice Emitted when stuck tokens are withdrawn by owner
@@ -159,7 +152,7 @@ contract VedaAdapter is Ownable2Step {
     ////////////////////////////// Constructor //////////////////////////////
 
     /**
-     * @notice Initializes the adapter with delegation manager, BoringVault, Teller, and Queue addresses
+     * @notice Initializes the adapter with delegation manager, BoringVault, and Teller addresses
      * @param _owner Address of the contract owner
      * @param _delegationManager Address of the delegation manager contract
      * @param _boringVault Address of the BoringVault (token approval target)
@@ -179,7 +172,7 @@ contract VedaAdapter is Ownable2Step {
 
     /**
      * @notice Deposits tokens into a Veda BoringVault using delegation-based token transfer
-     * @dev Redeems the delegation to transfer tokens to this adapter, then calls bulkDeposit
+     * @dev Redeems the delegation to transfer tokens to this adapter, then calls deposit
      *      on the Teller which mints vault shares directly to the original token owner.
      *      Requires at least 2 delegations forming a chain from user to operator to this adapter.
      * @param _delegations Array of Delegation objects, sorted leaf to root
@@ -209,6 +202,8 @@ contract VedaAdapter is Ownable2Step {
                 ++i;
             }
         }
+
+        emit BatchDepositExecuted(caller_, streamsLength_);
     }
 
     /**
@@ -250,6 +245,8 @@ contract VedaAdapter is Ownable2Step {
                 ++i;
             }
         }
+
+        emit BatchWithdrawExecuted(caller_, streamsLength_);
     }
 
     /**
