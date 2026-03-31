@@ -294,23 +294,6 @@ contract VedaLendingTest is BaseTest {
         vedaAdapter.depositByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT, 0);
     }
 
-    /// @notice depositByDelegation must revert when msg.sender does not match delegations[0].delegator
-    function test_depositByDelegation_revertsOnUnauthorizedCaller() public {
-        Delegation memory delegation_ =
-            _createTransferDelegation(address(users.bob.deleGator), address(vedaAdapter), address(USDC), type(uint256).max);
-        Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(USDC), DEPOSIT_AMOUNT);
-
-        Delegation[] memory delegations_ = new Delegation[](2);
-        delegations_[0] = redelegation_;
-        delegations_[1] = delegation_;
-
-        // Alice tries to call but Bob is delegations[0].delegator
-        vm.expectRevert(VedaAdapter.NotLeafDelegator.selector);
-        vm.prank(address(users.alice.deleGator));
-        vedaAdapter.depositByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT, 0);
-    }
-
     /// @notice depositByDelegation must revert when token address is zero
     function test_depositByDelegation_revertsOnZeroTokenAddress() public {
         Delegation memory delegation_ =
@@ -374,26 +357,6 @@ contract VedaLendingTest is BaseTest {
 
         vm.expectRevert(VedaAdapter.InvalidDelegationsLength.selector);
         vm.prank(address(users.bob.deleGator));
-        vedaAdapter.withdrawByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT, 0);
-    }
-
-    /// @notice withdrawByDelegation must revert when msg.sender does not match delegations[0].delegator
-    function test_withdrawByDelegation_revertsOnUnauthorizedCaller() public {
-        _setupLendingState();
-
-        Delegation memory delegation_ = _createTransferDelegation(
-            address(users.bob.deleGator), address(vedaAdapter), address(BORING_VAULT), type(uint256).max
-        );
-        Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(BORING_VAULT), DEPOSIT_AMOUNT);
-
-        Delegation[] memory delegations_ = new Delegation[](2);
-        delegations_[0] = redelegation_;
-        delegations_[1] = delegation_;
-
-        // Alice tries to call but Bob is delegations[0].delegator
-        vm.expectRevert(VedaAdapter.NotLeafDelegator.selector);
-        vm.prank(address(users.alice.deleGator));
         vedaAdapter.withdrawByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT, 0);
     }
 

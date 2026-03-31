@@ -41,6 +41,14 @@ import { IVedaTeller } from "./interfaces/IVedaTeller.sol";
  *
  *      Requirements:
  *      - VedaAdapter must approve the BoringVault to spend deposit tokens
+ *
+ * @notice Security consideration: Anyone can call `depositByDelegation` and `withdrawByDelegation` — there is no
+ *      caller restriction. Security is enforced entirely through the delegation chain. The redelegation from the
+ *      operator to this adapter MUST include an `ERC20TransferAmountEnforcer` caveat capped to exactly the intended
+ *      deposit or withdrawal amount. Once that amount is transferred the enforcer's running total is exhausted and
+ *      any replay attempt will revert, making the delegation effectively single-use. A delegation without this
+ *      enforcer (or with an amount larger than intended) could be exploited by any caller to transfer more tokens
+ *      than authorised.
  */
 contract VedaAdapter is Ownable2Step {
     using SafeERC20 for IERC20;
@@ -129,9 +137,6 @@ contract VedaAdapter is Ownable2Step {
     /// @dev Thrown when the batch array is empty
     error InvalidBatchLength();
 
-    /// @dev Thrown when msg.sender is not the leaf delegator
-    error NotLeafDelegator();
-
     ////////////////////////////// State //////////////////////////////
 
     /**
@@ -179,6 +184,8 @@ contract VedaAdapter is Ownable2Step {
      * @param _token Address of the token to deposit
      * @param _amount Amount of tokens to deposit
      * @param _minimumMint Minimum vault shares the user expects to receive (slippage protection)
+     * @notice Security consideration: Callable by anyone. The redelegation passed in MUST include an
+     *      `ERC20TransferAmountEnforcer` capped to exactly `_amount` to prevent over-spending or replay.
      */
     function depositByDelegation(Delegation[] memory _delegations, address _token, uint256 _amount, uint256 _minimumMint) external {
         _executeDepositByDelegation(_delegations, _token, _amount, _minimumMint, msg.sender);
@@ -186,9 +193,10 @@ contract VedaAdapter is Ownable2Step {
 
     /**
      * @notice Deposits tokens using multiple delegation streams, executed sequentially
-     * @dev Each element is executed one after the other. The caller must be the delegator
-     *      (first delegate in the chain) for each stream.
+     * @dev Each element is executed one after the other.
      * @param _depositStreams Array of deposit parameters
+     * @notice Security consideration: Callable by anyone. Each redelegation in the batch MUST include an
+     *      `ERC20TransferAmountEnforcer` capped to exactly the intended deposit amount to prevent over-spending or replay.
      */
     function depositByDelegationBatch(DepositParams[] memory _depositStreams) external {
         uint256 streamsLength_ = _depositStreams.length;
@@ -215,6 +223,8 @@ contract VedaAdapter is Ownable2Step {
      * @param _token Address of the underlying token to receive
      * @param _shareAmount Amount of vault shares to redeem
      * @param _minimumAssets Minimum underlying assets the user expects to receive (slippage protection)
+     * @notice Security consideration: Callable by anyone. The redelegation passed in MUST include an
+     *      `ERC20TransferAmountEnforcer` capped to exactly `_shareAmount` to prevent over-spending or replay.
      */
     function withdrawByDelegation(
         Delegation[] memory _delegations,
@@ -229,9 +239,10 @@ contract VedaAdapter is Ownable2Step {
 
     /**
      * @notice Withdraws underlying tokens using multiple delegation streams, executed sequentially
-     * @dev Each element is executed one after the other. The caller must be the delegator
-     *      (first delegate in the chain) for each stream.
+     * @dev Each element is executed one after the other.
      * @param _withdrawStreams Array of withdraw parameters
+     * @notice Security consideration: Callable by anyone. Each redelegation in the batch MUST include an
+     *      `ERC20TransferAmountEnforcer` capped to exactly the intended share amount to prevent over-spending or replay.
      */
     function withdrawByDelegationBatch(WithdrawParams[] memory _withdrawStreams) external {
         uint256 streamsLength_ = _withdrawStreams.length;
@@ -288,7 +299,7 @@ contract VedaAdapter is Ownable2Step {
      * @param _token Token to deposit
      * @param _amount Amount to deposit
      * @param _minimumMint Minimum vault shares expected
-     * @param _caller Authorized caller (must match leaf delegator)
+     * @param _caller Address of the caller, used only for event emission
      */
     function _executeDepositByDelegation(
         Delegation[] memory _delegations,
@@ -301,7 +312,6 @@ contract VedaAdapter is Ownable2Step {
     {
         uint256 length_ = _delegations.length;
         if (length_ < 2) revert InvalidDelegationsLength();
-        if (_delegations[0].delegator != _caller) revert NotLeafDelegator();
         if (_token == address(0)) revert InvalidZeroAddress();
 
         address rootDelegator_ = _delegations[length_ - 1].delegator;
@@ -332,7 +342,7 @@ contract VedaAdapter is Ownable2Step {
      * @param _token Underlying token to receive
      * @param _shareAmount Amount of vault shares to redeem
      * @param _minimumAssets Minimum underlying assets expected
-     * @param _caller Authorized caller (must match leaf delegator)
+     * @param _caller Address of the caller, used only for event emission
      */
     function _executeWithdrawByDelegation(
         Delegation[] memory _delegations,
@@ -345,7 +355,6 @@ contract VedaAdapter is Ownable2Step {
     {
         uint256 length_ = _delegations.length;
         if (length_ < 2) revert InvalidDelegationsLength();
-        if (_delegations[0].delegator != _caller) revert NotLeafDelegator();
         if (_token == address(0)) revert InvalidZeroAddress();
 
         address rootDelegator_ = _delegations[length_ - 1].delegator;
