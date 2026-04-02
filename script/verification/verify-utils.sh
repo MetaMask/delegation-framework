@@ -44,6 +44,8 @@ CHAIN_IDS=(
   2020       # ronin
   11142220   # celo sepolia
   42220      # celo
+  5003       # mantle sepolia
+  5000       # mantle
 )
 
 ##########################################
@@ -95,6 +97,8 @@ get_chain_config() {
         2020)     config=("key" "sourcify" "$RONIN_RPC_URL" "https://sourcify.dev/server/v2/verify") ;; # ronin
         11142220) config=("$ETHERSCAN_API_KEY" "etherscan" "$CELO_SEPOLIA_RPC_URL" "https://api.etherscan.io/v2/api?chainid=11142220") ;; # celo sepolia
         42220)    config=("$ETHERSCAN_API_KEY" "etherscan" "$CELO_RPC_URL" "https://api.etherscan.io/v2/api?chainid=42220") ;; # celo
+        5003)    config=("$ETHERSCAN_API_KEY" "etherscan" "$MANTLE_SEPOLIA_RPC_URL" "https://api.etherscan.io/v2/api?chainid=5003") ;; # mantle sepolia
+        5000)    config=("$ETHERSCAN_API_KEY" "etherscan" "$MANTLE_RPC_URL" "https://api.etherscan.io/v2/api?chainid=5000") ;; # mantle
         *)
             echo "Unknown chain ID: $chain_id" >&2
             return 1

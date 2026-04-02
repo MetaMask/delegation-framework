@@ -50,6 +50,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - MegaETH
 - Ronin
 - Celo
+- Mantle
 
 ### Testnets
 
@@ -72,6 +73,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Hoodi
 - Ronin Saigon
 - Celo sepolia
+- Mantle sepolia
 
 ## **Deployments**
 
