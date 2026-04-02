@@ -31,6 +31,7 @@ CHAIN_IDS=(
   1301       # unichain-sepolia
   10143      # monad-testnet
   5115       # citrea-testnet
+  4114       # citrea
   57073      # ink
   763373     # ink-sepolia
   1329       # sei
@@ -42,6 +43,8 @@ CHAIN_IDS=(
   6343       # megaeth-testnet
   2021       # ronin saigon testnet
   2020       # ronin
+  42431      # tempo testnet
+  4217       # tempo
   11142220   # celo sepolia
   42220      # celo
   5003       # mantle sepolia
@@ -84,6 +87,7 @@ get_chain_config() {
         1301)     config=("$UNICHAIN_API_KEY" "custom" "$UNICHAIN_SEPOLIA_RPC_URL" "https://api-sepolia.uniscan.xyz/api") ;; # unichain-sepolia
         10143)    config=("$ETHERSCAN_API_KEY" "etherscan" "$MONAD_TESTNET_RPC_URL" "") ;; # monad-testnet
         5115)     config=("key" "blockscout" "$CITREA_TESTNET_RPC_URL" "https://explorer.testnet.citrea.xyz/api") ;; # citrea-testnet
+        4114)     config=("key" "blockscout" "$CITREA_RPC_URL" "https://explorer.mainnet.citrea.xyz/api") ;; # citrea
         57073)    config=("key" "blockscout" "$INK_RPC_URL" "https://explorer.inkonchain.com/api") ;; # ink
         763373)   config=("key" "blockscout" "$INK_SEPOLIA_RPC_URL" "https://explorer-sepolia.inkonchain.com/api") ;; # ink-sepolia
         1329)     config=("key" "custom" "$SEI_RPC_URL" "https://seitrace.com/pacific-1/api") ;; # sei
@@ -95,6 +99,8 @@ get_chain_config() {
         6343)     config=("key" "blockscout" "$MEGA_ETH_TESTNET_RPC_URL" "https://megaeth.blockscout.com/api/") ;; # megaeth-testnet
         2021)     config=("key" "sourcify" "$RONIN_SAIGON_RPC_URL" "https://sourcify.dev/server/") ;; # ronin saigon testnet
         2020)     config=("key" "sourcify" "$RONIN_RPC_URL" "https://sourcify.dev/server/v2/verify") ;; # ronin
+        42431)    config=("key" "etherscan" "$TEMPO_MODERATO_RPC_URL" "https://contracts.tempo.xyz") ;; # tempo moderato testnet
+        4217)     config=("key" "etherscan" "$TEMPO_RPC_URL" "https://contracts.tempo.xyz") ;; # tempo
         11142220) config=("$ETHERSCAN_API_KEY" "etherscan" "$CELO_SEPOLIA_RPC_URL" "https://api.etherscan.io/v2/api?chainid=11142220") ;; # celo sepolia
         42220)    config=("$ETHERSCAN_API_KEY" "etherscan" "$CELO_RPC_URL" "https://api.etherscan.io/v2/api?chainid=42220") ;; # celo
         5003)    config=("$ETHERSCAN_API_KEY" "etherscan" "$MANTLE_SEPOLIA_RPC_URL" "https://api.etherscan.io/v2/api?chainid=5003") ;; # mantle sepolia
