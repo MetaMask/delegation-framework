@@ -9,7 +9,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { IVedaTeller } from "../../src/helpers/interfaces/IVedaTeller.sol";
 import { BaseTest } from "../utils/BaseTest.t.sol";
-import { Implementation, SignatureType } from "../utils/Types.t.sol";
+import { Implementation, SignatureType, TestUser } from "../utils/Types.t.sol";
 import { Execution, Delegation, Caveat, ModeCode, CallType, ExecType } from "../../src/utils/Types.sol";
 import { CALLTYPE_BATCH, EXECTYPE_TRY, MODE_DEFAULT } from "../../src/utils/Constants.sol";
 import { ModePayload } from "@erc7579/lib/ModeLib.sol";
@@ -648,6 +648,220 @@ contract VedaLendingTest is BaseTest {
     }
 
     // ==================================================================================
+    // Section 10: Terms Validation Tests
+    // Ensures the adapter rejects malformed caveat terms before executing.
+    // ==================================================================================
+
+    /// @notice depositByDelegation must revert when leaf caveat terms are shorter than 52 bytes
+    function test_depositByDelegation_revertsOnShortTerms() public {
+        Delegation memory delegation_ =
+            _createTransferDelegation(address(users.bob.deleGator), address(vedaAdapter), address(USDC), type(uint256).max);
+
+        Caveat[] memory shortCaveats_ = new Caveat[](1);
+        shortCaveats_[0] = Caveat({
+            args: hex"",
+            enforcer: address(erc20TransferAmountEnforcer),
+            terms: abi.encodePacked(address(USDC)) // 20 bytes, too short
+        });
+
+        Delegation memory redelegation_ = Delegation({
+            delegate: address(vedaAdapter),
+            delegator: address(users.bob.deleGator),
+            authority: EncoderLib._getDelegationHash(delegation_),
+            caveats: shortCaveats_,
+            salt: 0,
+            signature: hex""
+        });
+        redelegation_ = signDelegation(users.bob, redelegation_);
+
+        Delegation[] memory delegations_ = new Delegation[](2);
+        delegations_[0] = redelegation_;
+        delegations_[1] = delegation_;
+
+        vm.expectRevert(VedaAdapter.InvalidTermsLength.selector);
+        vm.prank(address(users.bob.deleGator));
+        vedaAdapter.depositByDelegation(delegations_, 0);
+    }
+
+    /// @notice withdrawByDelegation must revert when leaf caveat terms are shorter than 52 bytes
+    function test_withdrawByDelegation_revertsOnShortTerms() public {
+        _setupLendingState();
+
+        Delegation memory delegation_ = _createTransferDelegation(
+            address(users.bob.deleGator), address(vedaAdapter), address(BORING_VAULT), type(uint256).max
+        );
+
+        Caveat[] memory shortCaveats_ = new Caveat[](1);
+        shortCaveats_[0] = Caveat({
+            args: hex"",
+            enforcer: address(erc20TransferAmountEnforcer),
+            terms: hex"aabbccdd" // 4 bytes, too short
+        });
+
+        Delegation memory redelegation_ = Delegation({
+            delegate: address(vedaAdapter),
+            delegator: address(users.bob.deleGator),
+            authority: EncoderLib._getDelegationHash(delegation_),
+            caveats: shortCaveats_,
+            salt: 0,
+            signature: hex""
+        });
+        redelegation_ = signDelegation(users.bob, redelegation_);
+
+        Delegation[] memory delegations_ = new Delegation[](2);
+        delegations_[0] = redelegation_;
+        delegations_[1] = delegation_;
+
+        vm.expectRevert(VedaAdapter.InvalidTermsLength.selector);
+        vm.prank(address(users.bob.deleGator));
+        vedaAdapter.withdrawByDelegation(delegations_, address(USDC), 0);
+    }
+
+    // ==================================================================================
+    // Section 11: Replay / Double-Spend Prevention Tests
+    // Validates that the ERC20TransferAmountEnforcer prevents reuse of the same delegation.
+    // ==================================================================================
+
+    /// @notice Calling depositByDelegation twice with the same delegation chain must revert on the second call
+    function test_depositByDelegation_revertsOnReplay() public {
+        Delegation memory delegation_ =
+            _createTransferDelegation(address(users.bob.deleGator), address(vedaAdapter), address(USDC), type(uint256).max);
+        Delegation memory redelegation_ =
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(USDC), DEPOSIT_AMOUNT);
+
+        Delegation[] memory delegations_ = new Delegation[](2);
+        delegations_[0] = redelegation_;
+        delegations_[1] = delegation_;
+
+        vm.prank(address(users.bob.deleGator));
+        vedaAdapter.depositByDelegation(delegations_, 0);
+
+        vm.prank(address(users.bob.deleGator));
+        vm.expectRevert();
+        vedaAdapter.depositByDelegation(delegations_, 0);
+    }
+
+    // ==================================================================================
+    // Section 12: Slippage Protection Tests
+    // Validates that minimumMint / minimumAssets bounds cause reverts when not met.
+    // ==================================================================================
+
+    /// @notice depositByDelegation must revert when minimumMint exceeds the actual shares minted
+    function test_depositByDelegation_revertsOnSlippage() public {
+        Delegation memory delegation_ =
+            _createTransferDelegation(address(users.bob.deleGator), address(vedaAdapter), address(USDC), type(uint256).max);
+        Delegation memory redelegation_ =
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(USDC), DEPOSIT_AMOUNT);
+
+        Delegation[] memory delegations_ = new Delegation[](2);
+        delegations_[0] = redelegation_;
+        delegations_[1] = delegation_;
+
+        vm.prank(address(users.bob.deleGator));
+        vm.expectRevert();
+        vedaAdapter.depositByDelegation(delegations_, type(uint256).max);
+    }
+
+    /// @notice withdrawByDelegation must revert when minimumAssets exceeds the actual assets received
+    function test_withdrawByDelegation_revertsOnSlippage() public {
+        _setupLendingState();
+        vm.warp(block.timestamp + SHARE_LOCK_SECONDS);
+
+        uint256 aliceShares_ = BORING_VAULT.balanceOf(address(users.alice.deleGator));
+
+        Delegation memory delegation_ = _createTransferDelegation(
+            address(users.bob.deleGator), address(vedaAdapter), address(BORING_VAULT), type(uint256).max
+        );
+        Delegation memory redelegation_ =
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(BORING_VAULT), aliceShares_);
+
+        Delegation[] memory delegations_ = new Delegation[](2);
+        delegations_[0] = redelegation_;
+        delegations_[1] = delegation_;
+
+        vm.prank(address(users.bob.deleGator));
+        vm.expectRevert();
+        vedaAdapter.withdrawByDelegation(delegations_, address(USDC), type(uint256).max);
+    }
+
+    // ==================================================================================
+    // Section 13: Alternative Delegator Tests
+    // Validates the adapter works correctly when Carol (not Alice) is the root delegator.
+    // ==================================================================================
+
+    /// @notice Deposit via adapter where Carol is the root delegator instead of Alice
+    function test_depositByDelegation_carolAsRootDelegator() public {
+        vm.deal(address(users.carol.deleGator), 1 ether);
+        vm.prank(USDC_WHALE);
+        USDC.transfer(address(users.carol.deleGator), INITIAL_USD_BALANCE);
+
+        uint256 carolUSDCBefore_ = USDC.balanceOf(address(users.carol.deleGator));
+
+        // Carol delegates USDC transfer rights to Bob, redeemable only by the adapter
+        Delegation memory delegation_ = _createTransferDelegationFull(
+            users.carol, address(users.bob.deleGator), address(vedaAdapter), address(USDC), type(uint256).max, 0
+        );
+
+        // Bob redelegates to the VedaAdapter with a transfer amount cap
+        Delegation memory redelegation_ =
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(USDC), DEPOSIT_AMOUNT);
+
+        Delegation[] memory delegations_ = new Delegation[](2);
+        delegations_[0] = redelegation_;
+        delegations_[1] = delegation_;
+
+        vm.prank(address(users.bob.deleGator));
+        vedaAdapter.depositByDelegation(delegations_, 0);
+
+        uint256 carolUSDCAfter_ = USDC.balanceOf(address(users.carol.deleGator));
+        assertEq(carolUSDCAfter_, carolUSDCBefore_ - DEPOSIT_AMOUNT, "Carol's USDC should decrease");
+
+        uint256 carolShares_ = BORING_VAULT.balanceOf(address(users.carol.deleGator));
+        assertGt(carolShares_, 0, "Shares should be minted to Carol (root delegator)");
+
+        assertEq(BORING_VAULT.balanceOf(address(users.bob.deleGator)), 0, "Bob must not receive shares");
+        assertEq(BORING_VAULT.balanceOf(address(users.alice.deleGator)), 0, "Alice must not receive shares");
+    }
+
+    /// @notice Withdraw via adapter where Carol is the root delegator instead of Alice
+    function test_withdrawByDelegation_carolAsRootDelegator() public {
+        vm.deal(address(users.carol.deleGator), 1 ether);
+        vm.prank(USDC_WHALE);
+        USDC.transfer(address(users.carol.deleGator), INITIAL_USD_BALANCE);
+
+        // Carol deposits directly to get shares
+        vm.prank(address(users.carol.deleGator));
+        USDC.approve(address(BORING_VAULT), DEPOSIT_AMOUNT);
+        vm.prank(address(users.carol.deleGator));
+        VEDA_TELLER.deposit(address(USDC), DEPOSIT_AMOUNT, 0, address(0));
+        vm.warp(block.timestamp + SHARE_LOCK_SECONDS);
+
+        uint256 carolShares_ = BORING_VAULT.balanceOf(address(users.carol.deleGator));
+        assertGt(carolShares_, 0, "Carol should have vault shares");
+        uint256 carolUSDCBefore_ = USDC.balanceOf(address(users.carol.deleGator));
+
+        // Carol delegates share transfer rights to Bob, redeemable only by the adapter
+        Delegation memory delegation_ = _createTransferDelegationFull(
+            users.carol, address(users.bob.deleGator), address(vedaAdapter), address(BORING_VAULT), type(uint256).max, 0
+        );
+
+        // Bob redelegates to the VedaAdapter with a share transfer amount cap
+        Delegation memory redelegation_ =
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(BORING_VAULT), carolShares_);
+
+        Delegation[] memory delegations_ = new Delegation[](2);
+        delegations_[0] = redelegation_;
+        delegations_[1] = delegation_;
+
+        vm.prank(address(users.bob.deleGator));
+        vedaAdapter.withdrawByDelegation(delegations_, address(USDC), 0);
+
+        assertEq(BORING_VAULT.balanceOf(address(users.carol.deleGator)), 0, "All shares should be burned");
+        uint256 carolUSDCAfter_ = USDC.balanceOf(address(users.carol.deleGator));
+        assertGt(carolUSDCAfter_, carolUSDCBefore_, "Carol should receive USDC back");
+    }
+
+    // ==================================================================================
     // Helper Functions
     // ==================================================================================
 
@@ -699,11 +913,27 @@ contract VedaLendingTest is BaseTest {
         view
         returns (Delegation memory)
     {
-        return _createTransferDelegationWithSalt(_delegate, _redeemer, _token, _amount, 0);
+        return _createTransferDelegationFull(users.alice, _delegate, _redeemer, _token, _amount, 0);
     }
 
     /// @notice Creates a transfer delegation with a custom salt for unique delegation hashes in batch operations
     function _createTransferDelegationWithSalt(
+        address _delegate,
+        address _redeemer,
+        address _token,
+        uint256 _amount,
+        uint256 _salt
+    )
+        internal
+        view
+        returns (Delegation memory)
+    {
+        return _createTransferDelegationFull(users.alice, _delegate, _redeemer, _token, _amount, _salt);
+    }
+
+    /// @notice Creates a transfer delegation signed by an arbitrary delegator
+    function _createTransferDelegationFull(
+        TestUser memory _delegator,
         address _delegate,
         address _redeemer,
         address _token,
@@ -722,14 +952,14 @@ contract VedaLendingTest is BaseTest {
 
         Delegation memory delegation_ = Delegation({
             delegate: _delegate,
-            delegator: address(users.alice.deleGator),
+            delegator: address(_delegator.deleGator),
             authority: ROOT_AUTHORITY,
             caveats: caveats_,
             salt: _salt,
             signature: hex""
         });
 
-        return signDelegation(users.alice, delegation_);
+        return signDelegation(_delegator, delegation_);
     }
 
     /// @notice Creates an adapter redelegation with ERC20TransferAmountEnforcer
@@ -742,11 +972,26 @@ contract VedaLendingTest is BaseTest {
         view
         returns (Delegation memory)
     {
-        return _createAdapterRedelegationWithSalt(_authority, _token, _amount, 0);
+        return _createAdapterRedelegationFull(users.bob, _authority, _token, _amount, 0);
     }
 
     /// @notice Creates an adapter redelegation with a custom salt for unique delegation hashes in batch operations
     function _createAdapterRedelegationWithSalt(
+        bytes32 _authority,
+        address _token,
+        uint256 _amount,
+        uint256 _salt
+    )
+        internal
+        view
+        returns (Delegation memory)
+    {
+        return _createAdapterRedelegationFull(users.bob, _authority, _token, _amount, _salt);
+    }
+
+    /// @notice Creates an adapter redelegation signed by an arbitrary operator
+    function _createAdapterRedelegationFull(
+        TestUser memory _operator,
         bytes32 _authority,
         address _token,
         uint256 _amount,
@@ -762,13 +1007,13 @@ contract VedaLendingTest is BaseTest {
 
         Delegation memory delegation_ = Delegation({
             delegate: address(vedaAdapter),
-            delegator: address(users.bob.deleGator),
+            delegator: address(_operator.deleGator),
             authority: _authority,
             caveats: caveats_,
             salt: _salt,
             signature: hex""
         });
 
-        return signDelegation(users.bob, delegation_);
+        return signDelegation(_operator, delegation_);
     }
 }
