@@ -188,7 +188,7 @@ contract VedaLendingTest is BaseTest {
         delegations_[1] = delegation_;
 
         vm.prank(address(users.bob.deleGator));
-        vedaAdapter.depositByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT, 0);
+        vedaAdapter.depositByDelegation(delegations_, 0);
 
         uint256 aliceUSDCFinal_ = USDC.balanceOf(address(users.alice.deleGator));
         assertEq(aliceUSDCFinal_, INITIAL_USD_BALANCE - DEPOSIT_AMOUNT, "USDC balance should decrease");
@@ -219,7 +219,7 @@ contract VedaLendingTest is BaseTest {
         delegations_[1] = delegation_;
 
         vm.prank(address(users.bob.deleGator));
-        vedaAdapter.withdrawByDelegation(delegations_, address(USDC), aliceShares_, 0);
+        vedaAdapter.withdrawByDelegation(delegations_, address(USDC), 0);
 
         uint256 aliceSharesAfter_ = BORING_VAULT.balanceOf(address(users.alice.deleGator));
         assertEq(aliceSharesAfter_, 0, "All shares should be burned");
@@ -279,7 +279,7 @@ contract VedaLendingTest is BaseTest {
 
         vm.expectRevert(VedaAdapter.InvalidDelegationsLength.selector);
         vm.prank(address(users.bob.deleGator));
-        vedaAdapter.depositByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT, 0);
+        vedaAdapter.depositByDelegation(delegations_, 0);
     }
 
     /// @notice depositByDelegation must revert with only 1 delegation (requires >= 2 for redelegation pattern)
@@ -291,43 +291,7 @@ contract VedaLendingTest is BaseTest {
 
         vm.expectRevert(VedaAdapter.InvalidDelegationsLength.selector);
         vm.prank(address(users.bob.deleGator));
-        vedaAdapter.depositByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT, 0);
-    }
-
-    /// @notice depositByDelegation must revert when token address is zero
-    function test_depositByDelegation_revertsOnZeroTokenAddress() public {
-        Delegation memory delegation_ =
-            _createTransferDelegation(address(users.bob.deleGator), address(vedaAdapter), address(USDC), DEPOSIT_AMOUNT);
-        Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(USDC), DEPOSIT_AMOUNT);
-
-        Delegation[] memory delegations_ = new Delegation[](2);
-        delegations_[0] = redelegation_;
-        delegations_[1] = delegation_;
-
-        vm.expectRevert(VedaAdapter.InvalidZeroAddress.selector);
-        vm.prank(address(users.bob.deleGator));
-        vedaAdapter.depositByDelegation(delegations_, address(0), DEPOSIT_AMOUNT, 0);
-    }
-
-    /// @notice Depositing more than the delegation's ERC20TransferAmountEnforcer cap must revert
-    function test_depositByDelegation_revertsOnExcessiveAmount() public {
-        Delegation memory delegation_ =
-            _createTransferDelegation(address(users.bob.deleGator), address(vedaAdapter), address(USDC), type(uint256).max);
-        Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(USDC), DEPOSIT_AMOUNT);
-
-        Delegation[] memory delegations_ = new Delegation[](2);
-        delegations_[0] = redelegation_;
-        delegations_[1] = delegation_;
-
-        uint256 excessiveAmount_ = DEPOSIT_AMOUNT + 1;
-        vm.expectRevert();
-        vm.prank(address(users.bob.deleGator));
-        vedaAdapter.depositByDelegation(delegations_, address(USDC), excessiveAmount_, 0);
-
-        // Verify no state change
-        assertEq(USDC.balanceOf(address(users.alice.deleGator)), INITIAL_USD_BALANCE);
+        vedaAdapter.depositByDelegation(delegations_, 0);
     }
 
     // ==================================================================================
@@ -343,7 +307,7 @@ contract VedaLendingTest is BaseTest {
 
         vm.expectRevert(VedaAdapter.InvalidDelegationsLength.selector);
         vm.prank(address(users.bob.deleGator));
-        vedaAdapter.withdrawByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT, 0);
+        vedaAdapter.withdrawByDelegation(delegations_, address(USDC), 0);
     }
 
     /// @notice withdrawByDelegation must revert with only 1 delegation (requires >= 2 for redelegation pattern)
@@ -357,10 +321,10 @@ contract VedaLendingTest is BaseTest {
 
         vm.expectRevert(VedaAdapter.InvalidDelegationsLength.selector);
         vm.prank(address(users.bob.deleGator));
-        vedaAdapter.withdrawByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT, 0);
+        vedaAdapter.withdrawByDelegation(delegations_, address(USDC), 0);
     }
 
-    /// @notice withdrawByDelegation must revert when token address is zero
+    /// @notice withdrawByDelegation must revert when underlying token address is zero
     function test_withdrawByDelegation_revertsOnZeroTokenAddress() public {
         _setupLendingState();
 
@@ -376,7 +340,7 @@ contract VedaLendingTest is BaseTest {
 
         vm.expectRevert(VedaAdapter.InvalidZeroAddress.selector);
         vm.prank(address(users.bob.deleGator));
-        vedaAdapter.withdrawByDelegation(delegations_, address(0), DEPOSIT_AMOUNT, 0);
+        vedaAdapter.withdrawByDelegation(delegations_, address(0), 0);
     }
 
     // ==================================================================================
@@ -402,7 +366,7 @@ contract VedaLendingTest is BaseTest {
         );
 
         vm.prank(address(users.bob.deleGator));
-        vedaAdapter.depositByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT, 0);
+        vedaAdapter.depositByDelegation(delegations_, 0);
     }
 
     /// @notice withdrawByDelegation must emit WithdrawExecuted with correct parameters
@@ -429,7 +393,7 @@ contract VedaLendingTest is BaseTest {
         );
 
         vm.prank(address(users.bob.deleGator));
-        vedaAdapter.withdrawByDelegation(delegations_, address(USDC), aliceShares_, 0);
+        vedaAdapter.withdrawByDelegation(delegations_, address(USDC), 0);
     }
 
     // ==================================================================================
@@ -481,10 +445,8 @@ contract VedaLendingTest is BaseTest {
         delegations2_[1] = delegation2_;
 
         VedaAdapter.DepositParams[] memory streams_ = new VedaAdapter.DepositParams[](2);
-        streams_[0] =
-            VedaAdapter.DepositParams({ delegations: delegations1_, token: address(USDC), amount: amount1_, minimumMint: 0 });
-        streams_[1] =
-            VedaAdapter.DepositParams({ delegations: delegations2_, token: address(USDC), amount: amount2_, minimumMint: 0 });
+        streams_[0] = VedaAdapter.DepositParams({ delegations: delegations1_, minimumMint: 0 });
+        streams_[1] = VedaAdapter.DepositParams({ delegations: delegations2_, minimumMint: 0 });
 
         vm.expectEmit(true, true, true, true, address(vedaAdapter));
         emit VedaAdapter.BatchDepositExecuted(address(users.bob.deleGator), 2);
@@ -592,7 +554,7 @@ contract VedaLendingTest is BaseTest {
         delegations_[1] = delegation_;
 
         vm.prank(address(users.bob.deleGator));
-        vedaAdapter.depositByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT, 0);
+        vedaAdapter.depositByDelegation(delegations_, 0);
 
         assertEq(USDC.balanceOf(address(vedaAdapter)), 0, "Adapter must not retain any USDC after deposit");
     }
@@ -615,7 +577,7 @@ contract VedaLendingTest is BaseTest {
         delegations_[1] = delegation_;
 
         vm.prank(address(users.bob.deleGator));
-        vedaAdapter.withdrawByDelegation(delegations_, address(USDC), aliceShares_, 0);
+        vedaAdapter.withdrawByDelegation(delegations_, address(USDC), 0);
 
         assertEq(BORING_VAULT.balanceOf(address(vedaAdapter)), 0, "Adapter must not retain any vault shares after withdraw");
     }
@@ -635,7 +597,7 @@ contract VedaLendingTest is BaseTest {
         delegations_[1] = delegation_;
 
         vm.prank(address(users.bob.deleGator));
-        vedaAdapter.depositByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT, 0);
+        vedaAdapter.depositByDelegation(delegations_, 0);
 
         assertEq(
             USDC.allowance(address(vedaAdapter), address(BORING_VAULT)),
@@ -675,7 +637,7 @@ contract VedaLendingTest is BaseTest {
         delegations_[2] = rootDelegation_;
 
         vm.prank(address(users.bob.deleGator));
-        vedaAdapter.depositByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT, 0);
+        vedaAdapter.depositByDelegation(delegations_, 0);
 
         // rootDelegator_ = delegations[2].delegator = Alice
         uint256 aliceShares_ = BORING_VAULT.balanceOf(address(users.alice.deleGator));
@@ -683,26 +645,6 @@ contract VedaLendingTest is BaseTest {
 
         assertEq(BORING_VAULT.balanceOf(address(users.carol.deleGator)), 0, "Carol must not receive shares");
         assertEq(BORING_VAULT.balanceOf(address(users.bob.deleGator)), 0, "Bob must not receive shares");
-    }
-
-    /// @notice Passing a token to depositByDelegation that differs from the delegation enforcer's
-    ///         token must revert, because the transfer calldata won't match the enforcer's terms.
-    function test_depositByDelegation_revertsOnTokenMismatch() public {
-        // Delegation enforcer is set up for BORING_VAULT (share token), but we try to deposit USDC
-        Delegation memory delegation_ = _createTransferDelegation(
-            address(users.bob.deleGator), address(vedaAdapter), address(BORING_VAULT), type(uint256).max
-        );
-        Delegation memory redelegation_ =
-            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(BORING_VAULT), DEPOSIT_AMOUNT);
-
-        Delegation[] memory delegations_ = new Delegation[](2);
-        delegations_[0] = redelegation_;
-        delegations_[1] = delegation_;
-
-        // The adapter will try to transfer USDC, but the enforcer only allows BORING_VAULT token transfers
-        vm.expectRevert();
-        vm.prank(address(users.bob.deleGator));
-        vedaAdapter.depositByDelegation(delegations_, address(USDC), DEPOSIT_AMOUNT, 0);
     }
 
     // ==================================================================================
@@ -729,7 +671,7 @@ contract VedaLendingTest is BaseTest {
         delegations_[1] = delegation_;
 
         vm.prank(address(users.bob.deleGator));
-        vedaAdapter.depositByDelegation(delegations_, address(USDC), _amount, 0);
+        vedaAdapter.depositByDelegation(delegations_, 0);
     }
 
     /// @notice Builds a WithdrawParams struct for batch withdraw (helper to reduce stack depth)
@@ -743,9 +685,7 @@ contract VedaLendingTest is BaseTest {
         wdDelegations_[0] = rewd_;
         wdDelegations_[1] = wd_;
 
-        return VedaAdapter.WithdrawParams({
-            delegations: wdDelegations_, token: address(USDC), shareAmount: _shareAmount, minimumAssets: 0
-        });
+        return VedaAdapter.WithdrawParams({ delegations: wdDelegations_, token: address(USDC), minimumAssets: 0 });
     }
 
     /// @notice Creates a transfer delegation with ERC20TransferAmountEnforcer and RedeemerEnforcer
