@@ -68,7 +68,6 @@ contract VedaLendingTest is BaseTest {
     LimitedCallsEnforcer public limitedCallsEnforcer;
     VedaAdapter public vedaAdapter;
 
-    uint256 public constant MAINNET_FORK_BLOCK = 447148700; // Use latest available block
     uint256 public constant INITIAL_USD_BALANCE = 10000000000; // 10k USDC
     uint256 public constant DEPOSIT_AMOUNT = 1000000000; // 1k USDC
     uint256 public constant SHARE_LOCK_SECONDS = 61; // Warp past the 60s share lock period applied by deposit()
@@ -77,7 +76,7 @@ contract VedaLendingTest is BaseTest {
 
     function setUp() public override {
         // Create fork from mainnet at specific block
-        vm.createSelectFork(vm.envString("ARBITRUM_RPC_URL"), MAINNET_FORK_BLOCK);
+        vm.createSelectFork(vm.envString("ARBITRUM_RPC_URL"));
 
         // Set implementation type
         IMPLEMENTATION = Implementation.Hybrid;

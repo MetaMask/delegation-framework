@@ -243,13 +243,7 @@ contract VedaAdapter is Ownable2Step {
      * @notice Security consideration: Callable by anyone. The redelegation passed in MUST include an
      *      `ERC20TransferAmountEnforcer` capped to exactly `_shareAmount` to prevent over-spending or replay.
      */
-    function withdrawByDelegation(
-        Delegation[] memory _delegations,
-        address _token,
-        uint256 _minimumAssets
-    )
-        external
-    {
+    function withdrawByDelegation(Delegation[] memory _delegations, address _token, uint256 _minimumAssets) external {
         _executeWithdrawByDelegation(_delegations, _token, _minimumAssets, msg.sender);
     }
 
@@ -334,13 +328,7 @@ contract VedaAdapter is Ownable2Step {
      * @param _minimumMint Minimum vault shares expected (sanity-check bound)
      * @param _caller Address of the caller, used only for event emission
      */
-    function _executeDepositByDelegation(
-        Delegation[] memory _delegations,
-        uint256 _minimumMint,
-        address _caller
-    )
-        internal
-    {
+    function _executeDepositByDelegation(Delegation[] memory _delegations, uint256 _minimumMint, address _caller) internal {
         uint256 length_ = _delegations.length;
         if (length_ < 2) revert InvalidDelegationsLength();
 
