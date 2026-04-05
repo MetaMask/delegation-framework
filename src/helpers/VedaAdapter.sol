@@ -199,7 +199,7 @@ contract VedaAdapter is Ownable2Step {
      *      over-spending or replay.
      */
     function depositByDelegation(Delegation[] memory _delegations, uint256 _minimumMint) external {
-        _executeDepositByDelegation(_delegations, _minimumMint, msg.sender);
+        _executeDepositByDelegation(_delegations, _minimumMint);
     }
 
     /**
@@ -214,16 +214,15 @@ contract VedaAdapter is Ownable2Step {
         uint256 streamsLength_ = _depositStreams.length;
         if (streamsLength_ == 0) revert InvalidBatchLength();
 
-        address caller_ = msg.sender;
         for (uint256 i = 0; i < streamsLength_;) {
             DepositParams memory params_ = _depositStreams[i];
-            _executeDepositByDelegation(params_.delegations, params_.minimumMint, caller_);
+            _executeDepositByDelegation(params_.delegations, params_.minimumMint);
             unchecked {
                 ++i;
             }
         }
 
-        emit BatchDepositExecuted(caller_, streamsLength_);
+        emit BatchDepositExecuted(msg.sender, streamsLength_);
     }
 
     /**
@@ -244,7 +243,7 @@ contract VedaAdapter is Ownable2Step {
      *      `ERC20TransferAmountEnforcer` capped to exactly `_shareAmount` to prevent over-spending or replay.
      */
     function withdrawByDelegation(Delegation[] memory _delegations, address _token, uint256 _minimumAssets) external {
-        _executeWithdrawByDelegation(_delegations, _token, _minimumAssets, msg.sender);
+        _executeWithdrawByDelegation(_delegations, _token, _minimumAssets);
     }
 
     /**
@@ -259,16 +258,15 @@ contract VedaAdapter is Ownable2Step {
         uint256 streamsLength_ = _withdrawStreams.length;
         if (streamsLength_ == 0) revert InvalidBatchLength();
 
-        address caller_ = msg.sender;
         for (uint256 i = 0; i < streamsLength_;) {
             WithdrawParams memory params_ = _withdrawStreams[i];
-            _executeWithdrawByDelegation(params_.delegations, params_.token, params_.minimumAssets, caller_);
+            _executeWithdrawByDelegation(params_.delegations, params_.token, params_.minimumAssets);
             unchecked {
                 ++i;
             }
         }
 
-        emit BatchWithdrawExecuted(caller_, streamsLength_);
+        emit BatchWithdrawExecuted(msg.sender, streamsLength_);
     }
 
     /**
@@ -326,9 +324,8 @@ contract VedaAdapter is Ownable2Step {
      *      via `_parseERC20TransferTerms`.
      * @param _delegations Delegation chain, sorted leaf to root
      * @param _minimumMint Minimum vault shares expected (sanity-check bound)
-     * @param _caller Address of the caller, used only for event emission
      */
-    function _executeDepositByDelegation(Delegation[] memory _delegations, uint256 _minimumMint, address _caller) internal {
+    function _executeDepositByDelegation(Delegation[] memory _delegations, uint256 _minimumMint) internal {
         uint256 length_ = _delegations.length;
         if (length_ < 2) revert InvalidDelegationsLength();
 
@@ -352,7 +349,7 @@ contract VedaAdapter is Ownable2Step {
         _ensureAllowance(IERC20(token_), boringVault, amount_);
         uint256 shares_ = teller.deposit(token_, amount_, _minimumMint, rootDelegator_, address(0));
 
-        emit DepositExecuted(rootDelegator_, _caller, token_, amount_, shares_);
+        emit DepositExecuted(rootDelegator_, msg.sender, token_, amount_, shares_);
     }
 
     /**
@@ -364,16 +361,8 @@ contract VedaAdapter is Ownable2Step {
      * @param _delegations Delegation chain, sorted leaf to root
      * @param _token Underlying output token to receive from the vault (differs from the share token in the caveat)
      * @param _minimumAssets Minimum underlying assets expected (sanity-check bound)
-     * @param _caller Address of the caller, used only for event emission
      */
-    function _executeWithdrawByDelegation(
-        Delegation[] memory _delegations,
-        address _token,
-        uint256 _minimumAssets,
-        address _caller
-    )
-        internal
-    {
+    function _executeWithdrawByDelegation(Delegation[] memory _delegations, address _token, uint256 _minimumAssets) internal {
         uint256 length_ = _delegations.length;
         if (length_ < 2) revert InvalidDelegationsLength();
         if (_token == address(0)) revert InvalidZeroAddress();
@@ -397,6 +386,6 @@ contract VedaAdapter is Ownable2Step {
         // Withdraw from Teller: burns shares from this adapter, sends underlying to root delegator
         uint256 assetsOut_ = teller.withdraw(_token, shareAmount_, _minimumAssets, rootDelegator_);
 
-        emit WithdrawExecuted(rootDelegator_, _caller, _token, shareAmount_, assetsOut_);
+        emit WithdrawExecuted(rootDelegator_, msg.sender, _token, shareAmount_, assetsOut_);
     }
 }
