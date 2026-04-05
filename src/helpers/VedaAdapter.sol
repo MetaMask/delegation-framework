@@ -294,7 +294,7 @@ contract VedaAdapter is Ownable2Step {
 
     /**
      * @notice Ensures sufficient token allowance for a spender to pull tokens
-     * @dev Checks current allowance and sets exact amount if insufficient, avoiding accumulation
+     * @dev Checks current allowance and increases to unlimited if insufficient
      * @param _token Token to manage allowance for
      * @param _spender Address that needs to spend the tokens
      * @param _amount Amount needed for the operation
@@ -302,7 +302,7 @@ contract VedaAdapter is Ownable2Step {
     function _ensureAllowance(IERC20 _token, address _spender, uint256 _amount) private {
         uint256 allowance_ = _token.allowance(address(this), _spender);
         if (allowance_ < _amount) {
-            _token.forceApprove(_spender, _amount);
+            _token.safeIncreaseAllowance(_spender, type(uint256).max);
         }
     }
 

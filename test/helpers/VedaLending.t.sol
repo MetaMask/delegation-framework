@@ -581,8 +581,8 @@ contract VedaLendingTest is BaseTest {
         assertEq(BORING_VAULT.balanceOf(address(vedaAdapter)), 0, "Adapter must not retain any vault shares after withdraw");
     }
 
-    /// @notice BoringVault must fully consume the allowance granted by the adapter during deposit.
-    ///         Verifies that _ensureAllowance does not cause unbounded allowance accumulation.
+    /// @notice After the first deposit, the adapter grants unlimited allowance to BoringVault.
+    ///         Subsequent deposits reuse the existing allowance without issuing a new approval.
     function test_allowanceFullyConsumedAfterDeposit() public {
         assertEq(USDC.allowance(address(vedaAdapter), address(BORING_VAULT)), 0, "Initial allowance should be 0");
 
@@ -600,8 +600,8 @@ contract VedaLendingTest is BaseTest {
 
         assertEq(
             USDC.allowance(address(vedaAdapter), address(BORING_VAULT)),
-            0,
-            "Allowance must be fully consumed after deposit -- no residual accumulation"
+            type(uint256).max - DEPOSIT_AMOUNT,
+            "Allowance should be unlimited minus the deposited amount"
         );
     }
 
