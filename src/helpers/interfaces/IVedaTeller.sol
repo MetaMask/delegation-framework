@@ -35,6 +35,12 @@ interface IVedaTeller {
     /**
      * @notice Allows an authorized caller to deposit into the BoringVault for another address, if this contract is not paused.
      * @dev Intended for router-like integrations; this selector should remain role-gated.
+     * @param depositAsset The ERC20 token to deposit
+     * @param depositAmount The amount to deposit
+     * @param minimumMint The minimum shares the user expects to receive
+     * @param to The address that will receive the minted vault shares
+     * @param referralAddress Address used for referral tracking
+     * @return shares The number of vault shares minted
      */
     function deposit(
         address depositAsset,
