@@ -51,10 +51,11 @@ import { IVedaTeller } from "./interfaces/IVedaTeller.sol";
  * @notice Security consideration: Anyone can call `depositByDelegation` and `withdrawByDelegation` — there is no
  *      caller restriction. Security is enforced entirely through the delegation chain. The redelegation from the
  *      operator to this adapter MUST include an `ERC20TransferAmountEnforcer` caveat capped to exactly the intended
- *      deposit or withdrawal amount. Once that amount is transferred the enforcer's running total is exhausted and
- *      any replay attempt will revert, making the delegation effectively single-use. A delegation without this
- *      enforcer (or with an amount larger than intended) could be exploited by any caller to transfer more tokens
- *      than authorised.
+ *      deposit or withdrawal amount, and it MUST be the first caveat (`caveats[0]`) of that redelegation — the
+ *      adapter reads token and amount directly from `_delegations[0].caveats[0].terms`. Once that amount is
+ *      transferred the enforcer's running total is exhausted and any replay attempt will revert, making the
+ *      delegation effectively single-use. A delegation without this enforcer as the first caveat (or with an amount
+ *      larger than intended) could be exploited by any caller to transfer more tokens than authorised.
  */
 contract VedaAdapter is Ownable2Step {
     using SafeERC20 for IERC20;
@@ -195,8 +196,8 @@ contract VedaAdapter is Ownable2Step {
      *      is negligible. A tolerance of 0.1-0.5% is recommended. If this check causes a revert,
      *      no funds are lost — retry with a fresh quote.
      * @notice Security consideration: Callable by anyone. The redelegation passed in MUST include an
-     *      `ERC20TransferAmountEnforcer` capped to exactly the intended deposit amount to prevent
-     *      over-spending or replay.
+     *      `ERC20TransferAmountEnforcer` as its first caveat (`caveats[0]`), capped to exactly the intended
+     *      deposit amount, to prevent over-spending or replay.
      */
     function depositByDelegation(Delegation[] memory _delegations, uint256 _minimumMint) external {
         _executeDepositByDelegation(_delegations, _minimumMint);
@@ -208,7 +209,8 @@ contract VedaAdapter is Ownable2Step {
      *      from the first caveat of each stream's leaf delegation.
      * @param _depositStreams Array of deposit parameters
      * @notice Security consideration: Callable by anyone. Each redelegation in the batch MUST include an
-     *      `ERC20TransferAmountEnforcer` capped to exactly the intended deposit amount to prevent over-spending or replay.
+     *      `ERC20TransferAmountEnforcer` as its first caveat (`caveats[0]`), capped to exactly the intended
+     *      deposit amount, to prevent over-spending or replay.
      */
     function depositByDelegationBatch(DepositParams[] memory _depositStreams) external {
         uint256 streamsLength_ = _depositStreams.length;
@@ -240,7 +242,8 @@ contract VedaAdapter is Ownable2Step {
      *      yield streaming is negligible. A tolerance of 0.1-0.5% is recommended. If this check
      *      causes a revert, no funds are lost — retry with a fresh quote.
      * @notice Security consideration: Callable by anyone. The redelegation passed in MUST include an
-     *      `ERC20TransferAmountEnforcer` capped to exactly `_shareAmount` to prevent over-spending or replay.
+     *      `ERC20TransferAmountEnforcer` as its first caveat (`caveats[0]`), capped to exactly `_shareAmount`,
+     *      to prevent over-spending or replay.
      */
     function withdrawByDelegation(Delegation[] memory _delegations, address _token, uint256 _minimumAssets) external {
         _executeWithdrawByDelegation(_delegations, _token, _minimumAssets);
@@ -252,7 +255,8 @@ contract VedaAdapter is Ownable2Step {
      *      from the first caveat of each stream's leaf delegation.
      * @param _withdrawStreams Array of withdraw parameters
      * @notice Security consideration: Callable by anyone. Each redelegation in the batch MUST include an
-     *      `ERC20TransferAmountEnforcer` capped to exactly the intended share amount to prevent over-spending or replay.
+     *      `ERC20TransferAmountEnforcer` as its first caveat (`caveats[0]`), capped to exactly the intended
+     *      share amount, to prevent over-spending or replay.
      */
     function withdrawByDelegationBatch(WithdrawParams[] memory _withdrawStreams) external {
         uint256 streamsLength_ = _withdrawStreams.length;
