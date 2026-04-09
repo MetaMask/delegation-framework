@@ -341,8 +341,7 @@ contract VedaAdapter is Ownable2Step {
         encodedModes_[0] = ModeLib.encodeSimpleSingle();
 
         bytes[] memory executionCallDatas_ = new bytes[](1);
-        bytes memory encodedTransfer_ = abi.encodeCall(IERC20.transfer, (address(this), amount_));
-        executionCallDatas_[0] = ExecutionLib.encodeSingle(token_, 0, encodedTransfer_);
+        executionCallDatas_[0] = ExecutionLib.encodeSingle(token_, 0, abi.encodeCall(IERC20.transfer, (address(this), amount_)));
 
         delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
 
@@ -379,8 +378,7 @@ contract VedaAdapter is Ownable2Step {
         encodedModes_[0] = ModeLib.encodeSimpleSingle();
 
         bytes[] memory executionCallDatas_ = new bytes[](1);
-        bytes memory encodedTransfer_ = abi.encodeCall(IERC20.transfer, (address(this), shareAmount_));
-        executionCallDatas_[0] = ExecutionLib.encodeSingle(boringVault, 0, encodedTransfer_);
+        executionCallDatas_[0] = ExecutionLib.encodeSingle(boringVault, 0, abi.encodeCall(IERC20.transfer, (address(this), shareAmount_)));
 
         delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
 
