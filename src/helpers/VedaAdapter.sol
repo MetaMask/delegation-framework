@@ -199,7 +199,7 @@ contract VedaAdapter is Ownable2Step {
      *      `ERC20TransferAmountEnforcer` as its first caveat (`caveats[0]`), capped to exactly the intended
      *      deposit amount, to prevent over-spending or replay.
      */
-    function depositByDelegation(Delegation[] memory _delegations, uint256 _minimumMint) external {
+    function depositByDelegation(Delegation[] calldata _delegations, uint256 _minimumMint) external {
         _executeDepositByDelegation(_delegations, _minimumMint);
     }
 
@@ -212,12 +212,12 @@ contract VedaAdapter is Ownable2Step {
      *      `ERC20TransferAmountEnforcer` as its first caveat (`caveats[0]`), capped to exactly the intended
      *      deposit amount, to prevent over-spending or replay.
      */
-    function depositByDelegationBatch(DepositParams[] memory _depositStreams) external {
+    function depositByDelegationBatch(DepositParams[] calldata _depositStreams) external {
         uint256 streamsLength_ = _depositStreams.length;
         if (streamsLength_ == 0) revert InvalidBatchLength();
 
         for (uint256 i = 0; i < streamsLength_;) {
-            DepositParams memory params_ = _depositStreams[i];
+            DepositParams calldata params_ = _depositStreams[i];
             _executeDepositByDelegation(params_.delegations, params_.minimumMint);
             unchecked {
                 ++i;
@@ -245,7 +245,7 @@ contract VedaAdapter is Ownable2Step {
      *      `ERC20TransferAmountEnforcer` as its first caveat (`caveats[0]`), capped to exactly `_shareAmount`,
      *      to prevent over-spending or replay.
      */
-    function withdrawByDelegation(Delegation[] memory _delegations, address _token, uint256 _minimumAssets) external {
+    function withdrawByDelegation(Delegation[] calldata _delegations, address _token, uint256 _minimumAssets) external {
         _executeWithdrawByDelegation(_delegations, _token, _minimumAssets);
     }
 
@@ -258,12 +258,12 @@ contract VedaAdapter is Ownable2Step {
      *      `ERC20TransferAmountEnforcer` as its first caveat (`caveats[0]`), capped to exactly the intended
      *      share amount, to prevent over-spending or replay.
      */
-    function withdrawByDelegationBatch(WithdrawParams[] memory _withdrawStreams) external {
+    function withdrawByDelegationBatch(WithdrawParams[] calldata _withdrawStreams) external {
         uint256 streamsLength_ = _withdrawStreams.length;
         if (streamsLength_ == 0) revert InvalidBatchLength();
 
         for (uint256 i = 0; i < streamsLength_;) {
-            WithdrawParams memory params_ = _withdrawStreams[i];
+            WithdrawParams calldata params_ = _withdrawStreams[i];
             _executeWithdrawByDelegation(params_.delegations, params_.token, params_.minimumAssets);
             unchecked {
                 ++i;
@@ -307,19 +307,16 @@ contract VedaAdapter is Ownable2Step {
     }
 
     /**
-     * @notice Parses ERC20TransferAmountEnforcer terms from memory bytes
+     * @notice Parses ERC20TransferAmountEnforcer terms from calldata bytes
      * @dev Terms format: abi.encodePacked(address token, uint256 amount) = 52 bytes.
-     *      Slice syntax is only available for calldata; assembly is used to read from memory bytes.
      * @param _terms The raw terms bytes from a caveat
      * @return token_ The token address encoded in the first 20 bytes
      * @return amount_ The uint256 amount encoded in bytes 20-51
      */
-    function _parseERC20TransferTerms(bytes memory _terms) private pure returns (address token_, uint256 amount_) {
+    function _parseERC20TransferTerms(bytes calldata _terms) private pure returns (address token_, uint256 amount_) {
         if (_terms.length < 52) revert InvalidTermsLength();
-        assembly {
-            token_ := shr(96, mload(add(_terms, 32)))
-            amount_ := mload(add(_terms, 52))
-        }
+        token_ = address(bytes20(_terms[0:20]));
+        amount_ = uint256(bytes32(_terms[20:52]));
     }
 
     /**
@@ -329,7 +326,7 @@ contract VedaAdapter is Ownable2Step {
      * @param _delegations Delegation chain, sorted leaf to root
      * @param _minimumMint Minimum vault shares expected (sanity-check bound)
      */
-    function _executeDepositByDelegation(Delegation[] memory _delegations, uint256 _minimumMint) internal {
+    function _executeDepositByDelegation(Delegation[] calldata _delegations, uint256 _minimumMint) internal {
         uint256 length_ = _delegations.length;
         if (length_ < 2) revert InvalidDelegationsLength();
 
@@ -366,7 +363,7 @@ contract VedaAdapter is Ownable2Step {
      * @param _token Underlying output token to receive from the vault (differs from the share token in the caveat)
      * @param _minimumAssets Minimum underlying assets expected (sanity-check bound)
      */
-    function _executeWithdrawByDelegation(Delegation[] memory _delegations, address _token, uint256 _minimumAssets) internal {
+    function _executeWithdrawByDelegation(Delegation[] calldata _delegations, address _token, uint256 _minimumAssets) internal {
         uint256 length_ = _delegations.length;
         if (length_ < 2) revert InvalidDelegationsLength();
         if (_token == address(0)) revert InvalidZeroAddress();
