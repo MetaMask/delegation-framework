@@ -294,7 +294,7 @@ contract VedaAdapter is Ownable2Step {
 
     /**
      * @notice Ensures sufficient token allowance for a spender to pull tokens
-     * @dev Checks current allowance and increases to unlimited if insufficient
+     * @dev Checks current allowance and sets it to max if insufficient.
      * @param _token Token to manage allowance for
      * @param _spender Address that needs to spend the tokens
      * @param _amount Amount needed for the operation
@@ -302,7 +302,7 @@ contract VedaAdapter is Ownable2Step {
     function _ensureAllowance(IERC20 _token, address _spender, uint256 _amount) private {
         uint256 allowance_ = _token.allowance(address(this), _spender);
         if (allowance_ < _amount) {
-            _token.safeIncreaseAllowance(_spender, type(uint256).max);
+            _token.forceApprove(_spender, type(uint256).max);
         }
     }
 
@@ -378,7 +378,8 @@ contract VedaAdapter is Ownable2Step {
         encodedModes_[0] = ModeLib.encodeSimpleSingle();
 
         bytes[] memory executionCallDatas_ = new bytes[](1);
-        executionCallDatas_[0] = ExecutionLib.encodeSingle(boringVault, 0, abi.encodeCall(IERC20.transfer, (address(this), shareAmount_)));
+        executionCallDatas_[0] =
+            ExecutionLib.encodeSingle(boringVault, 0, abi.encodeCall(IERC20.transfer, (address(this), shareAmount_)));
 
         delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
 
