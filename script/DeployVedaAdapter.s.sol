@@ -20,19 +20,22 @@ contract DeployVedaAdapter is Script {
     address delegationManager;
     address boringVault;
     address vedaTeller;
+    address depositToken;
 
     function setUp() public {
         salt = bytes32(abi.encodePacked(vm.envString("SALT")));
         vedaAdapterOwner = vm.envAddress("VEDA_ADAPTER_OWNER_ADDRESS");
         delegationManager = vm.envAddress("DELEGATION_MANAGER_ADDRESS");
-        boringVault = vm.envAddress("BORING_VAULT_ADDRESS");
+        boringVault = vm.envAddress("VEDA_BORING_VAULT_ADDRESS");
         vedaTeller = vm.envAddress("VEDA_TELLER_ADDRESS");
+        depositToken = vm.envAddress("VEDA_DEPOSIT_TOKEN_ADDRESS");
         deployer = msg.sender;
         console2.log("~~~");
         console2.log("Owner: %s", vedaAdapterOwner);
         console2.log("DelegationManager: %s", delegationManager);
         console2.log("BoringVault: %s", boringVault);
         console2.log("VedaTeller: %s", vedaTeller);
+        console2.log("DepositToken: %s", depositToken);
         console2.log("Deployer: %s", deployer);
         console2.log("Salt:");
         console2.logBytes32(salt);
@@ -42,7 +45,8 @@ contract DeployVedaAdapter is Script {
         console2.log("~~~");
         vm.startBroadcast();
 
-        address vedaAdapter = address(new VedaAdapter{ salt: salt }(vedaAdapterOwner, delegationManager, boringVault, vedaTeller));
+        address vedaAdapter =
+            address(new VedaAdapter{ salt: salt }(vedaAdapterOwner, delegationManager, boringVault, vedaTeller, depositToken));
         console2.log("VedaAdapter: %s", vedaAdapter);
 
         vm.stopBroadcast();

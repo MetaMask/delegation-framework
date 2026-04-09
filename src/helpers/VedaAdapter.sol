@@ -23,6 +23,8 @@ import { IVedaTeller } from "./interfaces/IVedaTeller.sol";
  *      - Teller: The contract that orchestrates deposits/withdrawals. The adapter calls `teller.deposit()`
  *        for deposits and `teller.withdraw()` for withdrawals (user-facing, no special
  *        role needed).
+ *      - depositToken: The single ERC20 token used for both deposits and withdrawals. Fixed at construction;
+ *        deposits transfer this token into the vault, and withdrawals redeem vault shares back to this token.
  *
  *      Delegation Flow:
  *      1. The user creates an initial delegation to an "operator" address (a DeleGator-upgraded account).
@@ -37,7 +39,7 @@ import { IVedaTeller } from "./interfaces/IVedaTeller.sol";
  *      3. For deposits: the adapter redeems the delegation chain, transfers tokens from the user to itself,
  *         approves the BoringVault, and calls `teller.deposit()` to mint shares to the user.
  *         For withdrawals: the adapter redeems the delegation chain, transfers vault shares from the user
- *         to itself, and calls `teller.withdraw()` to burn shares and send underlying assets to the user.
+ *         to itself, and calls `teller.withdraw()` to burn shares and send `depositToken` assets to the user.
  *
  *      Requirements:
  *      - VedaAdapter must approve the BoringVault to spend deposit tokens
@@ -45,14 +47,14 @@ import { IVedaTeller } from "./interfaces/IVedaTeller.sol";
  *      Leaf Caveat Format:
  *      - The first caveat of the leaf delegation (`_delegations[0].caveats[0]`) must follow the
  *        ERC20TransferAmountEnforcer terms format: abi.encodePacked(address token, uint256 amount) (52 bytes).
- *        The adapter parses token and amount directly from these terms instead of accepting them as
- *        function inputs, ensuring the caller cannot supply values that differ from what the delegator authorised.
+ *        The adapter parses only the amount from these terms; the token address encoded in bytes 0–19 is
+ *        consumed by the enforcer itself and is not read by this adapter.
  *
  * @notice Security consideration: Anyone can call `depositByDelegation` and `withdrawByDelegation` — there is no
  *      caller restriction. Security is enforced entirely through the delegation chain. The redelegation from the
  *      operator to this adapter MUST include an `ERC20TransferAmountEnforcer` caveat capped to exactly the intended
  *      deposit or withdrawal amount, and it MUST be the first caveat (`caveats[0]`) of that redelegation — the
- *      adapter reads token and amount directly from `_delegations[0].caveats[0].terms`. Once that amount is
+ *      adapter reads the amount directly from `_delegations[0].caveats[0].terms`. Once that amount is
  *      transferred the enforcer's running total is exhausted and any replay attempt will revert, making the
  *      delegation effectively single-use. A delegation without this enforcer as the first caveat (or with an amount
  *      larger than intended) could be exploited by any caller to transfer more tokens than authorised.
@@ -75,7 +77,6 @@ contract VedaAdapter is Ownable2Step {
      */
     struct WithdrawParams {
         Delegation[] delegations;
-        address token;
         uint256 minimumAssets;
     }
 
@@ -97,7 +98,7 @@ contract VedaAdapter is Ownable2Step {
      * @notice Emitted when a withdrawal operation is executed via delegation
      * @param delegator Address of the share owner (delegator)
      * @param delegate Address of the executor (delegate)
-     * @param token Address of the underlying token withdrawn
+     * @param token Address of the underlying token withdrawn (always `depositToken`)
      * @param shareAmount Amount of vault shares burned
      * @param assetsOut Amount of underlying tokens sent to the delegator
      */
@@ -161,33 +162,50 @@ contract VedaAdapter is Ownable2Step {
      */
     IVedaTeller public immutable teller;
 
+    /**
+     * @notice The ERC20 token used for all deposits and withdrawals
+     * @dev Fixed at construction. Deposits transfer this token into the vault; withdrawals redeem vault
+     *      shares back to this token.
+     */
+    IERC20 public immutable depositToken;
+
     ////////////////////////////// Constructor //////////////////////////////
 
     /**
-     * @notice Initializes the adapter with delegation manager, BoringVault, and Teller addresses
+     * @notice Initializes the adapter with delegation manager, BoringVault, Teller, and deposit token addresses
      * @param _owner Address of the contract owner
      * @param _delegationManager Address of the delegation manager contract
      * @param _boringVault Address of the BoringVault (token approval target)
      * @param _teller Address of the Teller contract (deposit entry point)
+     * @param _depositToken Address of the ERC20 token used for all deposits and withdrawals
      */
-    constructor(address _owner, address _delegationManager, address _boringVault, address _teller) Ownable(_owner) {
-        if (_delegationManager == address(0) || _boringVault == address(0) || _teller == address(0)) {
+    constructor(
+        address _owner,
+        address _delegationManager,
+        address _boringVault,
+        address _teller,
+        address _depositToken
+    )
+        Ownable(_owner)
+    {
+        if (_delegationManager == address(0) || _boringVault == address(0) || _teller == address(0) || _depositToken == address(0)) {
             revert InvalidZeroAddress();
         }
 
         delegationManager = IDelegationManager(_delegationManager);
         boringVault = _boringVault;
         teller = IVedaTeller(_teller);
+        depositToken = IERC20(_depositToken);
     }
 
     ////////////////////////////// External Methods //////////////////////////////
 
     /**
      * @notice Deposits tokens into a Veda BoringVault using delegation-based token transfer
-     * @dev Redeems the delegation to transfer tokens to this adapter, then calls deposit
+     * @dev Redeems the delegation to transfer `depositToken` from the user to this adapter, then calls deposit
      *      on the Teller which mints vault shares directly to the original token owner.
      *      Requires at least 2 delegations forming a chain from user to operator to this adapter.
-     *      The deposit token and amount are parsed from the first caveat of the leaf delegation
+     *      The deposit amount is parsed from the first caveat of the leaf delegation
      *      (`_delegations[0].caveats[0].terms`), which must follow the ERC20TransferAmountEnforcer
      *      format: abi.encodePacked(address token, uint256 amount).
      * @param _delegations Array of Delegation objects, sorted leaf to root
@@ -205,7 +223,7 @@ contract VedaAdapter is Ownable2Step {
 
     /**
      * @notice Deposits tokens using multiple delegation streams, executed sequentially
-     * @dev Each element is executed one after the other. Token and amount for each stream are parsed
+     * @dev Each element is executed one after the other. The amount for each stream is parsed
      *      from the first caveat of each stream's leaf delegation.
      * @param _depositStreams Array of deposit parameters
      * @notice Security consideration: Callable by anyone. Each redelegation in the batch MUST include an
@@ -228,29 +246,28 @@ contract VedaAdapter is Ownable2Step {
     }
 
     /**
-     * @notice Withdraws underlying tokens from a Veda BoringVault using delegation-based share transfer
+     * @notice Withdraws `depositToken` from a Veda BoringVault using delegation-based share transfer
      * @dev Redeems the delegation to transfer vault shares to this adapter, then calls withdraw
-     *      on the Teller which burns shares and sends underlying assets directly to the original share owner.
+     *      on the Teller which burns shares and sends `depositToken` assets directly to the original share owner.
      *      Requires at least 2 delegations forming a chain from user to operator to this adapter.
      *      The share amount is parsed from the first caveat of the leaf delegation
      *      (`_delegations[0].caveats[0].terms`), which must follow the ERC20TransferAmountEnforcer
      *      format: abi.encodePacked(address boringVault, uint256 shareAmount).
      * @param _delegations Array of Delegation objects, sorted leaf to root
-     * @param _token Address of the underlying token to receive from the vault
      * @param _minimumAssets Minimum underlying assets the caller expects to receive, used as a
      *      sanity-check bound. The Veda vault conversion is always at fair value; rate drift from
      *      yield streaming is negligible. A tolerance of 0.1-0.5% is recommended. If this check
      *      causes a revert, no funds are lost — retry with a fresh quote.
      * @notice Security consideration: Callable by anyone. The redelegation passed in MUST include an
-     *      `ERC20TransferAmountEnforcer` as its first caveat (`caveats[0]`), capped to exactly `_shareAmount`,
-     *      to prevent over-spending or replay.
+     *      `ERC20TransferAmountEnforcer` as its first caveat (`caveats[0]`), capped to exactly the intended
+     *      share amount, to prevent over-spending or replay.
      */
-    function withdrawByDelegation(Delegation[] calldata _delegations, address _token, uint256 _minimumAssets) external {
-        _executeWithdrawByDelegation(_delegations, _token, _minimumAssets);
+    function withdrawByDelegation(Delegation[] calldata _delegations, uint256 _minimumAssets) external {
+        _executeWithdrawByDelegation(_delegations, _minimumAssets);
     }
 
     /**
-     * @notice Withdraws underlying tokens using multiple delegation streams, executed sequentially
+     * @notice Withdraws `depositToken` using multiple delegation streams, executed sequentially
      * @dev Each element is executed one after the other. The share amount for each stream is parsed
      *      from the first caveat of each stream's leaf delegation.
      * @param _withdrawStreams Array of withdraw parameters
@@ -264,7 +281,7 @@ contract VedaAdapter is Ownable2Step {
 
         for (uint256 i = 0; i < streamsLength_;) {
             WithdrawParams calldata params_ = _withdrawStreams[i];
-            _executeWithdrawByDelegation(params_.delegations, params_.token, params_.minimumAssets);
+            _executeWithdrawByDelegation(params_.delegations, params_.minimumAssets);
             unchecked {
                 ++i;
             }
@@ -307,22 +324,22 @@ contract VedaAdapter is Ownable2Step {
     }
 
     /**
-     * @notice Parses ERC20TransferAmountEnforcer terms from calldata bytes
+     * @notice Parses the transfer amount from ERC20TransferAmountEnforcer terms
      * @dev Terms format: abi.encodePacked(address token, uint256 amount) = 52 bytes.
+     *      The token address (bytes 0–19) is validated by the enforcer itself and is not read here.
+     *      Only the amount (bytes 20–51) is returned.
      * @param _terms The raw terms bytes from a caveat
-     * @return token_ The token address encoded in the first 20 bytes
      * @return amount_ The uint256 amount encoded in bytes 20-51
      */
-    function _parseERC20TransferTerms(bytes calldata _terms) private pure returns (address token_, uint256 amount_) {
+    function _parseERC20TransferTerms(bytes calldata _terms) private pure returns (uint256 amount_) {
         if (_terms.length < 52) revert InvalidTermsLength();
-        token_ = address(bytes20(_terms[0:20]));
         amount_ = uint256(bytes32(_terms[20:52]));
     }
 
     /**
      * @notice Internal implementation of deposit by delegation
-     * @dev Parses the deposit token and amount from the first caveat of the leaf delegation
-     *      via `_parseERC20TransferTerms`.
+     * @dev Parses the deposit amount from the first caveat of the leaf delegation
+     *      via `_parseERC20TransferTerms`. Uses `depositToken` as the transfer token.
      * @param _delegations Delegation chain, sorted leaf to root
      * @param _minimumMint Minimum vault shares expected (sanity-check bound)
      */
@@ -330,7 +347,7 @@ contract VedaAdapter is Ownable2Step {
         uint256 length_ = _delegations.length;
         if (length_ < 2) revert InvalidDelegationsLength();
 
-        (address token_, uint256 amount_) = _parseERC20TransferTerms(_delegations[0].caveats[0].terms);
+        uint256 amount_ = _parseERC20TransferTerms(_delegations[0].caveats[0].terms);
         address rootDelegator_ = _delegations[length_ - 1].delegator;
 
         // Redeem delegation: transfer tokens from user to this adapter
@@ -341,33 +358,30 @@ contract VedaAdapter is Ownable2Step {
         encodedModes_[0] = ModeLib.encodeSimpleSingle();
 
         bytes[] memory executionCallDatas_ = new bytes[](1);
-        executionCallDatas_[0] = ExecutionLib.encodeSingle(token_, 0, abi.encodeCall(IERC20.transfer, (address(this), amount_)));
+        executionCallDatas_[0] =
+            ExecutionLib.encodeSingle(address(depositToken), 0, abi.encodeCall(IERC20.transfer, (address(this), amount_)));
 
         delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
 
         // Approve BoringVault to pull tokens, then deposit via Teller
-        _ensureAllowance(IERC20(token_), boringVault, amount_);
-        uint256 shares_ = teller.deposit(token_, amount_, _minimumMint, rootDelegator_, address(0));
+        _ensureAllowance(depositToken, boringVault, amount_);
+        uint256 shares_ = teller.deposit(address(depositToken), amount_, _minimumMint, rootDelegator_, address(0));
 
-        emit DepositExecuted(rootDelegator_, msg.sender, token_, amount_, shares_);
+        emit DepositExecuted(rootDelegator_, msg.sender, address(depositToken), amount_, shares_);
     }
 
     /**
      * @notice Internal implementation of withdraw by delegation
      * @dev Parses the share amount from the first caveat of the leaf delegation
-     *      via `_parseERC20TransferTerms`. The caveat encodes the vault share token and amount;
-     *      `_token` is the desired underlying output asset (e.g. USDC), which differs from the
-     *      share token in the caveat.
+     *      via `_parseERC20TransferTerms`. Redeems vault shares and sends `depositToken` to the root delegator.
      * @param _delegations Delegation chain, sorted leaf to root
-     * @param _token Underlying output token to receive from the vault (differs from the share token in the caveat)
      * @param _minimumAssets Minimum underlying assets expected (sanity-check bound)
      */
-    function _executeWithdrawByDelegation(Delegation[] calldata _delegations, address _token, uint256 _minimumAssets) internal {
+    function _executeWithdrawByDelegation(Delegation[] calldata _delegations, uint256 _minimumAssets) internal {
         uint256 length_ = _delegations.length;
         if (length_ < 2) revert InvalidDelegationsLength();
-        if (_token == address(0)) revert InvalidZeroAddress();
 
-        (, uint256 shareAmount_) = _parseERC20TransferTerms(_delegations[0].caveats[0].terms);
+        uint256 shareAmount_ = _parseERC20TransferTerms(_delegations[0].caveats[0].terms);
         address rootDelegator_ = _delegations[length_ - 1].delegator;
 
         // Redeem delegation: transfer vault shares from user to this adapter
@@ -383,9 +397,9 @@ contract VedaAdapter is Ownable2Step {
 
         delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
 
-        // Withdraw from Teller: burns shares from this adapter, sends underlying to root delegator
-        uint256 assetsOut_ = teller.withdraw(_token, shareAmount_, _minimumAssets, rootDelegator_);
+        // Withdraw from Teller: burns shares from this adapter, sends depositToken to root delegator
+        uint256 assetsOut_ = teller.withdraw(address(depositToken), shareAmount_, _minimumAssets, rootDelegator_);
 
-        emit WithdrawExecuted(rootDelegator_, msg.sender, _token, shareAmount_, assetsOut_);
+        emit WithdrawExecuted(rootDelegator_, msg.sender, address(depositToken), shareAmount_, assetsOut_);
     }
 }
