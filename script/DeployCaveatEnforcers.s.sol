@@ -23,6 +23,7 @@ import { ExactCalldataBatchEnforcer } from "../src/enforcers/ExactCalldataBatchE
 import { ExactCalldataEnforcer } from "../src/enforcers/ExactCalldataEnforcer.sol";
 import { ExactExecutionBatchEnforcer } from "../src/enforcers/ExactExecutionBatchEnforcer.sol";
 import { ExactExecutionEnforcer } from "../src/enforcers/ExactExecutionEnforcer.sol";
+import { ExecutionBoundEnforcer } from "../src/enforcers/ExecutionBoundEnforcer.sol";
 import { IdEnforcer } from "../src/enforcers/IdEnforcer.sol";
 import { LimitedCallsEnforcer } from "../src/enforcers/LimitedCallsEnforcer.sol";
 import { LogicalOrWrapperEnforcer } from "../src/enforcers/LogicalOrWrapperEnforcer.sol";
@@ -121,6 +122,9 @@ contract DeployCaveatEnforcers is Script {
 
         deployedAddress = address(new ExactExecutionEnforcer{ salt: salt }());
         console2.log("ExactExecutionEnforcer: %s", deployedAddress);
+
+        deployedAddress = address(new ExecutionBoundEnforcer{ salt: salt }());
+        console2.log("ExecutionBoundEnforcer: %s", deployedAddress);
 
         deployedAddress = address(new IdEnforcer{ salt: salt }());
         console2.log("IdEnforcer: %s", deployedAddress);
