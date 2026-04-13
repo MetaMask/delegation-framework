@@ -47,6 +47,8 @@ CHAIN_IDS=(
   4217       # tempo
   11142220   # celo sepolia
   42220      # celo
+  5003       # mantle sepolia
+  5000       # mantle
 )
 
 ##########################################
@@ -101,6 +103,8 @@ get_chain_config() {
         4217)     config=("key" "etherscan" "$TEMPO_RPC_URL" "https://contracts.tempo.xyz") ;; # tempo
         11142220) config=("$ETHERSCAN_API_KEY" "etherscan" "$CELO_SEPOLIA_RPC_URL" "https://api.etherscan.io/v2/api?chainid=11142220") ;; # celo sepolia
         42220)    config=("$ETHERSCAN_API_KEY" "etherscan" "$CELO_RPC_URL" "https://api.etherscan.io/v2/api?chainid=42220") ;; # celo
+        5003)    config=("$ETHERSCAN_API_KEY" "etherscan" "$MANTLE_SEPOLIA_RPC_URL" "https://api.etherscan.io/v2/api?chainid=5003") ;; # mantle sepolia
+        5000)    config=("$ETHERSCAN_API_KEY" "etherscan" "$MANTLE_RPC_URL" "https://api.etherscan.io/v2/api?chainid=5000") ;; # mantle
         *)
             echo "Unknown chain ID: $chain_id" >&2
             return 1

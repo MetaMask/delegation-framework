@@ -53,6 +53,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Tempo
 - Celo
 - Citrea
+- Mantle
 
 ### Testnets
 
@@ -76,6 +77,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Ronin Saigon
 - Tempo testnet
 - Celo sepolia
+- Mantle sepolia
 
 ## **Deployments**
 
