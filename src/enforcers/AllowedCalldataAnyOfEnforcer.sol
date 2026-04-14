@@ -8,9 +8,9 @@ import { ModeCode } from "../utils/Types.sol";
 
 /**
  * @title AllowedCalldataAnyOfEnforcer
- * @dev Like `AllowedCalldataEnforcer`, but the delegator supplies several allowed byte sequences (`bytes[]`).
- * @dev At `dataStart`, the execution calldata must exactly match **at least one** of those sequences (each candidate is compared
- * over its full length, starting at `dataStart`).
+ * @dev Like `AllowedCalldataEnforcer`, but the delegator supplies several allowed byte sequences of **equal length**.
+ * @dev At `startIndex`, the execution calldata must exactly match **at least one** of those sequences (each candidate is compared
+ * over `valueLength` bytes, starting at `startIndex`).
  * @dev This enforcer operates only in single execution call type and with default execution mode.
  * @dev Prefer static or fixed-layout regions of calldata; validating dynamic types remains possible but is more error-prone,
  * same as for `AllowedCalldataEnforcer`.
@@ -21,11 +21,11 @@ contract AllowedCalldataAnyOfEnforcer is CaveatEnforcer {
     ////////////////////////////// Public Methods //////////////////////////////
 
     /**
-     * @notice Allows the delegator to restrict calldata so that one of several allowed slices matches at a fixed offset.
-     * @dev For each candidate `v` in the decoded array, checks `callData[dataStart : dataStart + len(v)] == v`.
-     * @param _terms Packed header plus ABI-encoded `bytes[]`:
-     *   - the first 32 bytes: `uint256` start index in the execution call data (same layout as `AllowedCalldataEnforcer`)
-     *   - the remainder: `abi.encode(bytes[])` where each element is a non-empty candidate byte string
+     * @notice Allows the delegator to restrict calldata so that one of several equal-length slices matches at a fixed offset.
+     * @dev For each candidate, checks `callData[startIndex : startIndex + valueLength] == candidate`.
+     * @param _terms Binary layout:
+     *   - **First 32 bytes:** `uint128 startIndex` (high 128 bits) | `uint128 valueLength` (low 128 bits) of one big-endian word.
+     *   - **Remainder:** `candidateCount` candidates concatenated, each exactly `valueLength` bytes (so `len(remainder) == candidateCount * valueLength`).
      * @param _mode The execution mode. (Must be Single callType, Default execType)
      * @param _executionCallData The execution the delegate is trying to execute.
      */
@@ -48,39 +48,53 @@ contract AllowedCalldataAnyOfEnforcer is CaveatEnforcer {
     }
 
     /**
-     * @notice Decodes the terms used in this CaveatEnforcer.
+     * @notice Decodes and validates the terms used in this CaveatEnforcer.
+     * @dev After reading `valueLength` from the header word, requires `valueLength >= 1`, a non-empty remainder, and that the
+     * remainder length is a multiple of `valueLength`.
      * @param _terms Encoded data used during the execution hooks.
-     * @return dataStart_ The start index in the execution's call data.
-     * @return values_ ABI-decoded array of candidate byte strings; each element must be at least one byte long.
+     * @return startIndex_ Start index in the execution's call data.
+     * @return valueLength_ Length of every candidate slice and of the compared execution calldata window.
+     * @return candidateCount_ Number of candidates in the concatenated tail (`(len(_terms) - 32) / valueLength_`).
      */
-    function getTermsInfo(bytes calldata _terms) public pure returns (uint256 dataStart_, bytes[] memory values_) {
-        require(_terms.length >= 32, "AllowedCalldataAnyOfEnforcer:invalid-terms-size");
-        dataStart_ = uint256(bytes32(_terms[0:32]));
-        values_ = abi.decode(_terms[32:], (bytes[]));
-        require(values_.length > 0, "AllowedCalldataAnyOfEnforcer:no-allowed-values");
-        for (uint256 i = 0; i < values_.length; ++i) {
-            require(values_[i].length >= 1, "AllowedCalldataAnyOfEnforcer:invalid-value-length");
-        }
+    function getTermsInfo(bytes calldata _terms)
+        public
+        pure
+        returns (uint128 startIndex_, uint128 valueLength_, uint256 candidateCount_)
+    {
+        require(_terms.length > 32, "AllowedCalldataAnyOfEnforcer:invalid-terms-size");
+        uint256 metadataWord_ = uint256(bytes32(_terms[0:32]));
+        startIndex_ = uint128(metadataWord_ >> 128);
+        valueLength_ = uint128(metadataWord_);
+
+        require(valueLength_ >= 1, "AllowedCalldataAnyOfEnforcer:invalid-value-length");
+
+        uint256 concatenatedValuesLength_ = _terms.length - 32;
+        require(concatenatedValuesLength_ != 0, "AllowedCalldataAnyOfEnforcer:no-allowed-values");
+        require(concatenatedValuesLength_ % uint256(valueLength_) == 0, "AllowedCalldataAnyOfEnforcer:invalid-values-padding");
+
+        candidateCount_ = concatenatedValuesLength_ / uint256(valueLength_);
     }
 
     /**
-     * @notice Validates that the execution calldata matches one of the allowed slices at `dataStart`.
+     * @notice Validates that the execution calldata matches one of the allowed slices at `startIndex`.
      * @param _terms Encoded terms (see `beforeHook`).
      * @param _executionCallData The encoded single execution payload.
      */
     function _validateCalldata(bytes calldata _terms, bytes calldata _executionCallData) private pure {
-        (uint256 dataStart_, bytes[] memory values_) = getTermsInfo(_terms);
+        (uint128 startIndex_, uint128 valueLength_, uint256 candidateCount_) = getTermsInfo(_terms);
+
+        uint256 dataStart_ = uint256(startIndex_);
+        uint256 lengthToMatch_ = uint256(valueLength_);
         (,, bytes calldata callData_) = _executionCallData.decodeSingle();
 
+        require(dataStart_ + lengthToMatch_ <= callData_.length, "AllowedCalldataAnyOfEnforcer:invalid-calldata-length");
+
+        bytes calldata callDataToMatch_ = callData_[dataStart_:dataStart_ + lengthToMatch_];
+
         bool matched_;
-        uint256 n_ = values_.length;
-        for (uint256 i = 0; i < n_; ++i) {
-            bytes memory candidate_ = values_[i];
-            uint256 len_ = candidate_.length;
-            if (dataStart_ + len_ > callData_.length) {
-                continue;
-            }
-            if (keccak256(callData_[dataStart_:dataStart_ + len_]) == keccak256(candidate_)) {
+        for (uint256 i = 0; i < candidateCount_; ++i) {
+            uint256 offset_ = 32 + i * lengthToMatch_;
+            if (callDataToMatch_ == _terms[offset_:offset_ + lengthToMatch_]) {
                 matched_ = true;
                 break;
             }

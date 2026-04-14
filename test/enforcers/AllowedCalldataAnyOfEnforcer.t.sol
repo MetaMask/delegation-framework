@@ -24,13 +24,19 @@ contract AllowedCalldataAnyOfEnforcerTest is CaveatEnforcerBaseTest {
         basicCF20 = new BasicERC20(address(users.alice.deleGator), "TestToken1", "TestToken1", 100 ether);
     }
 
-    function _packTerms(uint256 dataStart_, bytes[] memory values_) internal pure returns (bytes memory) {
-        return bytes.concat(abi.encodePacked(dataStart_), abi.encode(values_));
+    /// @dev Header: `uint128 startIndex` (high) | `uint128 valueLength` (low), then `candidateCount * valueLength` bytes.
+    function _packTerms(uint128 startIndex_, uint128 valueLength_, bytes memory concatenatedValues_) internal pure returns (bytes memory) {
+        require(
+            concatenatedValues_.length > 0 && concatenatedValues_.length % uint256(valueLength_) == 0,
+            "test: bad concatenatedValues length"
+        );
+        uint256 metadataWord_ = (uint256(uint128(startIndex_)) << 128) | uint256(uint128(valueLength_));
+        return bytes.concat(bytes32(metadataWord_), concatenatedValues_);
     }
 
     ////////////////////// Valid cases //////////////////////
 
-    // should allow when the calldata matches the first allowed slice at dataStart
+    // should allow when the calldata matches the first allowed slice at startIndex
     function test_allowsWhenFirstCandidateMatches() public {
         Execution memory execution_ = Execution({
             target: address(basicCF20),
@@ -39,19 +45,18 @@ contract AllowedCalldataAnyOfEnforcerTest is CaveatEnforcerBaseTest {
         });
         bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
-        uint256 paramStart_ = abi.encodeWithSelector(BasicERC20.mint.selector, address(0)).length;
-        bytes[] memory values_ = new bytes[](2);
-        values_[0] = abi.encodePacked(uint256(100));
-        values_[1] = abi.encodePacked(uint256(200));
-        bytes memory inputTerms_ = _packTerms(paramStart_, values_);
+        uint128 startIndex_ = uint128(abi.encodeWithSelector(BasicERC20.mint.selector, address(0)).length);
+        uint128 valueLength_ = 32;
+        bytes memory concatenatedValues_ = bytes.concat(abi.encodePacked(uint256(100)), abi.encodePacked(uint256(200)));
+        bytes memory terms_ = _packTerms(startIndex_, valueLength_, concatenatedValues_);
 
         vm.prank(address(delegationManager));
         allowedCalldataAnyOfEnforcer.beforeHook(
-            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+            terms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
         );
     }
 
-    // should allow when the calldata matches a later candidate at dataStart
+    // should allow when the calldata matches a later candidate at startIndex
     function test_allowsWhenSecondCandidateMatches() public {
         Execution memory execution_ = Execution({
             target: address(basicCF20),
@@ -60,20 +65,19 @@ contract AllowedCalldataAnyOfEnforcerTest is CaveatEnforcerBaseTest {
         });
         bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
-        uint256 paramStart_ = abi.encodeWithSelector(BasicERC20.mint.selector, address(0)).length;
-        bytes[] memory values_ = new bytes[](2);
-        values_[0] = abi.encodePacked(uint256(100));
-        values_[1] = abi.encodePacked(uint256(200));
-        bytes memory inputTerms_ = _packTerms(paramStart_, values_);
+        uint128 startIndex_ = uint128(abi.encodeWithSelector(BasicERC20.mint.selector, address(0)).length);
+        uint128 valueLength_ = 32;
+        bytes memory concatenatedValues_ = bytes.concat(abi.encodePacked(uint256(100)), abi.encodePacked(uint256(200)));
+        bytes memory terms_ = _packTerms(startIndex_, valueLength_, concatenatedValues_);
 
         vm.prank(address(delegationManager));
         allowedCalldataAnyOfEnforcer.beforeHook(
-            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+            terms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
         );
     }
 
-    // should allow when candidates have different lengths and the longer one matches
-    function test_allowsWhenVariableLengthCandidateMatches() public {
+    // should allow when several equal-length candidates include the executed uint256
+    function test_allowsWhenOneOfSeveralUint256CandidatesMatches() public {
         Execution memory execution_ = Execution({
             target: address(basicCF20),
             value: 0,
@@ -81,21 +85,21 @@ contract AllowedCalldataAnyOfEnforcerTest is CaveatEnforcerBaseTest {
         });
         bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
-        uint256 paramStart_ = abi.encodeWithSelector(BasicERC20.mint.selector, address(0)).length;
-        bytes[] memory values_ = new bytes[](2);
-        values_[0] = hex"ab";
-        values_[1] = abi.encodePacked(uint256(0xabcd));
-        bytes memory inputTerms_ = _packTerms(paramStart_, values_);
+        uint128 startIndex_ = uint128(abi.encodeWithSelector(BasicERC20.mint.selector, address(0)).length);
+        uint128 valueLength_ = 32;
+        bytes memory concatenatedValues_ =
+            bytes.concat(abi.encodePacked(uint256(1)), abi.encodePacked(uint256(0xabcd)), abi.encodePacked(uint256(2)));
+        bytes memory terms_ = _packTerms(startIndex_, valueLength_, concatenatedValues_);
 
         vm.prank(address(delegationManager));
         allowedCalldataAnyOfEnforcer.beforeHook(
-            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+            terms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
         );
     }
 
     ////////////////////// Invalid cases //////////////////////
 
-    // should NOT allow when no candidate matches at dataStart
+    // should NOT allow when no candidate matches at startIndex
     function test_revertsWhenNoCandidateMatches() public {
         Execution memory execution_ = Execution({
             target: address(basicCF20),
@@ -104,21 +108,20 @@ contract AllowedCalldataAnyOfEnforcerTest is CaveatEnforcerBaseTest {
         });
         bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
-        uint256 paramStart_ = abi.encodeWithSelector(BasicERC20.mint.selector, address(0)).length;
-        bytes[] memory values_ = new bytes[](2);
-        values_[0] = abi.encodePacked(uint256(100));
-        values_[1] = abi.encodePacked(uint256(200));
-        bytes memory inputTerms_ = _packTerms(paramStart_, values_);
+        uint128 startIndex_ = uint128(abi.encodeWithSelector(BasicERC20.mint.selector, address(0)).length);
+        uint128 valueLength_ = 32;
+        bytes memory concatenatedValues_ = bytes.concat(abi.encodePacked(uint256(100)), abi.encodePacked(uint256(200)));
+        bytes memory terms_ = _packTerms(startIndex_, valueLength_, concatenatedValues_);
 
         vm.prank(address(delegationManager));
         vm.expectRevert("AllowedCalldataAnyOfEnforcer:invalid-calldata");
         allowedCalldataAnyOfEnforcer.beforeHook(
-            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+            terms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
         );
     }
 
-    // should NOT allow when calldata is too short for every candidate
-    function test_revertsWhenCalldataTooShortForAllCandidates() public {
+    // should NOT allow when the execution window is shorter than valueLength
+    function test_revertsWhenCalldataTooShortForSlice() public {
         Execution memory execution_ = Execution({
             target: address(basicCF20),
             value: 0,
@@ -126,18 +129,18 @@ contract AllowedCalldataAnyOfEnforcerTest is CaveatEnforcerBaseTest {
         });
         bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
 
-        uint256 paramStart_ = abi.encodeWithSelector(BasicERC20.mint.selector, address(0)).length;
-        bytes[] memory values_ = new bytes[](1);
-        values_[0] = new bytes(execution_.callData.length - paramStart_ + 1);
-        for (uint256 i = 0; i < values_[0].length; ++i) {
-            values_[0][i] = 0xff;
+        uint128 startIndex_ = uint128(abi.encodeWithSelector(BasicERC20.mint.selector, address(0)).length);
+        uint128 valueLength_ = uint128(execution_.callData.length - uint256(startIndex_) + 1);
+        bytes memory concatenatedValues_ = new bytes(uint256(valueLength_));
+        for (uint256 i = 0; i < concatenatedValues_.length; ++i) {
+            concatenatedValues_[i] = 0xff;
         }
-        bytes memory inputTerms_ = _packTerms(paramStart_, values_);
+        bytes memory terms_ = _packTerms(startIndex_, valueLength_, concatenatedValues_);
 
         vm.prank(address(delegationManager));
-        vm.expectRevert("AllowedCalldataAnyOfEnforcer:invalid-calldata");
+        vm.expectRevert("AllowedCalldataAnyOfEnforcer:invalid-calldata-length");
         allowedCalldataAnyOfEnforcer.beforeHook(
-            inputTerms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
+            terms_, hex"", singleDefaultMode, executionCallData_, keccak256(""), address(0), address(0)
         );
     }
 
@@ -147,22 +150,41 @@ contract AllowedCalldataAnyOfEnforcerTest is CaveatEnforcerBaseTest {
         allowedCalldataAnyOfEnforcer.getTermsInfo(hex"010203");
     }
 
-    // should FAIL getTermsInfo when the decoded array is empty
-    function test_getTermsInfoFailsForEmptyCandidatesArray() public {
-        bytes[] memory values_ = new bytes[](0);
-        bytes memory terms_ = _packTerms(0, values_);
+    // should FAIL getTermsInfo when there is no candidate tail
+    function test_getTermsInfoFailsForEmptyCandidatesTail() public {
+        uint256 metadataWord_ = (uint256(uint128(0)) << 128) | uint256(uint128(32));
+        bytes memory terms_ = abi.encodePacked(bytes32(metadataWord_));
         vm.expectRevert("AllowedCalldataAnyOfEnforcer:no-allowed-values");
         allowedCalldataAnyOfEnforcer.getTermsInfo(terms_);
     }
 
-    // should FAIL getTermsInfo when a candidate is zero-length
-    function test_getTermsInfoFailsForZeroLengthCandidate() public {
-        bytes[] memory values_ = new bytes[](2);
-        values_[0] = hex"aa";
-        values_[1] = hex"";
-        bytes memory terms_ = _packTerms(4, values_);
+    // should FAIL getTermsInfo when valueLength is zero
+    function test_getTermsInfoFailsForZeroValueLength() public {
+        uint256 metadataWord_ = (uint256(uint128(4)) << 128) | uint256(uint128(0));
+        bytes memory terms_ = bytes.concat(bytes32(metadataWord_), hex"aabb");
         vm.expectRevert("AllowedCalldataAnyOfEnforcer:invalid-value-length");
         allowedCalldataAnyOfEnforcer.getTermsInfo(terms_);
+    }
+
+    // should FAIL getTermsInfo when tail is not a multiple of valueLength
+    function test_getTermsInfoFailsForInvalidValuesPadding() public {
+        uint256 metadataWord_ = (uint256(uint128(0)) << 128) | uint256(uint128(32));
+        bytes memory terms_ = bytes.concat(bytes32(metadataWord_), new bytes(33));
+        vm.expectRevert("AllowedCalldataAnyOfEnforcer:invalid-values-padding");
+        allowedCalldataAnyOfEnforcer.getTermsInfo(terms_);
+    }
+
+    // should decode header via getTermsInfo
+    function test_getTermsInfoDecodesHeaderAndCount() public view {
+        uint128 expectedStartIndex_ = 40;
+        uint128 expectedValueLength_ = 32;
+        bytes memory concatenatedValues_ = bytes.concat(abi.encodePacked(uint256(1)), abi.encodePacked(uint256(2)));
+        bytes memory terms_ = _packTerms(expectedStartIndex_, expectedValueLength_, concatenatedValues_);
+        (uint128 startIndex_, uint128 valueLength_, uint256 candidateCount_) =
+            allowedCalldataAnyOfEnforcer.getTermsInfo(terms_);
+        assertEq(startIndex_, expectedStartIndex_);
+        assertEq(valueLength_, expectedValueLength_);
+        assertEq(candidateCount_, 2);
     }
 
     // should fail with invalid call type mode (batch instead of single mode)
@@ -195,14 +217,13 @@ contract AllowedCalldataAnyOfEnforcerTest is CaveatEnforcerBaseTest {
             callData: abi.encodeWithSelector(IERC20.transfer.selector, address(users.bob.deleGator), uint256(2))
         });
 
-        uint256 paramStart_ = abi.encodeWithSelector(IERC20.transfer.selector, address(0)).length;
-        bytes[] memory values_ = new bytes[](2);
-        values_[0] = abi.encodePacked(uint256(1));
-        values_[1] = abi.encodePacked(uint256(2));
-        bytes memory inputTerms_ = _packTerms(paramStart_, values_);
+        uint128 startIndex_ = uint128(abi.encodeWithSelector(IERC20.transfer.selector, address(0)).length);
+        uint128 valueLength_ = 32;
+        bytes memory concatenatedValues_ = bytes.concat(abi.encodePacked(uint256(1)), abi.encodePacked(uint256(2)));
+        bytes memory terms_ = _packTerms(startIndex_, valueLength_, concatenatedValues_);
 
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(allowedCalldataAnyOfEnforcer), terms: inputTerms_ });
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(allowedCalldataAnyOfEnforcer), terms: terms_ });
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
@@ -232,14 +253,13 @@ contract AllowedCalldataAnyOfEnforcerTest is CaveatEnforcerBaseTest {
             callData: abi.encodeWithSelector(IERC20.transfer.selector, address(users.bob.deleGator), uint256(3))
         });
 
-        uint256 paramStart_ = abi.encodeWithSelector(IERC20.transfer.selector, address(0)).length;
-        bytes[] memory values_ = new bytes[](2);
-        values_[0] = abi.encodePacked(uint256(1));
-        values_[1] = abi.encodePacked(uint256(2));
-        bytes memory inputTerms_ = _packTerms(paramStart_, values_);
+        uint128 startIndex_ = uint128(abi.encodeWithSelector(IERC20.transfer.selector, address(0)).length);
+        uint128 valueLength_ = 32;
+        bytes memory concatenatedValues_ = bytes.concat(abi.encodePacked(uint256(1)), abi.encodePacked(uint256(2)));
+        bytes memory terms_ = _packTerms(startIndex_, valueLength_, concatenatedValues_);
 
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(allowedCalldataAnyOfEnforcer), terms: inputTerms_ });
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(allowedCalldataAnyOfEnforcer), terms: terms_ });
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: address(users.alice.deleGator),
