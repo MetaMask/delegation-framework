@@ -58,7 +58,7 @@ In the case that you need to create a custom enforcer, you can use the `CaveatEn
 
 ```solidity
 // SPDX-License-Identifier: MIT AND Apache-2.0
-pragma solidity 0.8.23;
+pragma solidity ^0.8.23;
 
 import "forge-std/Test.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
