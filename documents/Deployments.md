@@ -55,6 +55,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Citrea
 - Mantle
 - Katana
+- Intuition
 
 ### Testnets
 
@@ -80,6 +81,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Celo sepolia
 - Mantle sepolia
 - Katana Bokuto
+- Intuition testnet
 
 ## **Deployments**
 
