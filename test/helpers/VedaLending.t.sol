@@ -570,11 +570,21 @@ contract VedaLendingTest is BaseTest {
         assertEq(BORING_VAULT.balanceOf(address(vedaAdapter)), 0, "Adapter must not retain any vault shares after withdraw");
     }
 
-    /// @notice After the first deposit, the adapter grants unlimited allowance to BoringVault.
-    ///         Subsequent deposits reuse the existing allowance without issuing a new approval.
-    function test_allowanceFullyConsumedAfterDeposit() public {
-        assertEq(USDC.allowance(address(vedaAdapter), address(BORING_VAULT)), 0, "Initial allowance should be 0");
+    /// @notice The adapter approves the BoringVault for `type(uint256).max` in the constructor,
+    ///         so deposits draw from a pre-existing unlimited allowance that never needs topping up
+    ///         under normal operation.
+    function test_allowanceSetToMaxInConstructor() public {
+        assertEq(
+            USDC.allowance(address(vedaAdapter), address(BORING_VAULT)),
+            type(uint256).max,
+            "Constructor should set allowance to max"
+        );
+    }
 
+    /// @notice After a deposit, the allowance is simply `max - depositAmount` because the BoringVault
+    ///         pulled tokens via `safeTransferFrom`. The allowance is effectively still unbounded and
+    ///         does not require re-approval.
+    function test_allowanceRemainsUnlimitedAfterDeposit() public {
         Delegation memory delegation_ =
             _createTransferDelegation(address(users.bob.deleGator), address(vedaAdapter), address(USDC), type(uint256).max);
         Delegation memory redelegation_ =
@@ -592,6 +602,47 @@ contract VedaLendingTest is BaseTest {
             type(uint256).max - DEPOSIT_AMOUNT,
             "Allowance should be unlimited minus the deposited amount"
         );
+    }
+
+    /// @notice `ensureAllowance` is a fail-safe that lets the owner restore the BoringVault
+    ///         allowance to `type(uint256).max` if it were ever reduced.
+    function test_ensureAllowanceRestoresMaxAllowance() public {
+        // Simulate the allowance being reduced by forcing an approval from the adapter via the owner.
+        // We can't directly call forceApprove on the adapter, so we verify the fail-safe restores
+        // allowance after a deposit consumes part of it.
+        Delegation memory delegation_ =
+            _createTransferDelegation(address(users.bob.deleGator), address(vedaAdapter), address(USDC), type(uint256).max);
+        Delegation memory redelegation_ =
+            _createAdapterRedelegation(EncoderLib._getDelegationHash(delegation_), address(USDC), DEPOSIT_AMOUNT);
+
+        Delegation[] memory delegations_ = new Delegation[](2);
+        delegations_[0] = redelegation_;
+        delegations_[1] = delegation_;
+
+        vm.prank(address(users.bob.deleGator));
+        vedaAdapter.depositByDelegation(delegations_, 0);
+
+        assertLt(
+            USDC.allowance(address(vedaAdapter), address(BORING_VAULT)),
+            type(uint256).max,
+            "Allowance should be below max after a deposit"
+        );
+
+        vm.prank(owner);
+        vedaAdapter.ensureAllowance();
+
+        assertEq(
+            USDC.allowance(address(vedaAdapter), address(BORING_VAULT)),
+            type(uint256).max,
+            "ensureAllowance should restore allowance to max"
+        );
+    }
+
+    /// @notice `ensureAllowance` is owner-gated and reverts when called by a non-owner.
+    function test_ensureAllowanceRevertsForNonOwner() public {
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(users.bob.addr)));
+        vm.prank(address(users.bob.addr));
+        vedaAdapter.ensureAllowance();
     }
 
     /// @notice A 3-level delegation chain (Alice -> Carol -> Bob -> Adapter) must correctly resolve

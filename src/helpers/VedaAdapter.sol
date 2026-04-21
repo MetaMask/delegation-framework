@@ -42,7 +42,9 @@ import { IVedaTeller } from "./interfaces/IVedaTeller.sol";
  *         to itself, and calls `teller.withdraw()` to burn shares and send `depositToken` assets to the user.
  *
  *      Requirements:
- *      - VedaAdapter must approve the BoringVault to spend deposit tokens
+ *      - VedaAdapter must approve the BoringVault to spend deposit tokens. The constructor sets
+ *        this allowance to `type(uint256).max`, and the owner-only `ensureAllowance()` function
+ *        can be used as a fail-safe to restore it to max if it were ever reduced.
  *
  *      Leaf Caveat Format:
  *      - The first caveat of the leaf delegation (`_delegations[0].caveats[0]`) must follow the
@@ -188,7 +190,8 @@ contract VedaAdapter is Ownable2Step {
     )
         Ownable(_owner)
     {
-        if (_delegationManager == address(0) || _boringVault == address(0) || _teller == address(0) || _depositToken == address(0)) {
+        if (_delegationManager == address(0) || _boringVault == address(0) || _teller == address(0) || _depositToken == address(0))
+        {
             revert InvalidZeroAddress();
         }
 
@@ -196,6 +199,9 @@ contract VedaAdapter is Ownable2Step {
         boringVault = _boringVault;
         teller = IVedaTeller(_teller);
         depositToken = IERC20(_depositToken);
+
+        // Approve BoringVault to pull tokens
+        depositToken.forceApprove(boringVault, type(uint256).max);
     }
 
     ////////////////////////////// External Methods //////////////////////////////
@@ -307,21 +313,17 @@ contract VedaAdapter is Ownable2Step {
         emit StuckTokensWithdrawn(_token, _recipient, _amount);
     }
 
-    ////////////////////////////// Private/Internal Methods //////////////////////////////
-
     /**
-     * @notice Ensures sufficient token allowance for a spender to pull tokens
-     * @dev Checks current allowance and sets it to max if insufficient.
-     * @param _token Token to manage allowance for
-     * @param _spender Address that needs to spend the tokens
-     * @param _amount Amount needed for the operation
+     * @notice Resets the deposit token allowance for the BoringVault to `type(uint256).max`
+     * @dev Fail-safe function. The constructor already sets the allowance to `type(uint256).max`
+     *      the allowance should realistically never be exhausted. This function exists only as a
+     *      defensive measure. The owner can restore it to max.
      */
-    function _ensureAllowance(IERC20 _token, address _spender, uint256 _amount) private {
-        uint256 allowance_ = _token.allowance(address(this), _spender);
-        if (allowance_ < _amount) {
-            _token.forceApprove(_spender, type(uint256).max);
-        }
+    function ensureAllowance() external onlyOwner {
+        depositToken.forceApprove(boringVault, type(uint256).max);
     }
+
+    ////////////////////////////// Private/Internal Methods //////////////////////////////
 
     /**
      * @notice Parses the transfer amount from ERC20TransferAmountEnforcer terms
@@ -363,8 +365,6 @@ contract VedaAdapter is Ownable2Step {
 
         delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
 
-        // Approve BoringVault to pull tokens, then deposit via Teller
-        _ensureAllowance(depositToken, boringVault, amount_);
         uint256 shares_ = teller.deposit(address(depositToken), amount_, _minimumMint, rootDelegator_, address(0));
 
         emit DepositExecuted(rootDelegator_, msg.sender, address(depositToken), amount_, shares_);
