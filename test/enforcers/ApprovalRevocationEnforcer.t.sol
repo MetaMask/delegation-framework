@@ -13,15 +13,16 @@ import { BasicERC20 } from "../utils/BasicERC20.t.sol";
 import { BasicCF721 } from "../utils/BasicCF721.t.sol";
 import { BasicERC1155 } from "../utils/BasicERC1155.t.sol";
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
-import { AllowanceRevocationEnforcer } from "../../src/enforcers/AllowanceRevocationEnforcer.sol";
+import { ApprovalRevocationEnforcer } from "../../src/enforcers/ApprovalRevocationEnforcer.sol";
+import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 
 /**
- * @title AllowanceRevocationEnforcer Test
+ * @title ApprovalRevocationEnforcer Test
  */
-contract AllowanceRevocationEnforcerTest is CaveatEnforcerBaseTest {
+contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
     ////////////////////////////// State //////////////////////////////
 
-    AllowanceRevocationEnforcer public enforcer;
+    ApprovalRevocationEnforcer public enforcer;
     BasicERC20 public erc20;
     BasicCF721 public erc721;
     BasicERC1155 public erc1155;
@@ -36,8 +37,8 @@ contract AllowanceRevocationEnforcerTest is CaveatEnforcerBaseTest {
 
     function setUp() public override {
         super.setUp();
-        enforcer = new AllowanceRevocationEnforcer();
-        vm.label(address(enforcer), "AllowanceRevocationEnforcer");
+        enforcer = new ApprovalRevocationEnforcer();
+        vm.label(address(enforcer), "ApprovalRevocationEnforcer");
 
         delegator = address(users.alice.deleGator);
         spender = address(users.bob.deleGator);
@@ -110,20 +111,23 @@ contract AllowanceRevocationEnforcerTest is CaveatEnforcerBaseTest {
 
     function test_erc20_revertOnNonZeroAmount() public {
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 1));
-        _expectRevertBeforeHook(executionCallData_, "AllowanceRevocationEnforcer:non-zero-amount");
+        _expectRevertBeforeHook(executionCallData_, "ApprovalRevocationEnforcer:non-zero-amount");
     }
 
-    function test_erc20_revertWhenNoAllowance() public {
+    function test_erc20_revertWhenNoApproval() public {
         address other_ = address(users.dave.deleGator);
         assertEq(erc20.allowance(delegator, other_), 0);
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(other_, 0));
-        _expectRevertBeforeHook(executionCallData_, "AllowanceRevocationEnforcer:no-allowance-to-revoke");
+        _expectRevertBeforeHook(executionCallData_, "ApprovalRevocationEnforcer:no-approval-to-revoke");
     }
 
     function test_erc20_revertWhenAllowanceCallFails() public {
-        // Target is a contract with no `allowance(address,address)` function.
+        // Target is a contract with no `allowance(address,address)` function; the high-level call reverts with
+        // empty returndata when ABI-decoding the (empty) response fails.
         bytes memory executionCallData_ = _encodeSingle(address(enforcer), 0, _approveCallData(spender, 0));
-        _expectRevertBeforeHook(executionCallData_, "AllowanceRevocationEnforcer:allowance-call-failed");
+        vm.prank(address(delegationManager));
+        vm.expectRevert();
+        enforcer.beforeHook(hex"", hex"", singleDefaultMode, executionCallData_, bytes32(0), delegator, address(0));
     }
 
     ////////////////////////////// Valid cases (ERC-721 approve) //////////////////////////////
@@ -143,13 +147,16 @@ contract AllowanceRevocationEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(erc721.getApproved(freshTokenId_), address(0));
 
         bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _approveCallData(address(0), freshTokenId_));
-        _expectRevertBeforeHook(executionCallData_, "AllowanceRevocationEnforcer:no-approval-to-revoke");
+        _expectRevertBeforeHook(executionCallData_, "ApprovalRevocationEnforcer:no-approval-to-revoke");
     }
 
     function test_erc721_revertWhenGetApprovedCallFails() public {
-        // Non-existent token id reverts in OpenZeppelin's getApproved.
+        // Non-existent token id reverts in OpenZeppelin's getApproved; the custom error bubbles up through the
+        // high-level call.
         bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _approveCallData(address(0), 9999));
-        _expectRevertBeforeHook(executionCallData_, "AllowanceRevocationEnforcer:getApproved-call-failed");
+        vm.prank(address(delegationManager));
+        vm.expectRevert(abi.encodeWithSignature("ERC721NonexistentToken(uint256)", 9999));
+        enforcer.beforeHook(hex"", hex"", singleDefaultMode, executionCallData_, bytes32(0), delegator, address(0));
     }
 
     ////////////////////////////// Valid cases (setApprovalForAll) //////////////////////////////
@@ -170,45 +177,48 @@ contract AllowanceRevocationEnforcerTest is CaveatEnforcerBaseTest {
 
     function test_setApprovalForAll_revertWhenSettingTrue() public {
         bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _setApprovalForAllCallData(operator, true));
-        _expectRevertBeforeHook(executionCallData_, "AllowanceRevocationEnforcer:not-a-revocation");
+        _expectRevertBeforeHook(executionCallData_, "ApprovalRevocationEnforcer:not-a-revocation");
     }
 
     function test_setApprovalForAll_revertWhenNotApproved() public {
         address other_ = address(users.dave.deleGator);
         assertFalse(erc721.isApprovedForAll(delegator, other_));
         bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _setApprovalForAllCallData(other_, false));
-        _expectRevertBeforeHook(executionCallData_, "AllowanceRevocationEnforcer:no-approval-to-revoke");
+        _expectRevertBeforeHook(executionCallData_, "ApprovalRevocationEnforcer:no-approval-to-revoke");
     }
 
     function test_setApprovalForAll_revertWhenIsApprovedForAllCallFails() public {
-        // Target is a contract with no `isApprovedForAll(address,address)` function.
+        // Target is a contract with no `isApprovedForAll(address,address)` function; the high-level call reverts
+        // with empty returndata when ABI-decoding the (empty) response fails.
         bytes memory executionCallData_ = _encodeSingle(address(enforcer), 0, _setApprovalForAllCallData(operator, false));
-        _expectRevertBeforeHook(executionCallData_, "AllowanceRevocationEnforcer:isApprovedForAll-call-failed");
+        vm.prank(address(delegationManager));
+        vm.expectRevert();
+        enforcer.beforeHook(hex"", hex"", singleDefaultMode, executionCallData_, bytes32(0), delegator, address(0));
     }
 
     ////////////////////////////// Generic invalid cases //////////////////////////////
 
     function test_revertOnNonZeroValue() public {
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 1, _approveCallData(spender, 0));
-        _expectRevertBeforeHook(executionCallData_, "AllowanceRevocationEnforcer:invalid-value");
+        _expectRevertBeforeHook(executionCallData_, "ApprovalRevocationEnforcer:invalid-value");
     }
 
     function test_revertOnInvalidExecutionLengthShort() public {
         bytes memory shortCallData_ = abi.encodePacked(IERC20.approve.selector, bytes32(uint256(uint160(spender))));
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, shortCallData_);
-        _expectRevertBeforeHook(executionCallData_, "AllowanceRevocationEnforcer:invalid-execution-length");
+        _expectRevertBeforeHook(executionCallData_, "ApprovalRevocationEnforcer:invalid-execution-length");
     }
 
     function test_revertOnInvalidExecutionLengthLong() public {
         bytes memory longCallData_ = abi.encodePacked(_approveCallData(spender, 0), bytes1(0x00));
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, longCallData_);
-        _expectRevertBeforeHook(executionCallData_, "AllowanceRevocationEnforcer:invalid-execution-length");
+        _expectRevertBeforeHook(executionCallData_, "ApprovalRevocationEnforcer:invalid-execution-length");
     }
 
     function test_revertOnInvalidMethod() public {
         bytes memory wrongMethodCallData_ = abi.encodeWithSelector(IERC20.transfer.selector, spender, uint256(0));
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, wrongMethodCallData_);
-        _expectRevertBeforeHook(executionCallData_, "AllowanceRevocationEnforcer:invalid-method");
+        _expectRevertBeforeHook(executionCallData_, "ApprovalRevocationEnforcer:invalid-method");
     }
 
     function test_revertWithInvalidCallTypeMode() public {
@@ -297,6 +307,147 @@ contract AllowanceRevocationEnforcerTest is CaveatEnforcerBaseTest {
 
         invokeDelegation_UserOp(users.bob, delegations_, execution_);
         assertFalse(erc1155.isApprovedForAll(delegator, operator));
+    }
+
+    ////////////////////////////// Redelegation //////////////////////////////
+
+    /**
+     * @notice Alice -> Bob -> Carol, with the `ApprovalRevocationEnforcer` caveat on Alice's (root) link. Carol
+     * redeems. The caveat's `beforeHook` receives `_delegator = Alice`, matching the account whose approval is
+     * actually cleared at execution time. Works end-to-end.
+     */
+    function test_integration_redelegation_caveatOnRootLink_revokesRootAllowance() public {
+        assertEq(erc20.allowance(delegator, spender), 42 ether);
+
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(enforcer), terms: hex"" });
+        Delegation memory aliceDelegation_ = Delegation({
+            delegate: address(users.bob.deleGator),
+            delegator: delegator,
+            authority: ROOT_AUTHORITY,
+            caveats: caveats_,
+            salt: 0,
+            signature: hex""
+        });
+        aliceDelegation_ = signDelegation(users.alice, aliceDelegation_);
+        bytes32 aliceDelegationHash_ = EncoderLib._getDelegationHash(aliceDelegation_);
+
+        Delegation memory bobDelegation_ = Delegation({
+            delegate: address(users.carol.deleGator),
+            delegator: address(users.bob.deleGator),
+            authority: aliceDelegationHash_,
+            caveats: new Caveat[](0),
+            salt: 0,
+            signature: hex""
+        });
+        bobDelegation_ = signDelegation(users.bob, bobDelegation_);
+
+        Delegation[] memory delegations_ = new Delegation[](2);
+        delegations_[0] = bobDelegation_;
+        delegations_[1] = aliceDelegation_;
+
+        Execution memory execution_ =
+            Execution({ target: address(erc20), value: 0, callData: _approveCallData(spender, 0) });
+
+        invokeDelegation_UserOp(users.carol, delegations_, execution_);
+        assertEq(erc20.allowance(delegator, spender), 0);
+    }
+
+    /**
+     * @notice Alice -> Bob -> Carol, with the caveat on Bob's (intermediate) link. The `beforeHook` runs with
+     * `_delegator = Bob`, so the pre-check queries `allowance(Bob, spender)`. Bob has no such allowance, so the
+     * hook reverts even though Alice (the root, whose account actually runs `approve`) does have one.
+     *
+     * @dev This test pins down a subtlety of redelegation semantics: caveats are evaluated against the delegator
+     * of their own link, not the root of the chain. For this enforcer it means an intermediate-link caveat
+     * checks the *intermediate* delegator's approval state, which is almost never what the delegator intends.
+     */
+    function test_integration_redelegation_caveatOnIntermediateLink_revertsWhenIntermediateHasNoApproval() public {
+        assertEq(erc20.allowance(delegator, spender), 42 ether);
+        assertEq(erc20.allowance(address(users.bob.deleGator), spender), 0);
+
+        Delegation memory aliceDelegation_ = Delegation({
+            delegate: address(users.bob.deleGator),
+            delegator: delegator,
+            authority: ROOT_AUTHORITY,
+            caveats: new Caveat[](0),
+            salt: 0,
+            signature: hex""
+        });
+        aliceDelegation_ = signDelegation(users.alice, aliceDelegation_);
+        bytes32 aliceDelegationHash_ = EncoderLib._getDelegationHash(aliceDelegation_);
+
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(enforcer), terms: hex"" });
+        Delegation memory bobDelegation_ = Delegation({
+            delegate: address(users.carol.deleGator),
+            delegator: address(users.bob.deleGator),
+            authority: aliceDelegationHash_,
+            caveats: caveats_,
+            salt: 0,
+            signature: hex""
+        });
+        bobDelegation_ = signDelegation(users.bob, bobDelegation_);
+
+        Delegation[] memory delegations_ = new Delegation[](2);
+        delegations_[0] = bobDelegation_;
+        delegations_[1] = aliceDelegation_;
+
+        Execution memory execution_ =
+            Execution({ target: address(erc20), value: 0, callData: _approveCallData(spender, 0) });
+
+        // UserOp swallows the enforcer revert; the effect is that the approval is NOT cleared.
+        invokeDelegation_UserOp(users.carol, delegations_, execution_);
+        assertEq(erc20.allowance(delegator, spender), 42 ether);
+    }
+
+    /**
+     * @notice Unit-level check on the link-local `_delegator` semantics. The hook queries the external token
+     * using whatever address is passed as `_delegator`; it does not reach back into the chain to find the root.
+     */
+    function test_unit_beforeHook_usesPassedDelegatorNotRoot() public {
+        address intermediate_ = address(users.bob.deleGator);
+        assertEq(erc20.allowance(intermediate_, spender), 0);
+
+        bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 0));
+
+        vm.prank(address(delegationManager));
+        vm.expectRevert("ApprovalRevocationEnforcer:no-approval-to-revoke");
+        enforcer.beforeHook(hex"", hex"", singleDefaultMode, executionCallData_, bytes32(0), intermediate_, address(0));
+
+        // And once Bob has an allowance of his own, the pre-check passes against Bob's state (regardless of who
+        // would actually execute the call).
+        vm.prank(intermediate_);
+        erc20.approve(spender, 1);
+        vm.prank(address(delegationManager));
+        enforcer.beforeHook(hex"", hex"", singleDefaultMode, executionCallData_, bytes32(0), intermediate_, address(0));
+    }
+
+    ////////////////////////////// Additional coverage //////////////////////////////
+
+    /**
+     * @notice `approve(non-zero, 0)` targeting an ERC-721 contract routes to the ERC-20 branch (because the
+     * first parameter is non-zero). The pre-check calls `allowance(delegator, spender)` on the ERC-721, which
+     * does not implement it and therefore reverts (empty returndata after ABI-decode).
+     */
+    function test_crossStandard_erc721TargetWithErc20Style_reverts() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _approveCallData(spender, 0));
+        vm.prank(address(delegationManager));
+        vm.expectRevert();
+        enforcer.beforeHook(hex"", hex"", singleDefaultMode, executionCallData_, bytes32(0), delegator, address(0));
+    }
+
+    /**
+     * @notice `approve(address(0), 0)` on an ERC-20 is routed to the ERC-721 branch by the `firstParam == 0`
+     * heuristic. The branch then calls `getApproved(0)` on the target. Standard ERC-20s do not implement
+     * `getApproved`, so the pre-check reverts. Pins the behavior of this edge case so future refactors don't
+     * silently change routing.
+     */
+    function test_edgeCase_approveAddressZeroAmountZeroOnErc20_reverts() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(address(0), 0));
+        vm.prank(address(delegationManager));
+        vm.expectRevert();
+        enforcer.beforeHook(hex"", hex"", singleDefaultMode, executionCallData_, bytes32(0), delegator, address(0));
     }
 
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {
