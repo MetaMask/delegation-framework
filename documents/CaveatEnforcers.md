@@ -174,6 +174,56 @@ Note that in this scenario we have the same end recipient (treasury) and the sam
 
 If you are delegating to an EOA in a delegation chain, the EOA cannot execute directly since it cannot redeem inner delegations. The EOA can become a deleGator by using EIP7702 or it can use an adapter contract to execute the delegation. An example for that is available in `./src/helpers/DelegationMetaSwapAdapter.sol`.
 
+### ApprovalRevocationEnforcer
+
+The `ApprovalRevocationEnforcer` lets a delegator grant a delegate the narrow authority to **clear an existing token approval** on the delegator's behalf, without granting any other power over the delegator's assets. It covers the three standard approval primitives:
+
+- ERC-20 `approve(spender, 0)`
+- ERC-721 per-token `approve(address(0), tokenId)`
+- ERC-721 / ERC-1155 `setApprovalForAll(operator, false)` (both standards share the selector)
+
+#### How It Works
+
+The enforcer runs only in single call type and default execution mode, consumes no terms, and makes no assumption about the target contract. In `beforeHook` it:
+
+1. Requires the execution to transfer zero native value and to carry calldata of exactly 68 bytes (4-byte selector + two 32-byte words).
+2. Branches on the selector:
+   - `setApprovalForAll(address operator, bool approved)` — requires `approved == false` and `isApprovedForAll(delegator, operator) == true` on the target.
+   - `approve(address, uint256)` — shared by ERC-20 and ERC-721, disambiguated by the first parameter:
+     - First parameter is `address(0)` → treated as an ERC-721 per-token revocation; requires `getApproved(tokenId)` on the target to return a non-zero address.
+     - First parameter is non-zero → treated as an ERC-20 revocation; requires the second parameter (amount) to be zero and `allowance(delegator, spender) > 0` on the target.
+3. Reverts on any other selector.
+
+All three accepted calldatas structurally reduce permissions (amount `0`, spender `address(0)`, or `approved` `false`). A delegate using this enforcer can therefore **never be granted new authority** over the delegator's assets — only existing approvals can be cleared.
+
+#### Use Cases
+
+- **Revocation bots / keepers**: Delegate to a third party that can proactively clean up stale or compromised approvals.
+- **Post-incident remediation**: Issue a short-lived delegation to revoke a specific approval after a spender contract is found to be malicious.
+- **User-facing "revoke all" flows**: Let a UI batch revocations on the user's behalf without asking for a new signature per clear.
+
+#### Composition
+
+The enforcer is not scoped to any particular token contract or spender. To restrict it further, compose it with existing enforcers:
+
+- `AllowedTargetsEnforcer` — restrict revocation to specific token contracts.
+- `AllowedCalldataEnforcer` / `ExactCalldataEnforcer` — pin the exact spender, operator, or tokenId.
+
+#### Redelegation Caveat (Link-Local Semantics)
+
+The `_delegator` argument passed to `beforeHook` is the delegator of the specific delegation that carries the caveat, **not** the root of a redelegation chain. The `DelegationManager` always executes the downstream `approve` / `setApprovalForAll` call against the root delegator's account. On a root-level delegation (chain length 1) the two are the same and the pre-check queries the account whose storage will actually be mutated — this is the intended usage.
+
+On an intermediate (redelegation) link the two differ: the pre-check queries the intermediate delegator's approval state while the execution mutates the root delegator's storage. This is **never an authority escalation** (the structural constraints above still hold — the call can only reduce permissions), but the sanity guard becomes misaligned with the executed effect:
+
+- If the intermediate delegator has no matching approval, the hook reverts even when the root does (the chain cannot be used, even though the revocation would have been valid for the root).
+- If the intermediate delegator happens to have some approval, the hook passes and the execution clears the root's approval regardless of whether the root actually had one to clear.
+
+If a redelegator needs a root-scoped guarantee (e.g. "Carol may only revoke one of Alice's specific approvals"), they should rely on structural caveats that compose cleanly across links, such as `AllowedTargetsEnforcer`, `AllowedCalldataEnforcer`, or `ExactCalldataEnforcer`. Placing `ApprovalRevocationEnforcer` on an intermediate link in the hope of validating the root's approval state does not achieve that.
+
+#### Liveness vs. Race-Freedom
+
+The "pre-existing approval" check is a liveness / sanity guard ensuring the call is not a no-op at the time the hook runs. It is not a race-free invariant: the delegator could independently clear the approval between the hook and the execution. In that case the execution is still safe — it simply becomes a no-op on the token contract.
+
 ## LogicalOrWrapperEnforcer Context Switching
 
 The `LogicalOrWrapperEnforcer` enables logical OR functionality between groups of enforcers, allowing flexibility in delegation constraints. This enforcer is designed for a narrow set of use cases, and careful attention must be given when constructing caveats. The enforcer introduces an important architectural consideration: **context switching**.
