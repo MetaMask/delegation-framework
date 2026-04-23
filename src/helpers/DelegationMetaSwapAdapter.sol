@@ -426,7 +426,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
      * @dev Validates the expiration and signature of the provided apiData.
      * @param _signatureData Contains the apiData, the expiration and signature.
      */
-    function _validateSignature(SignatureData memory _signatureData) internal view {
+    function _validateSignature(SignatureData memory _signatureData) internal {
         if (block.timestamp >= _signatureData.expiration) revert SignatureExpired();
 
         bytes32 messageHash_ = keccak256(abi.encode(_signatureData.apiData, _signatureData.expiration));
@@ -496,8 +496,7 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
      * @param _apiData Bytes that includes aggregatorId, tokenFrom, amountFrom, and the aggregator swap data.
      */
     function _decodeApiData(bytes calldata _apiData)
-        private
-        pure
+        internal
         returns (string memory aggregatorId_, IERC20 tokenFrom_, IERC20 tokenTo_, uint256 amountFrom_, bytes memory swapData_)
     {
         bytes4 functionSelector_ = bytes4(_apiData[:4]);
@@ -508,15 +507,12 @@ contract DelegationMetaSwapAdapter is ExecutionHelper, Ownable2Step {
         (aggregatorId_, tokenFrom_, amountFrom_, swapData_) = abi.decode(paramTerms_, (string, IERC20, uint256, bytes));
 
         // Note: Prepend address(0) to format the data correctly because of the Swaps API. See internal docs.
-        (
-            , // address(0)
+        (, // address(0)
             IERC20 swapTokenFrom_,
             IERC20 swapTokenTo_,
-            uint256 swapAmountFrom_,
-            , // AmountTo
+            uint256 swapAmountFrom_,, // AmountTo
             , // Metadata
-            uint256 feeAmount_,
-            , // FeeWallet
+            uint256 feeAmount_,, // FeeWallet
             bool feeTo_
         ) = abi.decode(
             abi.encodePacked(abi.encode(address(0)), swapData_),

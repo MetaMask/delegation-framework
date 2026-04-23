@@ -30,6 +30,7 @@ import { EntryPoint } from "@account-abstraction/core/EntryPoint.sol";
 import { CALLTYPE_SINGLE, CALLTYPE_BATCH, EXECTYPE_DEFAULT, EXECTYPE_TRY } from "../../src/utils/Constants.sol";
 
 import "forge-std/Test.sol";
+import { console2 } from "forge-std/console2.sol";
 
 /**
  * @title DelegationMetaSwapAdapterBaseTest
@@ -180,9 +181,7 @@ abstract contract DelegationMetaSwapAdapterBaseTest is BaseTest {
         caveats_[1] = Caveat({ args: hex"", enforcer: address(valueLteEnforcer), terms: abi.encode(uint256(10 ether)) });
 
         caveats_[2] = Caveat({
-            args: hex"",
-            enforcer: address(redeemerEnforcer),
-            terms: abi.encodePacked(address(delegationMetaSwapAdapter))
+            args: hex"", enforcer: address(redeemerEnforcer), terms: abi.encodePacked(address(delegationMetaSwapAdapter))
         });
         return caveats_;
     }
@@ -203,9 +202,7 @@ abstract contract DelegationMetaSwapAdapterBaseTest is BaseTest {
         caveats_[3] = Caveat({ args: hex"", enforcer: address(allowedCalldataEnforcer), terms: inputTerms_ });
 
         caveats_[4] = Caveat({
-            args: hex"",
-            enforcer: address(redeemerEnforcer),
-            terms: abi.encodePacked(address(delegationMetaSwapAdapter))
+            args: hex"", enforcer: address(redeemerEnforcer), terms: abi.encodePacked(address(delegationMetaSwapAdapter))
         });
         return caveats_;
     }
@@ -304,8 +301,9 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
     function setUp() public override {
         super.setUp();
         swapApiSigner = vm.addr(_swapSignerPrivateKey);
-        adapter =
-            new DelegationMetaSwapAdapterSignatureTest(address(this), swapApiSigner, address(0x123), address(0x456), address(0x789));
+        adapter = new DelegationMetaSwapAdapterSignatureTest(
+            address(this), swapApiSigner, address(0x123), address(0x456), address(0x789)
+        );
     }
 
     ////////////////////////////// Signature validation tests //////////////////////////////
@@ -313,7 +311,7 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
     /**
      * @notice Verifies that a valid signature is accepted.
      */
-    function test_validateSignature_valid() public view {
+    function test_validateSignature_valid() public {
         bytes memory apiData_ = hex"1234";
         uint256 expiration_ = block.timestamp + 1 hours;
         bytes32 messageHash_ = keccak256(abi.encode(apiData_, expiration_));
@@ -401,6 +399,70 @@ contract DelegationMetaSwapAdapterMockTest is DelegationMetaSwapAdapterBaseTest 
 
         // Should not revert since signature is valid
         adapter.exposedValidateSignature(sigData_);
+    }
+
+    /**
+     * @notice Verifies a custom signature produced by the API.
+     *        Replace CUSTOM_* below with your apiData, expiration, signature and signer address, then run:
+     *        forge test --match-test test_validateSignature_customSignature -vv
+     *        Encoding used by the contract: messageHash = keccak256(abi.encode(apiData, expiration));
+     *        ethSignedMessageHash = toEthSignedMessageHash(messageHash) (EIP-191);
+     *        signature = sign(ethSignedMessageHash) as (r, s, v) packed.
+     */
+    function test_validateSignature_customSignature() public {
+        address CUSTOM_SIGNER = 0xe672B534ccf9876a7554a1dD1685a2a5C2Cc8e8C;
+        bytes memory CUSTOM_API_DATA =
+            hex"5f57552900000000000000000000000000000000000000000000000000000000000000800000000000000000000000006b175474e89094c44da98b954eedeac495271d0f00000000000000000000000000000000000000000000000006f05b59d3b2000000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000000136f6e65496e6368563646656544796e616d69630000000000000000000000000000000000000000000000000000000000000000000000000000000000000003800000000000000000000000006b175474e89094c44da98b954eedeac495271d0f000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000000000000000000000000000006f05b59d3b200000000000000000000000000000000000000000000000000000000ddd5e7db7ca300000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f326e4de8f66a0bdc0970b79e0924e33c79f19150000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000024807ed2379000000000000000000000000990636ecb3ff04d33d92e970d3d588bf5cd8d0860000000000000000000000006b175474e89094c44da98b954eedeac495271d0f000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2000000000000000000000000990636ecb3ff04d33d92e970d3d588bf5cd8d08600000000000000000000000074de5d4fcbf63e00296fd95d33236b979401663100000000000000000000000000000000000000000000000006f05b59d3b200000000000000000000000000000000000000000000000000000000ddd5e7db7ca30000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000fb0000000000000000000000000000000000000000000000000000dd00004e00a0744c8c096b175474e89094c44da98b954eedeac495271d0f90cbe4bdd538d6e9b379bff5fe72c3d67a521de50000000000000000000000000000000000000000000000000000b5e620f480000c206b175474e89094c44da98b954eedeac495271d0fa478c2975ab1ea89e8196811f51a7b7ade33eb116ae40711b8002dc6c0a478c2975ab1ea89e8196811f51a7b7ade33eb11111111125421ca6dc452d289314280a0f8842a650000000000000000000000000000000000000000000000000000ddd5e7db7ca36b175474e89094c44da98b954eedeac495271d0f00000000007dcbea7c0000000000000000000000000000000000000000000000007a";
+        uint256 CUSTOM_EXPIRATION = 1771358285;
+        bytes memory CUSTOM_SIGNATURE =
+            hex"11d2298273b456f400ac0ff4295db15edf7332ee4ca3c17064deacc53833dc9025bfa106d09dd876b62e1510857dbaaf1932224536c9bef812cc944af8a03df81b";
+        // ------------------------------
+
+        vm.prank(address(this));
+        adapter.setSwapApiSigner(CUSTOM_SIGNER);
+
+        // Optional: warp to before expiration if your expiration is in the past (e.g. mainnet timestamp in ms)
+        // vm.warp(CUSTOM_EXPIRATION / 1000 - 1);
+
+        DelegationMetaSwapAdapter.SignatureData memory sigData_ = DelegationMetaSwapAdapter.SignatureData({
+            apiData: CUSTOM_API_DATA, expiration: CUSTOM_EXPIRATION, signature: CUSTOM_SIGNATURE
+        });
+
+        adapter.exposedValidateSignature(sigData_);
+    }
+
+    /**
+     * @notice Decodes API data via DelegationMetaSwapAdapter and logs all decoded values.
+     *        Paste your API data in CUSTOM_API_DATA (replace the default).
+     *        Run: forge test --match-test test_decodeApiData_newApiData -vv
+     */
+    function test_decodeApiData_newApiData() public {
+        _setUpMockContracts();
+
+        // --- Paste your new API data here (default: valid payload built from test tokens) ---
+        // bytes memory CUSTOM_API_DATA = _buildValidApiDataForDecodeTest();
+        bytes memory CUSTOM_API_DATA =
+            hex"5f57552900000000000000000000000000000000000000000000000000000000000000800000000000000000000000006b175474e89094c44da98b954eedeac495271d0f00000000000000000000000000000000000000000000000006f05b59d3b2000000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000000136f6e65496e6368563646656544796e616d69630000000000000000000000000000000000000000000000000000000000000000000000000000000000000003800000000000000000000000006b175474e89094c44da98b954eedeac495271d0f000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc200000000000000000000000000000000000000000000000006f05b59d3b200000000000000000000000000000000000000000000000000000000ddd5e7db7ca300000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f326e4de8f66a0bdc0970b79e0924e33c79f19150000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000024807ed2379000000000000000000000000990636ecb3ff04d33d92e970d3d588bf5cd8d0860000000000000000000000006b175474e89094c44da98b954eedeac495271d0f000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2000000000000000000000000990636ecb3ff04d33d92e970d3d588bf5cd8d08600000000000000000000000074de5d4fcbf63e00296fd95d33236b979401663100000000000000000000000000000000000000000000000006f05b59d3b200000000000000000000000000000000000000000000000000000000ddd5e7db7ca30000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000fb0000000000000000000000000000000000000000000000000000dd00004e00a0744c8c096b175474e89094c44da98b954eedeac495271d0f90cbe4bdd538d6e9b379bff5fe72c3d67a521de50000000000000000000000000000000000000000000000000000b5e620f480000c206b175474e89094c44da98b954eedeac495271d0fa478c2975ab1ea89e8196811f51a7b7ade33eb116ae40711b8002dc6c0a478c2975ab1ea89e8196811f51a7b7ade33eb11111111125421ca6dc452d289314280a0f8842a650000000000000000000000000000000000000000000000000000ddd5e7db7ca36b175474e89094c44da98b954eedeac495271d0f00000000007dcbea7c0000000000000000000000000000000000000000000000007a";
+        // ------------------------------
+
+        (string memory aggregatorId_, IERC20 tokenFrom_, IERC20 tokenTo_, uint256 amountFrom_, bytes memory swapData_) =
+            adapter.exposedDecodeApiData(CUSTOM_API_DATA);
+
+        console2.log("aggregatorId:", aggregatorId_);
+        console2.log("tokenFrom:", address(tokenFrom_));
+        console2.log("tokenTo:", address(tokenTo_));
+        console2.log("amountFrom:", amountFrom_);
+        console2.log("swapData.length:", swapData_.length);
+        console2.logBytes(swapData_);
+    }
+
+    /**
+     * @dev Builds valid apiData for test_decodeApiData_newApiData default. Override or replace
+     *      CUSTOM_API_DATA in the test with your new API payload.
+     */
+    function _buildValidApiDataForDecodeTest() internal view returns (bytes memory) {
+        bytes memory swapData_ = _encodeSwapData(IERC20(tokenA), IERC20(tokenB), amountFrom, amountTo, hex"", 0, address(0), true);
+        return _encodeApiData(aggregatorId, IERC20(tokenA), amountFrom, swapData_);
     }
 
     ////////////////////////////// Swap tests //////////////////////////////
@@ -1616,15 +1678,18 @@ contract DelegationMetaSwapAdapterSignatureTest is DelegationMetaSwapAdapter {
         address _argsEqualityCheckEnforcer
     )
         DelegationMetaSwapAdapter(
-            _owner,
-            _swapApiSigner,
-            IDelegationManager(_delegationManager),
-            IMetaSwap(_metaSwap),
-            _argsEqualityCheckEnforcer
+            _owner, _swapApiSigner, IDelegationManager(_delegationManager), IMetaSwap(_metaSwap), _argsEqualityCheckEnforcer
         )
     { }
 
-    function exposedValidateSignature(SignatureData memory _signatureData) public view {
+    function exposedValidateSignature(SignatureData memory _signatureData) public {
         _validateSignature(_signatureData);
+    }
+
+    function exposedDecodeApiData(bytes calldata _apiData)
+        external
+        returns (string memory aggregatorId_, IERC20 tokenFrom_, IERC20 tokenTo_, uint256 amountFrom_, bytes memory swapData_)
+    {
+        return _decodeApiData(_apiData);
     }
 }
