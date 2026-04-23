@@ -182,17 +182,42 @@ The `ApprovalRevocationEnforcer` lets a delegator grant a delegate the narrow au
 - ERC-721 per-token `approve(address(0), tokenId)`
 - ERC-721 / ERC-1155 `setApprovalForAll(operator, false)` (both standards share the selector)
 
+#### Terms
+
+The enforcer reads a **1-byte bitmask** from `terms` to control which revocation primitives the delegate may use:
+
+| Bit | Hex mask | Allowed primitive |
+|-----|----------|-------------------|
+| 0   | `0x01`   | ERC-20 `approve(spender, 0)` |
+| 1   | `0x02`   | ERC-721 `approve(address(0), tokenId)` |
+| 2   | `0x04`   | `setApprovalForAll(operator, false)` (ERC-721 & ERC-1155) |
+| 3–7 | —        | Reserved; MUST be zero |
+
+- Terms MUST be exactly 1 byte.
+- A zero mask (`0x00`) is rejected — at least one primitive must be permitted.
+- Any reserved bit (3–7) set is rejected.
+- `0x07` enables all three primitives.
+
+**Common examples:**
+
+```
+terms = 0x01  →  ERC-20 revocations only
+terms = 0x04  →  operator (setApprovalForAll) revocations only
+terms = 0x07  →  all three primitives allowed
+```
+
 #### How It Works
 
-The enforcer runs only in single call type and default execution mode, consumes no terms, and makes no assumption about the target contract. In `beforeHook` it:
+The enforcer runs only in single call type and default execution mode and makes no assumption about the target contract. In `beforeHook` it:
 
-1. Requires the execution to transfer zero native value and to carry calldata of exactly 68 bytes (4-byte selector + two 32-byte words).
-2. Branches on the selector:
+1. Decodes and validates the 1-byte terms bitmask (rejects empty, zero, or reserved-bit-set terms).
+2. Requires the execution to transfer zero native value and to carry calldata of exactly 68 bytes (4-byte selector + two 32-byte words).
+3. Checks that the selector matches a permitted primitive (per the bitmask), then branches:
    - `setApprovalForAll(address operator, bool approved)` — requires `approved == false` and `isApprovedForAll(delegator, operator) == true` on the target.
    - `approve(address, uint256)` — shared by ERC-20 and ERC-721, disambiguated by the first parameter:
      - First parameter is `address(0)` → treated as an ERC-721 per-token revocation; requires `getApproved(tokenId)` on the target to return a non-zero address.
      - First parameter is non-zero → treated as an ERC-20 revocation; requires the second parameter (amount) to be zero and `allowance(delegator, spender) > 0` on the target.
-3. Reverts on any other selector.
+4. Reverts on any other selector.
 
 All three accepted calldatas structurally reduce permissions (amount `0`, spender `address(0)`, or `approved` `false`). A delegate using this enforcer can therefore **never be granted new authority** over the delegator's assets — only existing approvals can be cleared.
 

@@ -33,6 +33,12 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
 
     uint256 public mintedTokenId;
 
+    /// @dev Permission flag constants mirroring the contract.
+    uint8 internal constant PERMISSION_ERC20_APPROVE = 0x01;
+    uint8 internal constant PERMISSION_ERC721_APPROVE = 0x02;
+    uint8 internal constant PERMISSION_SET_APPROVAL_FOR_ALL = 0x04;
+    uint8 internal constant PERMISSION_ALL = 0x07;
+
     ////////////////////////////// Set up //////////////////////////////
 
     function setUp() public override {
@@ -69,6 +75,10 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
 
     ////////////////////////////// Helpers //////////////////////////////
 
+    function _terms(uint8 _flags) internal pure returns (bytes memory) {
+        return abi.encodePacked(_flags);
+    }
+
     function _approveCallData(address _spender, uint256 _amount) internal pure returns (bytes memory) {
         return abi.encodeWithSelector(IERC20.approve.selector, _spender, _amount);
     }
@@ -81,22 +91,122 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
         return ExecutionLib.encodeSingle(_target, _value, _callData);
     }
 
-    function _callBeforeHook(bytes memory _executionCallData) internal {
+    function _callBeforeHook(bytes memory _termsBytes, bytes memory _executionCallData) internal {
         vm.prank(address(delegationManager));
-        enforcer.beforeHook(hex"", hex"", singleDefaultMode, _executionCallData, bytes32(0), delegator, address(0));
+        enforcer.beforeHook(_termsBytes, hex"", singleDefaultMode, _executionCallData, bytes32(0), delegator, address(0));
     }
 
-    function _expectRevertBeforeHook(bytes memory _executionCallData, bytes memory _revertReason) internal {
+    function _expectRevertBeforeHook(bytes memory _termsBytes, bytes memory _executionCallData, bytes memory _revertReason) internal {
         vm.prank(address(delegationManager));
         vm.expectRevert(_revertReason);
-        enforcer.beforeHook(hex"", hex"", singleDefaultMode, _executionCallData, bytes32(0), delegator, address(0));
+        enforcer.beforeHook(_termsBytes, hex"", singleDefaultMode, _executionCallData, bytes32(0), delegator, address(0));
+    }
+
+    ////////////////////////////// Terms decoding //////////////////////////////
+
+    function test_terms_revertOnEmptyTerms() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 0));
+        _expectRevertBeforeHook(hex"", executionCallData_, "ApprovalRevocationEnforcer:invalid-terms-length");
+    }
+
+    function test_terms_revertOnWrongLength() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 0));
+        _expectRevertBeforeHook(abi.encodePacked(uint16(0x0007)), executionCallData_, "ApprovalRevocationEnforcer:invalid-terms-length");
+    }
+
+    function test_terms_revertOnZeroMask() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 0));
+        _expectRevertBeforeHook(_terms(0x00), executionCallData_, "ApprovalRevocationEnforcer:no-permissions");
+    }
+
+    function test_terms_revertOnReservedBitSet_bit3() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 0));
+        _expectRevertBeforeHook(_terms(0x08), executionCallData_, "ApprovalRevocationEnforcer:invalid-terms");
+    }
+
+    function test_terms_revertOnReservedBitSet_highBit() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 0));
+        _expectRevertBeforeHook(_terms(0x80), executionCallData_, "ApprovalRevocationEnforcer:invalid-terms");
+    }
+
+    function test_terms_revertOnReservedBitSet_allBits() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 0));
+        _expectRevertBeforeHook(_terms(0xFF), executionCallData_, "ApprovalRevocationEnforcer:invalid-terms");
+    }
+
+    ////////////////////////////// Per-flag gating //////////////////////////////
+
+    function test_terms_onlyErc20_allowsErc20() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 0));
+        _callBeforeHook(_terms(PERMISSION_ERC20_APPROVE), executionCallData_);
+    }
+
+    function test_terms_onlyErc20_blocksErc721Approve() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _approveCallData(address(0), mintedTokenId));
+        _expectRevertBeforeHook(_terms(PERMISSION_ERC20_APPROVE), executionCallData_, "ApprovalRevocationEnforcer:permission-not-granted");
+    }
+
+    function test_terms_onlyErc20_blocksSetApprovalForAll() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _setApprovalForAllCallData(operator, false));
+        _expectRevertBeforeHook(_terms(PERMISSION_ERC20_APPROVE), executionCallData_, "ApprovalRevocationEnforcer:permission-not-granted");
+    }
+
+    function test_terms_onlyErc721Approve_allowsErc721() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _approveCallData(address(0), mintedTokenId));
+        _callBeforeHook(_terms(PERMISSION_ERC721_APPROVE), executionCallData_);
+    }
+
+    function test_terms_onlyErc721Approve_blocksErc20() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 0));
+        _expectRevertBeforeHook(_terms(PERMISSION_ERC721_APPROVE), executionCallData_, "ApprovalRevocationEnforcer:permission-not-granted");
+    }
+
+    function test_terms_onlyErc721Approve_blocksSetApprovalForAll() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _setApprovalForAllCallData(operator, false));
+        _expectRevertBeforeHook(_terms(PERMISSION_ERC721_APPROVE), executionCallData_, "ApprovalRevocationEnforcer:permission-not-granted");
+    }
+
+    function test_terms_onlySetApprovalForAll_allowsErc721() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _setApprovalForAllCallData(operator, false));
+        _callBeforeHook(_terms(PERMISSION_SET_APPROVAL_FOR_ALL), executionCallData_);
+    }
+
+    function test_terms_onlySetApprovalForAll_allowsErc1155() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc1155), 0, _setApprovalForAllCallData(operator, false));
+        _callBeforeHook(_terms(PERMISSION_SET_APPROVAL_FOR_ALL), executionCallData_);
+    }
+
+    function test_terms_onlySetApprovalForAll_blocksErc20Approve() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 0));
+        _expectRevertBeforeHook(_terms(PERMISSION_SET_APPROVAL_FOR_ALL), executionCallData_, "ApprovalRevocationEnforcer:permission-not-granted");
+    }
+
+    function test_terms_onlySetApprovalForAll_blocksErc721Approve() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _approveCallData(address(0), mintedTokenId));
+        _expectRevertBeforeHook(_terms(PERMISSION_SET_APPROVAL_FOR_ALL), executionCallData_, "ApprovalRevocationEnforcer:permission-not-granted");
+    }
+
+    function test_terms_pair_erc20AndErc721Approve_blocksSetApprovalForAll() public {
+        uint8 flags_ = PERMISSION_ERC20_APPROVE | PERMISSION_ERC721_APPROVE;
+        // Both approve variants allowed.
+        _callBeforeHook(_terms(flags_), _encodeSingle(address(erc20), 0, _approveCallData(spender, 0)));
+        _callBeforeHook(_terms(flags_), _encodeSingle(address(erc721), 0, _approveCallData(address(0), mintedTokenId)));
+        // setApprovalForAll blocked.
+        _expectRevertBeforeHook(_terms(flags_), _encodeSingle(address(erc721), 0, _setApprovalForAllCallData(operator, false)), "ApprovalRevocationEnforcer:permission-not-granted");
+    }
+
+    function test_terms_pair_erc20AndSetApprovalForAll_blocksErc721Approve() public {
+        uint8 flags_ = PERMISSION_ERC20_APPROVE | PERMISSION_SET_APPROVAL_FOR_ALL;
+        _callBeforeHook(_terms(flags_), _encodeSingle(address(erc20), 0, _approveCallData(spender, 0)));
+        _callBeforeHook(_terms(flags_), _encodeSingle(address(erc721), 0, _setApprovalForAllCallData(operator, false)));
+        _expectRevertBeforeHook(_terms(flags_), _encodeSingle(address(erc721), 0, _approveCallData(address(0), mintedTokenId)), "ApprovalRevocationEnforcer:permission-not-granted");
     }
 
     ////////////////////////////// Valid cases (ERC-20 approve) //////////////////////////////
 
     function test_erc20_revokeSucceedsForExistingAllowance() public {
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 0));
-        _callBeforeHook(executionCallData_);
+        _callBeforeHook(_terms(PERMISSION_ALL), executionCallData_);
     }
 
     function test_erc20_revokeSucceedsForOneWeiAllowance() public {
@@ -104,21 +214,21 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(delegator);
         erc20.approve(other_, 1);
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(other_, 0));
-        _callBeforeHook(executionCallData_);
+        _callBeforeHook(_terms(PERMISSION_ALL), executionCallData_);
     }
 
     ////////////////////////////// Invalid cases (ERC-20 approve) //////////////////////////////
 
     function test_erc20_revertOnNonZeroAmount() public {
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 1));
-        _expectRevertBeforeHook(executionCallData_, "ApprovalRevocationEnforcer:non-zero-amount");
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:non-zero-amount");
     }
 
     function test_erc20_revertWhenNoApproval() public {
         address other_ = address(users.dave.deleGator);
         assertEq(erc20.allowance(delegator, other_), 0);
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(other_, 0));
-        _expectRevertBeforeHook(executionCallData_, "ApprovalRevocationEnforcer:no-approval-to-revoke");
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:no-approval-to-revoke");
     }
 
     function test_erc20_revertWhenAllowanceCallFails() public {
@@ -127,14 +237,14 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory executionCallData_ = _encodeSingle(address(enforcer), 0, _approveCallData(spender, 0));
         vm.prank(address(delegationManager));
         vm.expectRevert();
-        enforcer.beforeHook(hex"", hex"", singleDefaultMode, executionCallData_, bytes32(0), delegator, address(0));
+        enforcer.beforeHook(_terms(PERMISSION_ALL), hex"", singleDefaultMode, executionCallData_, bytes32(0), delegator, address(0));
     }
 
     ////////////////////////////// Valid cases (ERC-721 approve) //////////////////////////////
 
     function test_erc721_revokeSucceedsForExistingApproval() public {
         bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _approveCallData(address(0), mintedTokenId));
-        _callBeforeHook(executionCallData_);
+        _callBeforeHook(_terms(PERMISSION_ALL), executionCallData_);
     }
 
     ////////////////////////////// Invalid cases (ERC-721 approve) //////////////////////////////
@@ -147,7 +257,7 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(erc721.getApproved(freshTokenId_), address(0));
 
         bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _approveCallData(address(0), freshTokenId_));
-        _expectRevertBeforeHook(executionCallData_, "ApprovalRevocationEnforcer:no-approval-to-revoke");
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:no-approval-to-revoke");
     }
 
     function test_erc721_revertWhenGetApprovedCallFails() public {
@@ -156,7 +266,7 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _approveCallData(address(0), 9999));
         vm.prank(address(delegationManager));
         vm.expectRevert(abi.encodeWithSignature("ERC721NonexistentToken(uint256)", 9999));
-        enforcer.beforeHook(hex"", hex"", singleDefaultMode, executionCallData_, bytes32(0), delegator, address(0));
+        enforcer.beforeHook(_terms(PERMISSION_ALL), hex"", singleDefaultMode, executionCallData_, bytes32(0), delegator, address(0));
     }
 
     ////////////////////////////// Valid cases (setApprovalForAll) //////////////////////////////
@@ -164,27 +274,27 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
     function test_setApprovalForAll_erc721_revokeSucceeds() public {
         assertTrue(erc721.isApprovedForAll(delegator, operator));
         bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _setApprovalForAllCallData(operator, false));
-        _callBeforeHook(executionCallData_);
+        _callBeforeHook(_terms(PERMISSION_ALL), executionCallData_);
     }
 
     function test_setApprovalForAll_erc1155_revokeSucceeds() public {
         assertTrue(erc1155.isApprovedForAll(delegator, operator));
         bytes memory executionCallData_ = _encodeSingle(address(erc1155), 0, _setApprovalForAllCallData(operator, false));
-        _callBeforeHook(executionCallData_);
+        _callBeforeHook(_terms(PERMISSION_ALL), executionCallData_);
     }
 
     ////////////////////////////// Invalid cases (setApprovalForAll) //////////////////////////////
 
     function test_setApprovalForAll_revertWhenSettingTrue() public {
         bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _setApprovalForAllCallData(operator, true));
-        _expectRevertBeforeHook(executionCallData_, "ApprovalRevocationEnforcer:not-a-revocation");
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:not-a-revocation");
     }
 
     function test_setApprovalForAll_revertWhenNotApproved() public {
         address other_ = address(users.dave.deleGator);
         assertFalse(erc721.isApprovedForAll(delegator, other_));
         bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _setApprovalForAllCallData(other_, false));
-        _expectRevertBeforeHook(executionCallData_, "ApprovalRevocationEnforcer:no-approval-to-revoke");
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:no-approval-to-revoke");
     }
 
     function test_setApprovalForAll_revertWhenIsApprovedForAllCallFails() public {
@@ -193,43 +303,43 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory executionCallData_ = _encodeSingle(address(enforcer), 0, _setApprovalForAllCallData(operator, false));
         vm.prank(address(delegationManager));
         vm.expectRevert();
-        enforcer.beforeHook(hex"", hex"", singleDefaultMode, executionCallData_, bytes32(0), delegator, address(0));
+        enforcer.beforeHook(_terms(PERMISSION_ALL), hex"", singleDefaultMode, executionCallData_, bytes32(0), delegator, address(0));
     }
 
     ////////////////////////////// Generic invalid cases //////////////////////////////
 
     function test_revertOnNonZeroValue() public {
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 1, _approveCallData(spender, 0));
-        _expectRevertBeforeHook(executionCallData_, "ApprovalRevocationEnforcer:invalid-value");
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:invalid-value");
     }
 
     function test_revertOnInvalidExecutionLengthShort() public {
         bytes memory shortCallData_ = abi.encodePacked(IERC20.approve.selector, bytes32(uint256(uint160(spender))));
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, shortCallData_);
-        _expectRevertBeforeHook(executionCallData_, "ApprovalRevocationEnforcer:invalid-execution-length");
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:invalid-execution-length");
     }
 
     function test_revertOnInvalidExecutionLengthLong() public {
         bytes memory longCallData_ = abi.encodePacked(_approveCallData(spender, 0), bytes1(0x00));
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, longCallData_);
-        _expectRevertBeforeHook(executionCallData_, "ApprovalRevocationEnforcer:invalid-execution-length");
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:invalid-execution-length");
     }
 
     function test_revertOnInvalidMethod() public {
         bytes memory wrongMethodCallData_ = abi.encodeWithSelector(IERC20.transfer.selector, spender, uint256(0));
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, wrongMethodCallData_);
-        _expectRevertBeforeHook(executionCallData_, "ApprovalRevocationEnforcer:invalid-method");
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:invalid-method");
     }
 
     function test_revertWithInvalidCallTypeMode() public {
         bytes memory executionCallData_ = ExecutionLib.encodeBatch(new Execution[](2));
         vm.expectRevert("CaveatEnforcer:invalid-call-type");
-        enforcer.beforeHook(hex"", hex"", batchDefaultMode, executionCallData_, bytes32(0), delegator, address(0));
+        enforcer.beforeHook(_terms(PERMISSION_ALL), hex"", batchDefaultMode, executionCallData_, bytes32(0), delegator, address(0));
     }
 
     function test_revertWithInvalidExecutionMode() public {
         vm.expectRevert("CaveatEnforcer:invalid-execution-type");
-        enforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), delegator, address(0));
+        enforcer.beforeHook(_terms(PERMISSION_ALL), hex"", singleTryMode, hex"", bytes32(0), delegator, address(0));
     }
 
     ////////////////////////////// Integration //////////////////////////////
@@ -241,7 +351,7 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
             Execution({ target: address(erc20), value: 0, callData: _approveCallData(spender, 0) });
 
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(enforcer), terms: hex"" });
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(enforcer), terms: _terms(PERMISSION_ALL) });
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: delegator,
@@ -266,7 +376,7 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
             Execution({ target: address(erc721), value: 0, callData: _approveCallData(address(0), mintedTokenId) });
 
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(enforcer), terms: hex"" });
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(enforcer), terms: _terms(PERMISSION_ALL) });
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: delegator,
@@ -291,7 +401,7 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
             Execution({ target: address(erc1155), value: 0, callData: _setApprovalForAllCallData(operator, false) });
 
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(enforcer), terms: hex"" });
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(enforcer), terms: _terms(PERMISSION_ALL) });
         Delegation memory delegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: delegator,
@@ -309,6 +419,35 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
         assertFalse(erc1155.isApprovedForAll(delegator, operator));
     }
 
+    function test_integration_onlyErc20_revokesErc20AllowanceAndBlocksOtherPrimitives() public {
+        assertEq(erc20.allowance(delegator, spender), 42 ether);
+
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(enforcer), terms: _terms(PERMISSION_ERC20_APPROVE) });
+        Delegation memory delegation_ = Delegation({
+            delegate: address(users.bob.deleGator),
+            delegator: delegator,
+            authority: ROOT_AUTHORITY,
+            caveats: caveats_,
+            salt: 0,
+            signature: hex""
+        });
+        delegation_ = signDelegation(users.alice, delegation_);
+
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = delegation_;
+
+        // ERC-20 revocation succeeds.
+        Execution memory erc20Execution_ = Execution({ target: address(erc20), value: 0, callData: _approveCallData(spender, 0) });
+        invokeDelegation_UserOp(users.bob, delegations_, erc20Execution_);
+        assertEq(erc20.allowance(delegator, spender), 0);
+
+        // ERC-721 approve revocation is blocked (UserOp swallows revert; approval unchanged).
+        Execution memory erc721Execution_ = Execution({ target: address(erc721), value: 0, callData: _approveCallData(address(0), mintedTokenId) });
+        invokeDelegation_UserOp(users.bob, delegations_, erc721Execution_);
+        assertEq(erc721.getApproved(mintedTokenId), spender);
+    }
+
     ////////////////////////////// Redelegation //////////////////////////////
 
     /**
@@ -320,7 +459,7 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(erc20.allowance(delegator, spender), 42 ether);
 
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(enforcer), terms: hex"" });
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(enforcer), terms: _terms(PERMISSION_ALL) });
         Delegation memory aliceDelegation_ = Delegation({
             delegate: address(users.bob.deleGator),
             delegator: delegator,
@@ -378,7 +517,7 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
         bytes32 aliceDelegationHash_ = EncoderLib._getDelegationHash(aliceDelegation_);
 
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ args: hex"", enforcer: address(enforcer), terms: hex"" });
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(enforcer), terms: _terms(PERMISSION_ALL) });
         Delegation memory bobDelegation_ = Delegation({
             delegate: address(users.carol.deleGator),
             delegator: address(users.bob.deleGator),
@@ -413,14 +552,14 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         vm.expectRevert("ApprovalRevocationEnforcer:no-approval-to-revoke");
-        enforcer.beforeHook(hex"", hex"", singleDefaultMode, executionCallData_, bytes32(0), intermediate_, address(0));
+        enforcer.beforeHook(_terms(PERMISSION_ALL), hex"", singleDefaultMode, executionCallData_, bytes32(0), intermediate_, address(0));
 
         // And once Bob has an allowance of his own, the pre-check passes against Bob's state (regardless of who
         // would actually execute the call).
         vm.prank(intermediate_);
         erc20.approve(spender, 1);
         vm.prank(address(delegationManager));
-        enforcer.beforeHook(hex"", hex"", singleDefaultMode, executionCallData_, bytes32(0), intermediate_, address(0));
+        enforcer.beforeHook(_terms(PERMISSION_ALL), hex"", singleDefaultMode, executionCallData_, bytes32(0), intermediate_, address(0));
     }
 
     ////////////////////////////// Additional coverage //////////////////////////////
@@ -434,7 +573,7 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _approveCallData(spender, 0));
         vm.prank(address(delegationManager));
         vm.expectRevert();
-        enforcer.beforeHook(hex"", hex"", singleDefaultMode, executionCallData_, bytes32(0), delegator, address(0));
+        enforcer.beforeHook(_terms(PERMISSION_ALL), hex"", singleDefaultMode, executionCallData_, bytes32(0), delegator, address(0));
     }
 
     /**
@@ -447,7 +586,7 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(address(0), 0));
         vm.prank(address(delegationManager));
         vm.expectRevert();
-        enforcer.beforeHook(hex"", hex"", singleDefaultMode, executionCallData_, bytes32(0), delegator, address(0));
+        enforcer.beforeHook(_terms(PERMISSION_ALL), hex"", singleDefaultMode, executionCallData_, bytes32(0), delegator, address(0));
     }
 
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {

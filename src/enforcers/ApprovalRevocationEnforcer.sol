@@ -10,10 +10,20 @@ import { ModeCode } from "../utils/Types.sol";
 
 /**
  * @title ApprovalRevocationEnforcer
- * @notice Allows a delegate to clear an existing token approval. Covers the three standard approval primitives:
- *   - ERC-20 `approve(spender, 0)`
- *   - ERC-721 per-token `approve(address(0), tokenId)`
- *   - ERC-721 / ERC-1155 `setApprovalForAll(operator, false)`
+ * @notice Allows a delegate to clear existing token approvals. The delegator controls which of the three
+ * standard revocation primitives the delegate may perform via a 1-byte bitmask in `terms`:
+ *
+ *   Bit 0 (`0x01`) — ERC-20 `approve(spender, 0)` (spender non-zero, amount zero)
+ *   Bit 1 (`0x02`) — ERC-721 per-token `approve(address(0), tokenId)`
+ *   Bit 2 (`0x04`) — ERC-721 / ERC-1155 `setApprovalForAll(operator, false)`
+ *   Bits 3-7       — Reserved; MUST be zero.
+ *
+ * Examples:
+ *   `0x01` — delegate may only clear ERC-20 allowances.
+ *   `0x04` — delegate may only revoke operator approvals.
+ *   `0x07` — delegate may use all three revocation primitives.
+ *
+ * Terms MUST be exactly 1 byte, MUST not be zero, and MUST NOT set any reserved bit.
  *
  * @dev ERC-721 and ERC-1155 intentionally share the `setApprovalForAll(address,bool)` selector; this enforcer
  * handles both via the `IERC721` interface (the selector and ABI are identical, so a typed `IERC1155` import is
@@ -71,25 +81,36 @@ import { ModeCode } from "../utils/Types.sol";
  * the hook runs. It is not a race-free invariant: the delegator could independently clear the approval between
  * the hook and the execution. In that case the execution is still safe — it simply becomes a no-op.
  *
- * @dev This enforcer does not consume any terms and is not scoped to a specific target contract. Delegators who
- * want to restrict revocation to specific tokens should compose this enforcer with `AllowedTargetsEnforcer`.
+ * @dev Delegators who want to restrict revocation to specific tokens should compose this enforcer with
+ * `AllowedTargetsEnforcer`.
  *
  * @dev This enforcer operates only in single call type and default execution mode.
  */
 contract ApprovalRevocationEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
 
+    ////////////////////////////// Constants //////////////////////////////
+
+    /// @dev Permission flags packed into the single-byte terms bitmask.
+    uint8 internal constant _PERMISSION_ERC20_APPROVE = 0x01;
+    uint8 internal constant _PERMISSION_ERC721_APPROVE = 0x02;
+    uint8 internal constant _PERMISSION_SET_APPROVAL_FOR_ALL = 0x04;
+    uint8 internal constant _PERMISSION_MASK =
+        _PERMISSION_ERC20_APPROVE | _PERMISSION_ERC721_APPROVE | _PERMISSION_SET_APPROVAL_FOR_ALL;
+
     ////////////////////////////// Public Methods //////////////////////////////
 
     /**
-     * @notice Requires the execution to revoke an existing token approval owned by `_delegator`.
+     * @notice Requires the execution to revoke an existing token approval owned by `_delegator`, and that the
+     * revocation primitive used is permitted by `_terms`.
+     * @param _terms 1-byte bitmask selecting which revocation primitives are allowed. See `getTermsInfo`.
      * @param _mode Must be single call type and default execution mode.
      * @param _executionCallData Single execution targeting the token contract.
      * @param _delegator The delegator of the delegation carrying this caveat (link-local, not the chain root).
      * See the contract-level NatSpec for the implications in redelegation chains.
      */
     function beforeHook(
-        bytes calldata,
+        bytes calldata _terms,
         bytes calldata,
         ModeCode _mode,
         bytes calldata _executionCallData,
@@ -103,6 +124,9 @@ contract ApprovalRevocationEnforcer is CaveatEnforcer {
         onlySingleCallTypeMode(_mode)
         onlyDefaultExecutionMode(_mode)
     {
+        // Validate terms and capture the raw flags byte (1 stack slot vs. 3 bools).
+        uint8 flags_ = _parseFlags(_terms);
+
         (address target_, uint256 value_, bytes calldata callData_) = _executionCallData.decodeSingle();
 
         require(value_ == 0, "ApprovalRevocationEnforcer:invalid-value");
@@ -110,20 +134,21 @@ contract ApprovalRevocationEnforcer is CaveatEnforcer {
         // `setApprovalForAll(address,bool)`.
         require(callData_.length == 68, "ApprovalRevocationEnforcer:invalid-execution-length");
 
-        bytes4 selector_ = bytes4(callData_[0:4]);
-        if (selector_ == IERC721.setApprovalForAll.selector) {
+        if (bytes4(callData_[0:4]) == IERC721.setApprovalForAll.selector) {
+            require(flags_ & _PERMISSION_SET_APPROVAL_FOR_ALL != 0, "ApprovalRevocationEnforcer:permission-not-granted");
             _validateOperatorRevocation(target_, callData_, _delegator);
             return;
         }
-        if (selector_ == IERC20.approve.selector) {
+        if (bytes4(callData_[0:4]) == IERC20.approve.selector) {
             // ERC-20 and ERC-721 share `approve(address,uint256)`. Disambiguate by the first parameter: ERC-721
             // revokes via `approve(address(0), tokenId)`, while ERC-20 revokes via `approve(spender, 0)` with a
             // non-zero spender.
-            address firstParam_ = address(uint160(uint256(bytes32(callData_[4:36]))));
-            if (firstParam_ == address(0)) {
+            if (address(uint160(uint256(bytes32(callData_[4:36])))) == address(0)) {
+                require(flags_ & _PERMISSION_ERC721_APPROVE != 0, "ApprovalRevocationEnforcer:permission-not-granted");
                 _validateErc721Revocation(target_, callData_);
             } else {
-                _validateErc20Revocation(target_, callData_, _delegator, firstParam_);
+                require(flags_ & _PERMISSION_ERC20_APPROVE != 0, "ApprovalRevocationEnforcer:permission-not-granted");
+                _validateErc20Revocation(target_, callData_, _delegator, address(uint160(uint256(bytes32(callData_[4:36])))));
             }
             return;
         }
@@ -131,6 +156,16 @@ contract ApprovalRevocationEnforcer is CaveatEnforcer {
     }
 
     ////////////////////////////// Internal Methods //////////////////////////////
+
+    /**
+     * @dev Validates and returns the raw permission flags byte. Reverts on invalid terms.
+     */
+    function _parseFlags(bytes calldata _terms) private pure returns (uint8 flags_) {
+        require(_terms.length == 1, "ApprovalRevocationEnforcer:invalid-terms-length");
+        flags_ = uint8(_terms[0]);
+        require(flags_ != 0, "ApprovalRevocationEnforcer:no-permissions");
+        require(flags_ & ~_PERMISSION_MASK == 0, "ApprovalRevocationEnforcer:invalid-terms");
+    }
 
     /**
      * @dev Validates an ERC-20 `approve(spender, 0)` revocation. Requires `allowance(delegator, spender) > 0` on
