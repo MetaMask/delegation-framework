@@ -7,41 +7,41 @@
 # Default Chains to Iterate Over
 #################################
 CHAIN_IDS=(
-  1          # ethereum
-  11155111   # sepolia
-  560048     # hoodi
+  # 1          # ethereum
+  # 11155111   # sepolia
+  # 560048     # hoodi
   59144      # linea
-  59141      # linea-sepolia
-  8453       # base
-  84532      # base-sepolia
-  10         # optimism
-  11155420   # optimism-sepolia
-  42161      # arbitrum
-  42170      # arbitrum nova
-  421614     # arbitrum-sepolia
-  137        # polygon
-  80002      # polygon-amoy
-  100        # gnosis
-  10200      # gnosis-chiado
-  56         # binance
-  97         # binance-testnet
-  80094      # berachain
-  80069      # berachain-testnet
-  130        # unichain
-  1301       # unichain-sepolia
-  10143      # monad-testnet
-  5115       # citrea-testnet
-  57073      # ink
-  763373     # ink-sepolia
-  1329       # sei
-  1328       # sei-testnet
-  146        # sonic
-  14601      # sonic-testnet
-  143        # monad
-  4326       # megaeth
-  6343       # megaeth-testnet
-  2021       # ronin saigon testnet
-  2020       # ronin
+  # 59141      # linea-sepolia
+  # 8453       # base
+  # 84532      # base-sepolia
+  # 10         # optimism
+  # 11155420   # optimism-sepolia
+  # 42161      # arbitrum
+  # 42170      # arbitrum nova
+  # 421614     # arbitrum-sepolia
+  # 137        # polygon
+  # 80002      # polygon-amoy
+  # 100        # gnosis
+  # 10200      # gnosis-chiado
+  # 56         # binance
+  # 97         # binance-testnet
+  # 80094      # berachain
+  # 80069      # berachain-testnet
+  # 130        # unichain
+  # 1301       # unichain-sepolia
+  # 10143      # monad-testnet
+  # 5115       # citrea-testnet
+  # 57073      # ink
+  # 763373     # ink-sepolia
+  # 1329       # sei
+  # 1328       # sei-testnet
+  # 146        # sonic
+  # 14601      # sonic-testnet
+  # 143        # monad
+  # 4326       # megaeth
+  # 6343       # megaeth-testnet
+  # 2021       # ronin saigon testnet
+  # 2020       # ronin
 )
 
 ##########################################
