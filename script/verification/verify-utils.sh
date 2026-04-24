@@ -94,8 +94,8 @@ get_chain_config() {
         4114)     config=("key" "blockscout" "$CITREA_RPC_URL" "https://explorer.mainnet.citrea.xyz/api") ;; # citrea
         57073)    config=("key" "blockscout" "$INK_RPC_URL" "https://explorer.inkonchain.com/api") ;; # ink
         763373)   config=("key" "blockscout" "$INK_SEPOLIA_RPC_URL" "https://explorer-sepolia.inkonchain.com/api") ;; # ink-sepolia
-        1329)     config=("key" "custom" "$SEI_RPC_URL" "https://seitrace.com/pacific-1/api") ;; # sei
-        1328)     config=("key" "custom" "$SEI_TESTNET_RPC_URL" "https://seitrace.com/atlantic-2/api") ;; # sei-testnet
+        1329)     config=("$ETHERSCAN_API_KEY" "etherscan" "$SEI_RPC_URL" "https://api.etherscan.io/v2/api?chainid=1329") ;; # sei
+        1328)     config=("$ETHERSCAN_API_KEY" "etherscan" "$SEI_TESTNET_RPC_URL" "https://api.etherscan.io/v2/api?chainid=1328") ;; # sei-testnet
         146)      config=("$ETHERSCAN_API_KEY" "etherscan" "$SONIC_RPC_URL" "https://api.etherscan.io/v2/api?chainid=146") ;; # sonic
         14601)    config=("$ETHERSCAN_API_KEY" "etherscan" "$SONIC_TESTNET_RPC_URL" "https://api.etherscan.io/v2/api?chainid=14601") ;; # sonic-testnet
         143)      config=("key" "sourcify" "$MONAD_RPC_URL" "https://sourcify-api-monad.blockvision.org/") ;; # monad
