@@ -135,7 +135,7 @@ contract ApprovalRevocationEnforcer is CaveatEnforcer {
         require(callData_.length == 68, "ApprovalRevocationEnforcer:invalid-execution-length");
 
         if (bytes4(callData_[0:4]) == IERC721.setApprovalForAll.selector) {
-            require(flags_ & _PERMISSION_SET_APPROVAL_FOR_ALL != 0, "ApprovalRevocationEnforcer:permission-not-granted");
+            require(flags_ & _PERMISSION_SET_APPROVAL_FOR_ALL != 0, "ApprovalRevocationEnforcer:setApprovalForAll-not-allowed");
             _validateOperatorRevocation(target_, callData_, _delegator);
             return;
         }
@@ -144,10 +144,10 @@ contract ApprovalRevocationEnforcer is CaveatEnforcer {
             // revokes via `approve(address(0), tokenId)`, while ERC-20 revokes via `approve(spender, 0)` with a
             // non-zero spender.
             if (address(uint160(uint256(bytes32(callData_[4:36])))) == address(0)) {
-                require(flags_ & _PERMISSION_ERC721_APPROVE != 0, "ApprovalRevocationEnforcer:permission-not-granted");
+                require(flags_ & _PERMISSION_ERC721_APPROVE != 0, "ApprovalRevocationEnforcer:erc721-approve-not-allowed");
                 _validateErc721Revocation(target_, callData_);
             } else {
-                require(flags_ & _PERMISSION_ERC20_APPROVE != 0, "ApprovalRevocationEnforcer:permission-not-granted");
+                require(flags_ & _PERMISSION_ERC20_APPROVE != 0, "ApprovalRevocationEnforcer:erc20-approve-not-allowed");
                 _validateErc20Revocation(target_, callData_, _delegator, address(uint160(uint256(bytes32(callData_[4:36])))));
             }
             return;
@@ -163,7 +163,7 @@ contract ApprovalRevocationEnforcer is CaveatEnforcer {
     function _parseFlags(bytes calldata _terms) private pure returns (uint8 flags_) {
         require(_terms.length == 1, "ApprovalRevocationEnforcer:invalid-terms-length");
         flags_ = uint8(_terms[0]);
-        require(flags_ != 0, "ApprovalRevocationEnforcer:no-permissions");
+        require(flags_ != 0, "ApprovalRevocationEnforcer:no-methods-allowed");
         require(flags_ & ~_PERMISSION_MASK == 0, "ApprovalRevocationEnforcer:invalid-terms");
     }
 

@@ -116,7 +116,7 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
 
     function test_terms_revertOnZeroMask() public {
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 0));
-        _expectRevertBeforeHook(_terms(0x00), executionCallData_, "ApprovalRevocationEnforcer:no-permissions");
+        _expectRevertBeforeHook(_terms(0x00), executionCallData_, "ApprovalRevocationEnforcer:no-methods-allowed");
     }
 
     function test_terms_revertOnReservedBitSet_bit3() public {
@@ -143,12 +143,12 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
 
     function test_terms_onlyErc20_blocksErc721Approve() public {
         bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _approveCallData(address(0), mintedTokenId));
-        _expectRevertBeforeHook(_terms(PERMISSION_ERC20_APPROVE), executionCallData_, "ApprovalRevocationEnforcer:permission-not-granted");
+        _expectRevertBeforeHook(_terms(PERMISSION_ERC20_APPROVE), executionCallData_, "ApprovalRevocationEnforcer:erc721-approve-not-allowed");
     }
 
     function test_terms_onlyErc20_blocksSetApprovalForAll() public {
         bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _setApprovalForAllCallData(operator, false));
-        _expectRevertBeforeHook(_terms(PERMISSION_ERC20_APPROVE), executionCallData_, "ApprovalRevocationEnforcer:permission-not-granted");
+        _expectRevertBeforeHook(_terms(PERMISSION_ERC20_APPROVE), executionCallData_, "ApprovalRevocationEnforcer:setApprovalForAll-not-allowed");
     }
 
     function test_terms_onlyErc721Approve_allowsErc721() public {
@@ -158,12 +158,12 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
 
     function test_terms_onlyErc721Approve_blocksErc20() public {
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 0));
-        _expectRevertBeforeHook(_terms(PERMISSION_ERC721_APPROVE), executionCallData_, "ApprovalRevocationEnforcer:permission-not-granted");
+        _expectRevertBeforeHook(_terms(PERMISSION_ERC721_APPROVE), executionCallData_, "ApprovalRevocationEnforcer:erc20-approve-not-allowed");
     }
 
     function test_terms_onlyErc721Approve_blocksSetApprovalForAll() public {
         bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _setApprovalForAllCallData(operator, false));
-        _expectRevertBeforeHook(_terms(PERMISSION_ERC721_APPROVE), executionCallData_, "ApprovalRevocationEnforcer:permission-not-granted");
+        _expectRevertBeforeHook(_terms(PERMISSION_ERC721_APPROVE), executionCallData_, "ApprovalRevocationEnforcer:setApprovalForAll-not-allowed");
     }
 
     function test_terms_onlySetApprovalForAll_allowsErc721() public {
@@ -178,12 +178,12 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
 
     function test_terms_onlySetApprovalForAll_blocksErc20Approve() public {
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 0));
-        _expectRevertBeforeHook(_terms(PERMISSION_SET_APPROVAL_FOR_ALL), executionCallData_, "ApprovalRevocationEnforcer:permission-not-granted");
+        _expectRevertBeforeHook(_terms(PERMISSION_SET_APPROVAL_FOR_ALL), executionCallData_, "ApprovalRevocationEnforcer:erc20-approve-not-allowed");
     }
 
     function test_terms_onlySetApprovalForAll_blocksErc721Approve() public {
         bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _approveCallData(address(0), mintedTokenId));
-        _expectRevertBeforeHook(_terms(PERMISSION_SET_APPROVAL_FOR_ALL), executionCallData_, "ApprovalRevocationEnforcer:permission-not-granted");
+        _expectRevertBeforeHook(_terms(PERMISSION_SET_APPROVAL_FOR_ALL), executionCallData_, "ApprovalRevocationEnforcer:erc721-approve-not-allowed");
     }
 
     function test_terms_pair_erc20AndErc721Approve_blocksSetApprovalForAll() public {
@@ -192,14 +192,14 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
         _callBeforeHook(_terms(flags_), _encodeSingle(address(erc20), 0, _approveCallData(spender, 0)));
         _callBeforeHook(_terms(flags_), _encodeSingle(address(erc721), 0, _approveCallData(address(0), mintedTokenId)));
         // setApprovalForAll blocked.
-        _expectRevertBeforeHook(_terms(flags_), _encodeSingle(address(erc721), 0, _setApprovalForAllCallData(operator, false)), "ApprovalRevocationEnforcer:permission-not-granted");
+        _expectRevertBeforeHook(_terms(flags_), _encodeSingle(address(erc721), 0, _setApprovalForAllCallData(operator, false)), "ApprovalRevocationEnforcer:setApprovalForAll-not-allowed");
     }
 
     function test_terms_pair_erc20AndSetApprovalForAll_blocksErc721Approve() public {
         uint8 flags_ = PERMISSION_ERC20_APPROVE | PERMISSION_SET_APPROVAL_FOR_ALL;
         _callBeforeHook(_terms(flags_), _encodeSingle(address(erc20), 0, _approveCallData(spender, 0)));
         _callBeforeHook(_terms(flags_), _encodeSingle(address(erc721), 0, _setApprovalForAllCallData(operator, false)));
-        _expectRevertBeforeHook(_terms(flags_), _encodeSingle(address(erc721), 0, _approveCallData(address(0), mintedTokenId)), "ApprovalRevocationEnforcer:permission-not-granted");
+        _expectRevertBeforeHook(_terms(flags_), _encodeSingle(address(erc721), 0, _approveCallData(address(0), mintedTokenId)), "ApprovalRevocationEnforcer:erc721-approve-not-allowed");
     }
 
     ////////////////////////////// Valid cases (ERC-20 approve) //////////////////////////////
