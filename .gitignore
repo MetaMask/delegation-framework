@@ -7,8 +7,10 @@ out/
 
 report/
 
-# Docs
-docs/
+# Docs (ignore by default; negated paths are tracked — use `git add` without -f)
+docs/*
+!docs/DelegationMetaSwapAdapter-v2-changelog.md
+!docs/API_SIGNED_SLIPPAGE_CAP.md
 
 # Dotenv file
 *.env
