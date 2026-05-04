@@ -12,6 +12,7 @@ import { VedaAdapter } from "../src/helpers/VedaAdapter.sol";
  * @dev Fill the required variables in the .env file
  * @dev run the script with:
  * forge script script/DeployVedaAdapter.s.sol --rpc-url <your_rpc_url> --private-key $PRIVATE_KEY --broadcast
+ * For deploying on monad add --skip-simulation, because of how monad works the simulation fails because the token is not activated.
  */
 contract DeployVedaAdapter is Script {
     bytes32 salt;
@@ -43,6 +44,12 @@ contract DeployVedaAdapter is Script {
 
     function run() public {
         console2.log("~~~");
+
+        // Foundry's fork mode cannot interact with mUSD on Monad (NotActivated in revm).
+        // Mock the approve call so simulation passes; the real broadcast executes the
+        // actual constructor on-chain where the token works correctly.
+        // vm.mockCall(depositToken, abi.encodeWithSelector(bytes4(keccak256("approve(address,uint256)"))), abi.encode(true));
+
         vm.startBroadcast();
 
         address vedaAdapter =
@@ -50,5 +57,7 @@ contract DeployVedaAdapter is Script {
         console2.log("VedaAdapter: %s", vedaAdapter);
 
         vm.stopBroadcast();
+
+        // vm.clearMockedCalls();
     }
 }
