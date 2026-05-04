@@ -37,7 +37,16 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
     uint8 internal constant PERMISSION_ERC20_APPROVE = 0x01;
     uint8 internal constant PERMISSION_ERC721_APPROVE = 0x02;
     uint8 internal constant PERMISSION_SET_APPROVAL_FOR_ALL = 0x04;
-    uint8 internal constant PERMISSION_ALL = 0x07;
+    uint8 internal constant PERMISSION_PERMIT2_APPROVE = 0x08;
+    uint8 internal constant PERMISSION_PERMIT2_LOCKDOWN = 0x10;
+    uint8 internal constant PERMISSION_PERMIT2_INVALIDATE_NONCES = 0x20;
+    uint8 internal constant PERMISSION_ALL = 0x3F;
+
+    /// @dev Mirrors the contract constants.
+    address internal constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
+    bytes4 internal constant PERMIT2_APPROVE_SELECTOR = 0x87517c45;
+    bytes4 internal constant PERMIT2_LOCKDOWN_SELECTOR = 0xcc53287f;
+    bytes4 internal constant PERMIT2_INVALIDATE_NONCES_SELECTOR = 0x65d9723c;
 
     ////////////////////////////// Set up //////////////////////////////
 
@@ -87,6 +96,38 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
         return abi.encodeWithSelector(IERC721.setApprovalForAll.selector, _operator, _approved);
     }
 
+    function _permit2ApproveCallData(address _token, address _spender, uint160 _amount, uint48 _expiration)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encodeWithSelector(PERMIT2_APPROVE_SELECTOR, _token, _spender, _amount, _expiration);
+    }
+
+    /// @dev Mirrors Permit2's `TokenSpenderPair { address token; address spender; }`. Defined locally to avoid a
+    /// direct Permit2 dependency.
+    struct TokenSpenderPair {
+        address token;
+        address spender;
+    }
+
+    function _permit2LockdownCallData(TokenSpenderPair[] memory _pairs) internal pure returns (bytes memory) {
+        return abi.encodeWithSelector(PERMIT2_LOCKDOWN_SELECTOR, _pairs);
+    }
+
+    function _singlePair(address _token, address _spender) internal pure returns (TokenSpenderPair[] memory pairs_) {
+        pairs_ = new TokenSpenderPair[](1);
+        pairs_[0] = TokenSpenderPair({ token: _token, spender: _spender });
+    }
+
+    function _permit2InvalidateNoncesCallData(address _token, address _spender, uint48 _newNonce)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encodeWithSelector(PERMIT2_INVALIDATE_NONCES_SELECTOR, _token, _spender, _newNonce);
+    }
+
     function _encodeSingle(address _target, uint256 _value, bytes memory _callData) internal pure returns (bytes memory) {
         return ExecutionLib.encodeSingle(_target, _value, _callData);
     }
@@ -119,9 +160,9 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
         _expectRevertBeforeHook(_terms(0x00), executionCallData_, "ApprovalRevocationEnforcer:no-methods-allowed");
     }
 
-    function test_terms_revertOnReservedBitSet_bit3() public {
+    function test_terms_revertOnReservedBitSet_bit6() public {
         bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 0));
-        _expectRevertBeforeHook(_terms(0x08), executionCallData_, "ApprovalRevocationEnforcer:invalid-terms");
+        _expectRevertBeforeHook(_terms(0x40), executionCallData_, "ApprovalRevocationEnforcer:invalid-terms");
     }
 
     function test_terms_revertOnReservedBitSet_highBit() public {
@@ -304,6 +345,269 @@ contract ApprovalRevocationEnforcerTest is CaveatEnforcerBaseTest {
         vm.prank(address(delegationManager));
         vm.expectRevert();
         enforcer.beforeHook(_terms(PERMISSION_ALL), hex"", singleDefaultMode, executionCallData_, bytes32(0), delegator, address(0));
+    }
+
+    ////////////////////////////// Per-flag gating (Permit2 approve) //////////////////////////////
+
+    function test_terms_onlyPermit2Approve_allowsPermit2Approve() public {
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 0, _permit2ApproveCallData(address(erc20), spender, 0, 0));
+        _callBeforeHook(_terms(PERMISSION_PERMIT2_APPROVE), executionCallData_);
+    }
+
+    function test_terms_onlyPermit2Approve_blocksErc20() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 0));
+        _expectRevertBeforeHook(_terms(PERMISSION_PERMIT2_APPROVE), executionCallData_, "ApprovalRevocationEnforcer:erc20-approve-not-allowed");
+    }
+
+    function test_terms_onlyPermit2Approve_blocksErc721Approve() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _approveCallData(address(0), mintedTokenId));
+        _expectRevertBeforeHook(_terms(PERMISSION_PERMIT2_APPROVE), executionCallData_, "ApprovalRevocationEnforcer:erc721-approve-not-allowed");
+    }
+
+    function test_terms_onlyPermit2Approve_blocksSetApprovalForAll() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _setApprovalForAllCallData(operator, false));
+        _expectRevertBeforeHook(_terms(PERMISSION_PERMIT2_APPROVE), executionCallData_, "ApprovalRevocationEnforcer:setApprovalForAll-not-allowed");
+    }
+
+    function test_terms_withoutPermit2Approve_blocksPermit2Approve() public {
+        uint8 flags_ = PERMISSION_ERC20_APPROVE | PERMISSION_ERC721_APPROVE | PERMISSION_SET_APPROVAL_FOR_ALL;
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 0, _permit2ApproveCallData(address(erc20), spender, 0, 0));
+        _expectRevertBeforeHook(_terms(flags_), executionCallData_, "ApprovalRevocationEnforcer:permit2-approve-not-allowed");
+    }
+
+    ////////////////////////////// Valid cases (Permit2 approve) //////////////////////////////
+
+    function test_permit2_revokeSucceeds() public {
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 0, _permit2ApproveCallData(address(erc20), spender, 0, 0));
+        _callBeforeHook(_terms(PERMISSION_ALL), executionCallData_);
+    }
+
+    function test_permit2_revokeSucceedsWithArbitraryTokenAndSpender() public {
+        // The enforcer does not constrain the (token, spender) pair on its own — those should be pinned via
+        // composition (e.g. AllowedCalldataEnforcer). Here we just verify the hook accepts arbitrary values.
+        bytes memory executionCallData_ =
+            _encodeSingle(PERMIT2, 0, _permit2ApproveCallData(address(0xdead), address(0xbeef), 0, 0));
+        _callBeforeHook(_terms(PERMISSION_ALL), executionCallData_);
+    }
+
+    ////////////////////////////// Invalid cases (Permit2 approve) //////////////////////////////
+
+    function test_permit2_revertOnNonPermit2Target() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _permit2ApproveCallData(address(erc20), spender, 0, 0));
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:invalid-permit2-target");
+    }
+
+    function test_permit2_revertOnNonZeroAmount() public {
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 0, _permit2ApproveCallData(address(erc20), spender, 1, 0));
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:non-zero-amount");
+    }
+
+    function test_permit2_revertOnNonZeroExpiration() public {
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 0, _permit2ApproveCallData(address(erc20), spender, 0, 1));
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:non-zero-expiration");
+    }
+
+    function test_permit2_revertOnMaxNonZeroAmount() public {
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 0, _permit2ApproveCallData(address(erc20), spender, type(uint160).max, 0));
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:non-zero-amount");
+    }
+
+    function test_permit2_revertOnMaxNonZeroExpiration() public {
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 0, _permit2ApproveCallData(address(erc20), spender, 0, type(uint48).max));
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:non-zero-expiration");
+    }
+
+    function test_permit2_revertOnTruncatedCallData() public {
+        // 4 selector + 3 words = 100 bytes; matches Permit2 selector dispatch but fails the length gate.
+        bytes memory truncated_ = abi.encodePacked(
+            PERMIT2_APPROVE_SELECTOR, bytes32(uint256(uint160(address(erc20)))), bytes32(uint256(uint160(spender))), bytes32(uint256(0))
+        );
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 0, truncated_);
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:permit2-invalid-execution-length");
+    }
+
+    function test_permit2_revertOnExtraTrailingByte() public {
+        bytes memory longCallData_ = abi.encodePacked(_permit2ApproveCallData(address(erc20), spender, 0, 0), bytes1(0x00));
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 0, longCallData_);
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:permit2-invalid-execution-length");
+    }
+
+    function test_permit2_revertOnNonZeroValue() public {
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 1, _permit2ApproveCallData(address(erc20), spender, 0, 0));
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:invalid-value");
+    }
+
+    ////////////////////////////// Per-flag gating (Permit2 lockdown) //////////////////////////////
+
+    function test_terms_onlyPermit2Lockdown_allowsLockdown() public {
+        bytes memory executionCallData_ =
+            _encodeSingle(PERMIT2, 0, _permit2LockdownCallData(_singlePair(address(erc20), spender)));
+        _callBeforeHook(_terms(PERMISSION_PERMIT2_LOCKDOWN), executionCallData_);
+    }
+
+    function test_terms_onlyPermit2Lockdown_blocksErc20() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 0));
+        _expectRevertBeforeHook(_terms(PERMISSION_PERMIT2_LOCKDOWN), executionCallData_, "ApprovalRevocationEnforcer:erc20-approve-not-allowed");
+    }
+
+    function test_terms_onlyPermit2Lockdown_blocksErc721Approve() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _approveCallData(address(0), mintedTokenId));
+        _expectRevertBeforeHook(_terms(PERMISSION_PERMIT2_LOCKDOWN), executionCallData_, "ApprovalRevocationEnforcer:erc721-approve-not-allowed");
+    }
+
+    function test_terms_onlyPermit2Lockdown_blocksSetApprovalForAll() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _setApprovalForAllCallData(operator, false));
+        _expectRevertBeforeHook(_terms(PERMISSION_PERMIT2_LOCKDOWN), executionCallData_, "ApprovalRevocationEnforcer:setApprovalForAll-not-allowed");
+    }
+
+    function test_terms_onlyPermit2Lockdown_blocksPermit2Approve() public {
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 0, _permit2ApproveCallData(address(erc20), spender, 0, 0));
+        _expectRevertBeforeHook(_terms(PERMISSION_PERMIT2_LOCKDOWN), executionCallData_, "ApprovalRevocationEnforcer:permit2-approve-not-allowed");
+    }
+
+    function test_terms_onlyPermit2Approve_blocksLockdown() public {
+        bytes memory executionCallData_ =
+            _encodeSingle(PERMIT2, 0, _permit2LockdownCallData(_singlePair(address(erc20), spender)));
+        _expectRevertBeforeHook(_terms(PERMISSION_PERMIT2_APPROVE), executionCallData_, "ApprovalRevocationEnforcer:permit2-lockdown-not-allowed");
+    }
+
+    function test_terms_withoutPermit2Lockdown_blocksLockdown() public {
+        uint8 flags_ = PERMISSION_ERC20_APPROVE | PERMISSION_ERC721_APPROVE | PERMISSION_SET_APPROVAL_FOR_ALL | PERMISSION_PERMIT2_APPROVE;
+        bytes memory executionCallData_ =
+            _encodeSingle(PERMIT2, 0, _permit2LockdownCallData(_singlePair(address(erc20), spender)));
+        _expectRevertBeforeHook(_terms(flags_), executionCallData_, "ApprovalRevocationEnforcer:permit2-lockdown-not-allowed");
+    }
+
+    ////////////////////////////// Valid cases (Permit2 lockdown) //////////////////////////////
+
+    function test_permit2Lockdown_revokeSucceedsForSinglePair() public {
+        bytes memory executionCallData_ =
+            _encodeSingle(PERMIT2, 0, _permit2LockdownCallData(_singlePair(address(erc20), spender)));
+        _callBeforeHook(_terms(PERMISSION_ALL), executionCallData_);
+    }
+
+    function test_permit2Lockdown_revokeSucceedsForMultiplePairs() public {
+        TokenSpenderPair[] memory pairs_ = new TokenSpenderPair[](3);
+        pairs_[0] = TokenSpenderPair({ token: address(erc20), spender: spender });
+        pairs_[1] = TokenSpenderPair({ token: address(0xdead), spender: address(0xbeef) });
+        pairs_[2] = TokenSpenderPair({ token: address(erc721), spender: operator });
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 0, _permit2LockdownCallData(pairs_));
+        _callBeforeHook(_terms(PERMISSION_ALL), executionCallData_);
+    }
+
+    function test_permit2Lockdown_revokeSucceedsForEmptyArray() public {
+        // Empty lockdown is structurally a no-op — Permit2 accepts it. The enforcer accepts it too: there is
+        // nothing here that could ever grant authority. Pinned as documented behavior so future refactors don't
+        // silently change it.
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 0, _permit2LockdownCallData(new TokenSpenderPair[](0)));
+        _callBeforeHook(_terms(PERMISSION_ALL), executionCallData_);
+    }
+
+    ////////////////////////////// Invalid cases (Permit2 lockdown) //////////////////////////////
+
+    function test_permit2Lockdown_revertOnNonPermit2Target() public {
+        bytes memory executionCallData_ =
+            _encodeSingle(address(erc20), 0, _permit2LockdownCallData(_singlePair(address(erc20), spender)));
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:invalid-permit2-target");
+    }
+
+    function test_permit2Lockdown_revertOnNonZeroValue() public {
+        bytes memory executionCallData_ =
+            _encodeSingle(PERMIT2, 1, _permit2LockdownCallData(_singlePair(address(erc20), spender)));
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:invalid-value");
+    }
+
+    function test_permit2Lockdown_acceptsMalformedPayload_safetyRestsOnPermit2() public {
+        // The lockdown branch performs no calldata-shape validation: the structural argument is that any contract
+        // at the canonical Permit2 address can only zero allowance amounts under this selector. Pin the
+        // enforcer-level behavior here so future refactors don't silently introduce a length check that breaks
+        // composition with `ExactCalldataEnforcer` for non-standard pinning shapes.
+        bytes memory malformed_ = abi.encodePacked(PERMIT2_LOCKDOWN_SELECTOR, hex"deadbeef");
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 0, malformed_);
+        _callBeforeHook(_terms(PERMISSION_ALL), executionCallData_);
+    }
+
+    ////////////////////////////// Per-flag gating (Permit2 invalidateNonces) //////////////////////////////
+
+    function test_terms_onlyPermit2InvalidateNonces_allowsInvalidateNonces() public {
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 0, _permit2InvalidateNoncesCallData(address(erc20), spender, 1));
+        _callBeforeHook(_terms(PERMISSION_PERMIT2_INVALIDATE_NONCES), executionCallData_);
+    }
+
+    function test_terms_onlyPermit2InvalidateNonces_blocksErc20() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc20), 0, _approveCallData(spender, 0));
+        _expectRevertBeforeHook(_terms(PERMISSION_PERMIT2_INVALIDATE_NONCES), executionCallData_, "ApprovalRevocationEnforcer:erc20-approve-not-allowed");
+    }
+
+    function test_terms_onlyPermit2InvalidateNonces_blocksErc721Approve() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _approveCallData(address(0), mintedTokenId));
+        _expectRevertBeforeHook(_terms(PERMISSION_PERMIT2_INVALIDATE_NONCES), executionCallData_, "ApprovalRevocationEnforcer:erc721-approve-not-allowed");
+    }
+
+    function test_terms_onlyPermit2InvalidateNonces_blocksSetApprovalForAll() public {
+        bytes memory executionCallData_ = _encodeSingle(address(erc721), 0, _setApprovalForAllCallData(operator, false));
+        _expectRevertBeforeHook(_terms(PERMISSION_PERMIT2_INVALIDATE_NONCES), executionCallData_, "ApprovalRevocationEnforcer:setApprovalForAll-not-allowed");
+    }
+
+    function test_terms_onlyPermit2InvalidateNonces_blocksPermit2Approve() public {
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 0, _permit2ApproveCallData(address(erc20), spender, 0, 0));
+        _expectRevertBeforeHook(_terms(PERMISSION_PERMIT2_INVALIDATE_NONCES), executionCallData_, "ApprovalRevocationEnforcer:permit2-approve-not-allowed");
+    }
+
+    function test_terms_onlyPermit2InvalidateNonces_blocksLockdown() public {
+        bytes memory executionCallData_ =
+            _encodeSingle(PERMIT2, 0, _permit2LockdownCallData(_singlePair(address(erc20), spender)));
+        _expectRevertBeforeHook(_terms(PERMISSION_PERMIT2_INVALIDATE_NONCES), executionCallData_, "ApprovalRevocationEnforcer:permit2-lockdown-not-allowed");
+    }
+
+    function test_terms_withoutPermit2InvalidateNonces_blocksInvalidateNonces() public {
+        uint8 flags_ = PERMISSION_ERC20_APPROVE | PERMISSION_ERC721_APPROVE | PERMISSION_SET_APPROVAL_FOR_ALL
+            | PERMISSION_PERMIT2_APPROVE | PERMISSION_PERMIT2_LOCKDOWN;
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 0, _permit2InvalidateNoncesCallData(address(erc20), spender, 1));
+        _expectRevertBeforeHook(_terms(flags_), executionCallData_, "ApprovalRevocationEnforcer:permit2-invalidate-nonces-not-allowed");
+    }
+
+    ////////////////////////////// Valid cases (Permit2 invalidateNonces) //////////////////////////////
+
+    function test_permit2InvalidateNonces_succeedsWithArbitraryNonce() public {
+        // The enforcer does not validate the nonce value — Permit2 itself enforces strict monotonicity and the
+        // per-call uint16-bounded delta. Pin the enforcer-level acceptance with a representative nonce.
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 0, _permit2InvalidateNoncesCallData(address(erc20), spender, 1));
+        _callBeforeHook(_terms(PERMISSION_ALL), executionCallData_);
+    }
+
+    function test_permit2InvalidateNonces_succeedsWithMaxNonce() public {
+        bytes memory executionCallData_ =
+            _encodeSingle(PERMIT2, 0, _permit2InvalidateNoncesCallData(address(erc20), spender, type(uint48).max));
+        _callBeforeHook(_terms(PERMISSION_ALL), executionCallData_);
+    }
+
+    function test_permit2InvalidateNonces_succeedsWithArbitraryTokenAndSpender() public {
+        bytes memory executionCallData_ =
+            _encodeSingle(PERMIT2, 0, _permit2InvalidateNoncesCallData(address(0xdead), address(0xbeef), 7));
+        _callBeforeHook(_terms(PERMISSION_ALL), executionCallData_);
+    }
+
+    function test_permit2InvalidateNonces_acceptsMalformedPayload_safetyRestsOnPermit2() public {
+        // Same rationale as the lockdown counterpart: nonce monotonicity is enforced inside Permit2, so the
+        // enforcer does not validate calldata shape beyond the selector + target.
+        bytes memory malformed_ = abi.encodePacked(PERMIT2_INVALIDATE_NONCES_SELECTOR, hex"deadbeef");
+        bytes memory executionCallData_ = _encodeSingle(PERMIT2, 0, malformed_);
+        _callBeforeHook(_terms(PERMISSION_ALL), executionCallData_);
+    }
+
+    ////////////////////////////// Invalid cases (Permit2 invalidateNonces) //////////////////////////////
+
+    function test_permit2InvalidateNonces_revertOnNonPermit2Target() public {
+        bytes memory executionCallData_ =
+            _encodeSingle(address(erc20), 0, _permit2InvalidateNoncesCallData(address(erc20), spender, 1));
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:invalid-permit2-target");
+    }
+
+    function test_permit2InvalidateNonces_revertOnNonZeroValue() public {
+        bytes memory executionCallData_ =
+            _encodeSingle(PERMIT2, 1, _permit2InvalidateNoncesCallData(address(erc20), spender, 1));
+        _expectRevertBeforeHook(_terms(PERMISSION_ALL), executionCallData_, "ApprovalRevocationEnforcer:invalid-value");
     }
 
     ////////////////////////////// Generic invalid cases //////////////////////////////
