@@ -57,6 +57,7 @@ ENFORCERS=(
   "ERC721MultiOperationIncreaseBalanceEnforcer"
   "ERC1155MultiOperationIncreaseBalanceEnforcer"
   "NativeTokenMultiOperationIncreaseBalanceEnforcer"
+  "ApprovalRevocationEnforcer"
 )
 
 ADDRESSES=(
@@ -94,6 +95,7 @@ ADDRESSES=(
   "0x44877cDAFC0d529ab144bb6B0e202eE377C90229"
   "0x9eB86bbdaA71D4D8d5Fb1B8A9457F04D3344797b"
   "0xaD551E9b971C1b0c02c577bFfCFAA20b81777276"
+  "0x0000000000000000000000000000000000000000"
 )
 
 ###############################################################################
