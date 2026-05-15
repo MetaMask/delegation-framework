@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
-pragma solidity 0.8.23;
+pragma solidity ^0.8.23;
 
 import "../../src/utils/Types.sol";
 import { Execution } from "../../src/utils/Types.sol";
