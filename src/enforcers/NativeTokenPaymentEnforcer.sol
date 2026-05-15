@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.23;
+pragma solidity ^0.8.23;
 
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
