@@ -23,5 +23,8 @@ docs/*
 coverage/
 filtered-lcov.info
 
+# Ephemeral fork-quote refresh artifacts (see git branch backup/fork-quote-refresh-tooling)
+test/helpers/resources/.scratch/
+
 # Node Modules
 node_modules/

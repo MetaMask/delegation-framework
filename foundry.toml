@@ -8,7 +8,12 @@ out = "out"
 libs = ["lib"]
 test = "test"
 solc = "0.8.23"
-fs_permissions = [{ access = "read", path = "./out"},{ access = "read", path = "./broadcast"}, { access = "read-write", path = "./deployments"}]
+fs_permissions = [
+  { access = "read", path = "./out" },
+  { access = "read", path = "./broadcast" },
+  { access = "read-write", path = "./deployments" },
+  { access = "read", path = "./test/helpers/resources" }
+]
 sparse_mode = true
 evm_version = "london"
 optimizer = true
@@ -26,5 +31,7 @@ optimizer = true
 [rpc_endpoints]
   mainnet = "${MAINNET_RPC_URL}"
   linea = "${LINEA_RPC_URL}"
+  polygon = "${POLYGON_RPC_URL}"
+  base = "${BASE_RPC_URL}"
   sepolia = "${SEPOLIA_RPC_URL}"
   aztec = "${AZTEC_RPC_URL}"

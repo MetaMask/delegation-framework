@@ -22,9 +22,13 @@ import { SigningUtilsLib } from "../test/utils/SigningUtilsLib.t.sol";
  *   - ERC20 transfers with token and recipient restrictions
  *   - Token swaps via DelegationMetaSwapAdapter
  *   - Bridge operations (extensible)
- * @dev Fill the required variables in the .env file
+ * @dev Fill the required variables in the `.env` file (see `.env.example` for Safe-signing keys).
+ * @dev `vm.env*` only sees variables in the **forge process** environment. If `forge script` cannot
+ *      find keys that exist in `.env`, export them first, e.g. `set -a && source .env && set +a`, or run:
+ *      `bash script/forge-with-env.sh forge script ...` (repo root is implied).
  * @dev Run specific operations:
  *   - forge script script/SignDelegationWithSafe.s.sol:SignDelegationWithSafe --sig "runERC20Transfer()" --rpc-url <rpc>
+ *   - forge script script/SignDelegationWithSafe.s.sol:SignDelegationWithSafe --sig "runOpenRootDelegation()" --rpc-url <rpc>
  *   - forge script script/SignDelegationWithSafe.s.sol:SignDelegationWithSafe --sig "runSwap()" --rpc-url <rpc>
  *   - forge script script/SignDelegationWithSafe.s.sol:SignDelegationWithSafe --sig "runBridge()" --rpc-url <rpc>
  */
@@ -97,6 +101,22 @@ contract SignDelegationWithSafe is Script {
         Execution memory execution = _createERC20TransferExecution();
 
         // Prepare and log redemption inputs
+        exampleRedeemDelegations(result.delegation, execution);
+    }
+
+    /// @notice Root delegation (gatorSafeModule -> delegate) with no caveats, signed via Safe path
+    /// @dev Sample `execution` for redeemDelegations logging uses the same ERC20 env defaults as
+    ///      `runERC20Transfer()` — it is not implied or enforced by an empty caveat list.
+    function runOpenRootDelegation() public view {
+        console2.log("=== Open root delegation (0 caveats, Safe-signed) ===");
+
+        Caveat[] memory caveats = new Caveat[](0);
+        Delegation memory delegation = _createDelegation(caveats);
+        console2.log("Created root delegation with 0 caveats");
+
+        SafeDelegationSigner.SignedDelegationResult memory result = _signDelegation(delegation);
+
+        Execution memory execution = _createERC20TransferExecution();
         exampleRedeemDelegations(result.delegation, execution);
     }
 

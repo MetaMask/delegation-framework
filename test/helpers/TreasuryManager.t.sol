@@ -14,6 +14,7 @@ import { TreasuryCalldataDecoder } from "../../src/helpers/libraries/TreasuryCal
 import { IDelegationManager } from "../../src/interfaces/IDelegationManager.sol";
 import { IMetaSwap } from "../../src/helpers/interfaces/IMetaSwap.sol";
 import { IMetaBridge } from "../../src/helpers/interfaces/IMetaBridge.sol";
+import { IWstETH } from "../../src/helpers/interfaces/IWstETH.sol";
 import { Caveat, Delegation, ModeCode } from "../../src/utils/Types.sol";
 
 contract MockDelegationManager is IDelegationManager {
@@ -107,6 +108,25 @@ contract MockMetaBridge is IMetaBridge {
     }
 }
 
+/// @dev 1:1 stETH → wstETH preview/wrap for tests (real Lido uses shares).
+contract MockWstEth is BasicERC20, IWstETH {
+    IERC20 public immutable stETHToken;
+
+    constructor(address _owner, IERC20 _stETH) BasicERC20(_owner, "wstETH", "wstETH", 0) {
+        stETHToken = _stETH;
+    }
+
+    function getWstETHByStETH(uint256 _stETHAmount) external pure override returns (uint256) {
+        return _stETHAmount;
+    }
+
+    function wrap(uint256 _stETHAmount) external override returns (uint256) {
+        stETHToken.transferFrom(msg.sender, address(this), _stETHAmount);
+        _mint(msg.sender, _stETHAmount);
+        return _stETHAmount;
+    }
+}
+
 /// @dev Fails on receive(); used to trigger `FailedNativeTokenTransfer` via destination wallet.
 contract NativeRejecter {
     receive() external payable {
@@ -139,6 +159,31 @@ contract MockStEth is BasicERC20 {
     }
 }
 
+/// @dev Minimal `IDeleGatorModule` stand-in for treasury payout tests (returns a fixed Safe address).
+contract MockDeleGatorModule {
+    address internal immutable safeAddr;
+
+    constructor(address safeAddr_) {
+        safeAddr = safeAddr_;
+    }
+
+    function safe() external view returns (address) {
+        return safeAddr;
+    }
+}
+
+/// @dev `safe()` returns zero; `_validateSwapOrWrapDestWallet` must still reject when dest is not allowlisted.
+contract MockDeleGatorModuleZeroSafe {
+    function safe() external pure returns (address) {
+        return address(0);
+    }
+}
+
+/// @dev No `safe()`; low-level call from `try IDeleGatorModule(root).safe()` fails and is treated as disallowed.
+contract MockContractWithoutSafe {
+    uint256 private _unused;
+}
+
 contract TreasuryManagerTest is Test {
     uint256 internal constant SLIPPAGE = 1e18;
     uint256 internal constant PRICE_IMPACT = 1e18;
@@ -151,9 +196,8 @@ contract TreasuryManagerTest is Test {
     BasicERC20 internal tokenB;
     BasicERC20 internal weth;
     MockStEth internal stEth;
+    MockWstEth internal wstEth;
     TreasuryManager internal treasury;
-    /// @dev Pre-funded stETH balance the treasury holds in `setUp` to cover share-rounding shortfalls.
-    uint256 internal constant STETH_PREFUND = 100 ether;
 
     address internal owner = makeAddr("owner");
     address internal caller = makeAddr("caller");
@@ -166,6 +210,8 @@ contract TreasuryManagerTest is Test {
     uint256 internal otherPk;
 
     function setUp() public {
+        vm.chainId(1);
+
         delegationManager = new MockDelegationManager();
         (apiSigner, signerPk) = makeAddrAndKey("apiSigner");
         (, otherPk) = makeAddrAndKey("otherSigner");
@@ -175,22 +221,23 @@ contract TreasuryManagerTest is Test {
         tokenB = new BasicERC20(owner, "B", "B", 0);
         weth = new BasicERC20(owner, "WETH", "WETH", 0);
         stEth = new MockStEth(owner);
+        wstEth = new MockWstEth(owner, IERC20(address(stEth)));
         metaSwap = new MockMetaSwap(tokenB);
         metaBridge = new MockMetaBridge();
 
         tokenB.mint(address(metaSwap), type(uint128).max);
 
-        treasury =
-            new TreasuryManager(owner, apiSigner, delegationManager, metaSwap, metaBridge, IERC20(address(weth)), address(stEth));
+        treasury = new TreasuryManager(owner);
+        treasury.initialize(
+            apiSigner, delegationManager, metaSwap, metaBridge, IERC20(address(weth)), address(stEth), address(wstEth)
+        );
 
         treasury.updateAllowedCallers(_singleAddr(caller), _singleBool(true));
         treasury.updateAllowedDestWallets(_singleAddr(destWalletAddress), _singleBool(true));
-        treasury.updateAllowedTokensTo(_singleTok(tokenB), _singleBool(true));
         treasury.setPairLimits(_pairLimits(tokenA, tokenB, true));
+        treasury.setPairLimits(_pairLimits(IERC20(address(wstEth)), tokenB, true));
         tokenA.mint(pullFrom, 1_000 ether);
         stEth.mint(pullFrom, 1_000 ether);
-        // Pre-fund the treasury with stETH so the share-rounding tolerance has a balance to draw from.
-        stEth.mint(address(treasury), STETH_PREFUND);
         vm.stopPrank();
 
         vm.prank(pullFrom);
@@ -199,47 +246,115 @@ contract TreasuryManagerTest is Test {
         stEth.approve(address(delegationManager), type(uint256).max);
     }
 
-    /////////////////////// Constructor ///////////////////////
+    /////////////////////// Constructor / initialize ///////////////////////
 
-    function test_constructor_setsImmutables() public {
+    function test_constructor_setsOwnerOnly() public {
+        TreasuryManager fresh = new TreasuryManager(owner);
+        assertEq(fresh.owner(), owner);
+        assertFalse(fresh.isInitialized());
+    }
+
+    /// @dev Exercises the explicit `isInitialized()` getter (wraps private `_initialized`).
+    function test_isInitialized_getter_falseThenTrue() public {
+        TreasuryManager fresh = new TreasuryManager(owner);
+        assertFalse(fresh.isInitialized());
+        vm.prank(owner);
+        fresh.initialize(apiSigner, delegationManager, metaSwap, metaBridge, IERC20(address(weth)), address(stEth), address(wstEth));
+        assertTrue(fresh.isInitialized());
+    }
+
+    function test_initialize_emitsTreasuryInitialized() public {
+        TreasuryManager fresh = new TreasuryManager(owner);
+        vm.prank(owner);
+        vm.expectEmit(true, true, true, true, address(fresh));
+        emit TreasuryManager.TreasuryInitialized(
+            apiSigner,
+            IDelegationManager(address(delegationManager)),
+            IMetaSwap(address(metaSwap)),
+            IMetaBridge(address(metaBridge)),
+            IERC20(address(weth)),
+            address(stEth),
+            address(wstEth)
+        );
+        fresh.initialize(apiSigner, delegationManager, metaSwap, metaBridge, IERC20(address(weth)), address(stEth), address(wstEth));
+    }
+
+    function test_initialize_setsProtocolAndSigner() public {
+        assertTrue(treasury.isInitialized());
         assertEq(address(treasury.delegationManager()), address(delegationManager));
         assertEq(address(treasury.metaSwap()), address(metaSwap));
         assertEq(address(treasury.metaBridge()), address(metaBridge));
         assertEq(address(treasury.weth()), address(weth));
         assertEq(treasury.stEth(), address(stEth));
+        assertEq(treasury.wstEth(), address(wstEth));
         assertEq(treasury.apiSigner(), apiSigner);
         assertEq(treasury.owner(), owner);
     }
 
-    function test_revert_constructor_zeroDelegationManager() public {
+    function test_revert_initialize_notOwner() public {
+        TreasuryManager fresh = new TreasuryManager(owner);
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger));
+        fresh.initialize(apiSigner, delegationManager, metaSwap, metaBridge, IERC20(address(weth)), address(stEth), address(wstEth));
+    }
+
+    function test_revert_initialize_twice() public {
+        TreasuryManager fresh = new TreasuryManager(owner);
+        vm.startPrank(owner);
+        fresh.initialize(apiSigner, delegationManager, metaSwap, metaBridge, IERC20(address(weth)), address(stEth), address(wstEth));
+        vm.expectRevert(TreasuryManager.AlreadyInitialized.selector);
+        fresh.initialize(apiSigner, delegationManager, metaSwap, metaBridge, IERC20(address(weth)), address(stEth), address(wstEth));
+        vm.stopPrank();
+    }
+
+    function test_revert_initialize_zeroDelegationManager() public {
+        TreasuryManager fresh = new TreasuryManager(owner);
+        vm.prank(owner);
         vm.expectRevert(TreasuryManager.InvalidZeroAddress.selector);
-        new TreasuryManager(
-            owner, apiSigner, IDelegationManager(address(0)), metaSwap, metaBridge, IERC20(address(weth)), address(stEth)
+        fresh.initialize(
+            apiSigner, IDelegationManager(address(0)), metaSwap, metaBridge, IERC20(address(weth)), address(stEth), address(wstEth)
         );
     }
 
-    function test_revert_constructor_zeroMetaSwap() public {
+    function test_revert_initialize_zeroMetaSwap() public {
+        TreasuryManager fresh = new TreasuryManager(owner);
+        vm.prank(owner);
         vm.expectRevert(TreasuryManager.InvalidZeroAddress.selector);
-        new TreasuryManager(
-            owner, apiSigner, delegationManager, IMetaSwap(address(0)), metaBridge, IERC20(address(weth)), address(stEth)
+        fresh.initialize(
+            apiSigner, delegationManager, IMetaSwap(address(0)), metaBridge, IERC20(address(weth)), address(stEth), address(wstEth)
         );
     }
 
-    function test_revert_constructor_zeroMetaBridge() public {
+    function test_revert_initialize_zeroMetaBridge() public {
+        TreasuryManager fresh = new TreasuryManager(owner);
+        vm.prank(owner);
         vm.expectRevert(TreasuryManager.InvalidZeroAddress.selector);
-        new TreasuryManager(
-            owner, apiSigner, delegationManager, metaSwap, IMetaBridge(address(0)), IERC20(address(weth)), address(stEth)
+        fresh.initialize(
+            apiSigner, delegationManager, metaSwap, IMetaBridge(address(0)), IERC20(address(weth)), address(stEth), address(wstEth)
         );
     }
 
-    function test_revert_constructor_zeroWeth() public {
+    function test_revert_initialize_zeroWeth() public {
+        TreasuryManager fresh = new TreasuryManager(owner);
+        vm.prank(owner);
         vm.expectRevert(TreasuryManager.InvalidZeroAddress.selector);
-        new TreasuryManager(owner, apiSigner, delegationManager, metaSwap, metaBridge, IERC20(address(0)), address(stEth));
+        fresh.initialize(apiSigner, delegationManager, metaSwap, metaBridge, IERC20(address(0)), address(stEth), address(wstEth));
     }
 
-    function test_revert_constructor_zeroApiSigner() public {
+    function test_revert_initialize_zeroApiSigner() public {
+        TreasuryManager fresh = new TreasuryManager(owner);
+        vm.prank(owner);
         vm.expectRevert(TreasuryManager.InvalidZeroAddress.selector);
-        new TreasuryManager(owner, address(0), delegationManager, metaSwap, metaBridge, IERC20(address(weth)), address(stEth));
+        fresh.initialize(
+            address(0), delegationManager, metaSwap, metaBridge, IERC20(address(weth)), address(stEth), address(wstEth)
+        );
+    }
+
+    function test_revert_beforeInitialize_notInitialized() public {
+        TreasuryManager fresh = new TreasuryManager(owner);
+        vm.prank(owner);
+        vm.expectRevert(TreasuryManager.NotInitialized.selector);
+        fresh.updateAllowedCallers(_singleAddr(caller), _singleBool(true));
     }
 
     /////////////////////// setApiSigner ///////////////////////
@@ -340,13 +455,13 @@ contract TreasuryManagerTest is Test {
         treasury.transfer(empty, IERC20(address(tokenA)), 1 ether, destWalletAddress);
     }
 
-    function test_revert_transfer_UnexpectedTokenFromAmount() public {
+    function test_revert_transfer_UnexpectedRedeemedAmount() public {
         uint256 amt = 1 ether;
         delegationManager.setPull(IERC20(address(tokenA)), amt, pullFrom);
         delegationManager.setPullShortBy(1);
 
         vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(TreasuryManager.UnexpectedTokenFromAmount.selector, amt, amt - 1));
+        vm.expectRevert(abi.encodeWithSelector(TreasuryManager.UnexpectedRedeemedAmount.selector, amt, amt - 1));
         treasury.transfer(_dummyDelegations(), IERC20(address(tokenA)), amt, destWalletAddress);
     }
 
@@ -358,7 +473,7 @@ contract TreasuryManagerTest is Test {
         delegationManager.setPullExtra(1);
 
         vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(TreasuryManager.UnexpectedTokenFromAmount.selector, amt, amt + 1));
+        vm.expectRevert(abi.encodeWithSelector(TreasuryManager.UnexpectedRedeemedAmount.selector, amt, amt + 1));
         treasury.transfer(_dummyDelegations(), IERC20(address(tokenA)), amt, destWalletAddress);
     }
 
@@ -420,8 +535,8 @@ contract TreasuryManagerTest is Test {
         assertEq(tokenA.allowance(address(treasury), address(metaSwap)), type(uint256).max, "allowance still max");
     }
 
-    function test_swap_stETHInput_appliesTolerance() public {
-        // stETH-as-swap-input: redemption short by 1 wei; topup applied; metaSwap pulls full `amt` from treasury.
+    function test_revert_swap_stETHInput_noTolerance() public {
+        // Plain `swap` uses strict equality on the pull; 1-wei stETH under-credit reverts (use `wrapStEth` then swap).
         uint256 amt = 2 ether;
         delegationManager.setPull(IERC20(address(stEth)), amt, pullFrom);
         stEth.setShortBy(1);
@@ -433,21 +548,15 @@ contract TreasuryManagerTest is Test {
         bytes memory apiData = _swapApi(IERC20(address(stEth)), tokenB, amt, amt, true);
         TreasuryManager.SignatureData memory sig = _sign(apiData, destWalletAddress);
 
-        uint256 prefundBefore = stEth.balanceOf(address(treasury));
-        uint256 destBefore = tokenB.balanceOf(destWalletAddress);
-
         vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(TreasuryManager.UnexpectedRedeemedAmount.selector, amt, amt - 1));
         treasury.swap(sig, _dummyDelegations());
-
-        // Treasury net stETH change: +(amt - 1) [redeem] - amt [metaSwap.transferFrom] = -1 wei.
-        assertEq(prefundBefore - stEth.balanceOf(address(treasury)), 1, "prefund covers 1 wei");
-        assertEq(tokenB.balanceOf(destWalletAddress) - destBefore, amt, "dest receives full tokenB output");
     }
 
     function test_swap_wethInput_canonicalizesAtRuntime() public {
-        // Pass the actual WETH address (not `address(0)`) as the swap input. `_canonNative` runs at execution time
-        // for both the pair-limit lookup AND the `isTokenToAllowed` check, so the swap proceeds against the
-        // canonical (address(0), tokenB) entries set up via WETH at config time.
+        // Pass the actual WETH address (not `address(0)`) as the swap input. `_canonNative` runs at execution time for
+        // the pair-limit lookup so the swap proceeds against the canonical (address(0), tokenB) entry set up via WETH
+        // at config time.
         uint256 amt = 1 ether;
         vm.startPrank(owner);
         weth.mint(pullFrom, amt);
@@ -528,15 +637,115 @@ contract TreasuryManagerTest is Test {
         treasury.swap(sig, _dummyDelegations());
     }
 
-    function test_revert_swap_TokenToNotAllowed() public {
+    /// @dev Payout address need not be `isDestWalletAllowed` when it matches `IDeleGatorModule(rootDelegator).safe()`.
+    function test_swap_succeeds_when_destIsRootSafe_notOnDestAllowlist() public {
+        address safeWallet = makeAddr("safeBehindModule");
         vm.prank(owner);
-        treasury.updateAllowedTokensTo(_singleTok(tokenB), _singleBool(false));
+        treasury.updateAllowedDestWallets(_singleAddr(safeWallet), _singleBool(false));
 
-        bytes memory apiData = _swapApi(tokenA, tokenB, 1 ether, 1 ether, true);
-        TreasuryManager.SignatureData memory sig = _sign(apiData, destWalletAddress);
+        MockDeleGatorModule module = new MockDeleGatorModule(safeWallet);
+
+        uint256 amt = 1 ether;
+        delegationManager.setPull(IERC20(address(tokenA)), amt, pullFrom);
+
+        bytes memory apiData = _swapApi(tokenA, tokenB, amt, amt, true);
+        TreasuryManager.SignatureData memory sig = _sign(apiData, safeWallet);
+
+        uint256 destBefore = tokenB.balanceOf(safeWallet);
         vm.prank(caller);
-        vm.expectRevert(TreasuryManager.TokenToNotAllowed.selector);
-        treasury.swap(sig, _dummyDelegations());
+        treasury.swap(sig, _delegationsWithRoot(address(module)));
+        assertEq(tokenB.balanceOf(safeWallet) - destBefore, amt);
+    }
+
+    /// @dev `_validateSwapOrWrapDestWallet` reads the root delegator from the last delegation (leaf-to-root chain).
+    function test_swap_SafePath_usesLastDelegationAsRoot() public {
+        address safeWallet = makeAddr("safeBehindModule");
+        vm.prank(owner);
+        treasury.updateAllowedDestWallets(_singleAddr(safeWallet), _singleBool(false));
+
+        MockDeleGatorModule module = new MockDeleGatorModule(safeWallet);
+        address innerDelegator = makeAddr("nonRootDelegator");
+
+        uint256 amt = 1 ether;
+        delegationManager.setPull(IERC20(address(tokenA)), amt, pullFrom);
+
+        bytes memory apiData = _swapApi(tokenA, tokenB, amt, amt, true);
+        TreasuryManager.SignatureData memory sig = _sign(apiData, safeWallet);
+
+        Delegation[] memory d = new Delegation[](2);
+        d[0] = Delegation({
+            delegate: address(0), delegator: innerDelegator, authority: bytes32(0), caveats: new Caveat[](0), salt: 0, signature: ""
+        });
+        d[1] = Delegation({
+            delegate: address(0),
+            delegator: address(module),
+            authority: bytes32(0),
+            caveats: new Caveat[](0),
+            salt: 0,
+            signature: ""
+        });
+
+        uint256 destBefore = tokenB.balanceOf(safeWallet);
+        vm.prank(caller);
+        treasury.swap(sig, d);
+        assertEq(tokenB.balanceOf(safeWallet) - destBefore, amt);
+    }
+
+    /// @dev Signed dest must match `safe()` when using the Safe path; mismatch reverts when dest is not allowlisted.
+    function test_revert_swap_destMismatch_rootSafe() public {
+        address safeWallet = makeAddr("safeBehindModule");
+        MockDeleGatorModule module = new MockDeleGatorModule(safeWallet);
+
+        vm.prank(owner);
+        treasury.updateAllowedDestWallets(_singleAddr(destWalletAddress), _singleBool(false));
+
+        uint256 amt = 1 ether;
+        delegationManager.setPull(IERC20(address(tokenA)), amt, pullFrom);
+
+        bytes memory apiData = _swapApi(tokenA, tokenB, amt, amt, true);
+        TreasuryManager.SignatureData memory sig = _sign(apiData, destWalletAddress);
+
+        vm.prank(caller);
+        vm.expectRevert(TreasuryManager.DestinationWalletNotAllowed.selector);
+        treasury.swap(sig, _delegationsWithRoot(address(module)));
+    }
+
+    /// @dev When `safe()` is zero, payout cannot match the Safe path unless `destWalletAddress` is allowlisted.
+    function test_revert_swap_safeReturnsZero_destNotAllowlisted() public {
+        address payout = makeAddr("signedDestNotMatchingZeroSafe");
+        vm.prank(owner);
+        treasury.updateAllowedDestWallets(_singleAddr(payout), _singleBool(false));
+
+        MockDeleGatorModuleZeroSafe module = new MockDeleGatorModuleZeroSafe();
+
+        uint256 amt = 1 ether;
+        delegationManager.setPull(IERC20(address(tokenA)), amt, pullFrom);
+
+        bytes memory apiData = _swapApi(tokenA, tokenB, amt, amt, true);
+        TreasuryManager.SignatureData memory sig = _sign(apiData, payout);
+
+        vm.prank(caller);
+        vm.expectRevert(TreasuryManager.DestinationWalletNotAllowed.selector);
+        treasury.swap(sig, _delegationsWithRoot(address(module)));
+    }
+
+    /// @dev Root “module” has no `safe()`; treat like invalid Safe path when dest is not allowlisted.
+    function test_revert_swap_rootHasNoSafeFunction_destNotAllowlisted() public {
+        address payout = makeAddr("signedDestNoSafeOnRoot");
+        vm.prank(owner);
+        treasury.updateAllowedDestWallets(_singleAddr(payout), _singleBool(false));
+
+        MockContractWithoutSafe rootNoSafe = new MockContractWithoutSafe();
+
+        uint256 amt = 1 ether;
+        delegationManager.setPull(IERC20(address(tokenA)), amt, pullFrom);
+
+        bytes memory apiData = _swapApi(tokenA, tokenB, amt, amt, true);
+        TreasuryManager.SignatureData memory sig = _sign(apiData, payout);
+
+        vm.prank(caller);
+        vm.expectRevert(TreasuryManager.DestinationWalletNotAllowed.selector);
+        treasury.swap(sig, _delegationsWithRoot(address(rootNoSafe)));
     }
 
     function test_revert_swap_PairDisabled() public {
@@ -568,7 +777,7 @@ contract TreasuryManagerTest is Test {
         vm.prank(caller);
         vm.expectRevert(
             abi.encodeWithSelector(
-                TreasuryManager.SlippageExceedsCap.selector, IERC20(address(tokenA)), IERC20(address(tokenB)), int256(2), uint256(1)
+                TreasuryManager.SlippageExceedsCap.selector, IERC20(address(tokenA)), IERC20(address(tokenB)), int120(2), uint120(1)
             )
         );
         treasury.swap(sig, _dummyDelegations());
@@ -593,8 +802,8 @@ contract TreasuryManagerTest is Test {
                 TreasuryManager.PriceImpactExceedsCap.selector,
                 IERC20(address(tokenA)),
                 IERC20(address(tokenB)),
-                int256(2),
-                uint256(1)
+                int120(2),
+                uint120(1)
             )
         );
         treasury.swap(sig, _dummyDelegations());
@@ -635,7 +844,7 @@ contract TreasuryManagerTest is Test {
     function test_bridge_happy() public {
         uint256 amt = 1 ether;
         delegationManager.setPull(IERC20(address(tokenA)), amt, pullFrom);
-        _allowBridge(DEST_CHAIN, address(tokenB));
+        _allowBridge(DEST_CHAIN, address(tokenA), address(tokenB));
 
         bytes memory tail = _bridgeTail(DEST_CHAIN, address(tokenA), address(tokenB), amt, 0);
         bytes memory apiData = _bridgeApi(address(tokenA), amt, tail);
@@ -648,7 +857,29 @@ contract TreasuryManagerTest is Test {
         assertEq(tokenA.balanceOf(address(metaBridge)), amt);
     }
 
+    /// @dev Bridge payout is gated by `isBridgeDestWalletAllowed`, not `isDestWalletAllowed`.
+    function test_bridge_succeeds_when_destRemoved_from_isDestWalletAllowed() public {
+        uint256 amt = 1 ether;
+        delegationManager.setPull(IERC20(address(tokenA)), amt, pullFrom);
+        _allowBridge(DEST_CHAIN, address(tokenA), address(tokenB));
+
+        vm.prank(owner);
+        treasury.updateAllowedDestWallets(_singleAddr(destWalletAddress), _singleBool(false));
+
+        bytes memory tail = _bridgeTail(DEST_CHAIN, address(tokenA), address(tokenB), amt, 0);
+        bytes memory apiData = _bridgeApi(address(tokenA), amt, tail);
+        TreasuryManager.SignatureData memory sig = _sign(apiData, destWalletAddress);
+
+        vm.prank(caller);
+        treasury.bridge(sig, _dummyDelegations());
+
+        assertEq(tokenA.balanceOf(address(metaBridge)), amt);
+    }
+
     function test_revert_bridge_InvalidEmptyDelegations() public {
+        // Bridge runs policy checks before `_redeemTransfer`; allow bridge policies so empty delegations reach redeem.
+        _allowBridge(DEST_CHAIN, address(tokenA), address(tokenB));
+
         bytes memory tail = _bridgeTail(DEST_CHAIN, address(tokenA), address(tokenB), 1 ether, 0);
         bytes memory apiData = _bridgeApi(address(tokenA), 1 ether, tail);
         TreasuryManager.SignatureData memory sig = _sign(apiData, destWalletAddress);
@@ -683,31 +914,41 @@ contract TreasuryManagerTest is Test {
         treasury.bridge(sig, _dummyDelegations());
     }
 
-    function test_revert_bridge_BridgeTokenToNotAllowed() public {
+    function test_revert_bridge_BridgeRouteDisabled() public {
         uint256 amt = 1 ether;
-        // Allow chain + dest wallet, but NOT the token.
+        // Allow chain + dest wallet, but NOT the route (no `setBridgeRouteLimits` call).
         uint256[] memory chains = new uint256[](1);
         chains[0] = DEST_CHAIN;
         vm.startPrank(owner);
         treasury.updateDestinationChains(chains, _singleBool(true));
-        treasury.updateAllowedBridgeDestinations(DEST_CHAIN, _singleAddr(destWalletAddress), _singleBool(true));
+        treasury.updateAllowedBridgeDestWallets(DEST_CHAIN, _singleAddr(destWalletAddress), _singleBool(true));
         vm.stopPrank();
 
         bytes memory tail = _bridgeTail(DEST_CHAIN, address(tokenA), address(tokenB), amt, 0);
         bytes memory apiData = _bridgeApi(address(tokenA), amt, tail);
         TreasuryManager.SignatureData memory sig = _sign(apiData, destWalletAddress);
         vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(TreasuryManager.BridgeTokenToNotAllowed.selector, DEST_CHAIN, address(tokenB)));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                TreasuryManager.BridgeRouteDisabled.selector, IERC20(address(tokenA)), DEST_CHAIN, address(tokenB)
+            )
+        );
         treasury.bridge(sig, _dummyDelegations());
     }
 
-    function test_revert_bridge_DestinationWalletNotAllowed() public {
+    /// @dev Reverts when signed payout is not in `isBridgeDestWalletAllowed` (here: address `other`).
+    function test_revert_bridge_BridgeDestinationNotAllowed_signedDestNotOnBridgeAllowlist() public {
+        uint256[] memory chains = new uint256[](1);
+        chains[0] = DEST_CHAIN;
+        vm.prank(owner);
+        treasury.updateDestinationChains(chains, _singleBool(true));
+
         bytes memory tail = _bridgeTail(DEST_CHAIN, address(tokenA), address(tokenB), 1 ether, 0);
         bytes memory apiData = _bridgeApi(address(tokenA), 1 ether, tail);
         address other = makeAddr("notAllowedDest");
         TreasuryManager.SignatureData memory sig = _sign(apiData, other);
         vm.prank(caller);
-        vm.expectRevert(TreasuryManager.DestinationWalletNotAllowed.selector);
+        vm.expectRevert(abi.encodeWithSelector(TreasuryManager.BridgeDestinationNotAllowed.selector, DEST_CHAIN, other));
         treasury.bridge(sig, _dummyDelegations());
     }
 
@@ -745,7 +986,7 @@ contract TreasuryManagerTest is Test {
         uint256 amt = 1 ether;
         delegationManager.setPull(IERC20(address(0)), amt, address(0));
         vm.deal(address(delegationManager), amt);
-        _allowBridge(DEST_CHAIN, address(tokenB));
+        _allowBridge(DEST_CHAIN, address(0), address(tokenB));
 
         bytes memory tail = _bridgeTail(DEST_CHAIN, address(0), address(tokenB), amt, 0);
         bytes memory apiData = _bridgeApi(address(0), amt, tail);
@@ -759,34 +1000,26 @@ contract TreasuryManagerTest is Test {
         assertEq(address(metaBridge).balance - metaBridgeEthBefore, amt, "metaBridge receives the native ETH");
     }
 
-    function test_bridge_stETHInput_appliesTolerance() public {
-        // stETH-as-bridge-input: redemption short by 1 wei; topup applied; metaBridge pulls full `amt`.
+    function test_revert_bridge_stETHInput_noTolerance() public {
         uint256 amt = 1 ether;
         delegationManager.setPull(IERC20(address(stEth)), amt, pullFrom);
         stEth.setShortBy(1);
-        _allowBridge(DEST_CHAIN, address(tokenB));
+        _allowBridge(DEST_CHAIN, address(stEth), address(tokenB));
 
         bytes memory tail = _bridgeTail(DEST_CHAIN, address(stEth), address(tokenB), amt, 0);
         bytes memory apiData = _bridgeApi(address(stEth), amt, tail);
         TreasuryManager.SignatureData memory sig = _sign(apiData, destWalletAddress);
 
-        uint256 prefundBefore = stEth.balanceOf(address(treasury));
-        uint256 metaBridgeBefore = stEth.balanceOf(address(metaBridge));
-
         vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(TreasuryManager.UnexpectedRedeemedAmount.selector, amt, amt - 1));
         treasury.bridge(sig, _dummyDelegations());
-
-        // Treasury net stETH change: +(amt - 1) [redeem] - amt [metaBridge.transferFrom] = -1 wei.
-        assertEq(prefundBefore - stEth.balanceOf(address(treasury)), 1, "prefund covers 1 wei");
-        // metaBridge sees the rounding loss on its receive side: amt - 1.
-        assertEq(stEth.balanceOf(address(metaBridge)) - metaBridgeBefore, amt - 1, "metaBridge receives amt - 1 stETH");
     }
 
     function test_revert_bridge_BridgeSourceNotConsumed() public {
         // metaBridge returns success without pulling source tokens; treasury catches the no-op.
         uint256 amt = 1 ether;
         delegationManager.setPull(IERC20(address(tokenA)), amt, pullFrom);
-        _allowBridge(DEST_CHAIN, address(tokenB));
+        _allowBridge(DEST_CHAIN, address(tokenA), address(tokenB));
         metaBridge.setNoOp(true);
 
         bytes memory tail = _bridgeTail(DEST_CHAIN, address(tokenA), address(tokenB), amt, 0);
@@ -798,102 +1031,48 @@ contract TreasuryManagerTest is Test {
         treasury.bridge(sig, _dummyDelegations());
     }
 
-    /////////////////////// stETH share-rounding tolerance ///////////////////////
+    /////////////////////// stETH transfer (strict) ///////////////////////
 
-    function test_transfer_stETH_exact_noPrefundDraw() public {
-        // No share-rounding loss; prefund balance must remain untouched.
+    function test_transfer_stETH_exact() public {
         uint256 amt = 5 ether;
         delegationManager.setPull(IERC20(address(stEth)), amt, pullFrom);
+        stEth.setShortBy(0);
 
-        uint256 prefundBefore = stEth.balanceOf(address(treasury));
         uint256 destBefore = stEth.balanceOf(destWalletAddress);
 
         vm.prank(caller);
         treasury.transfer(_dummyDelegations(), IERC20(address(stEth)), amt, destWalletAddress);
 
-        assertEq(stEth.balanceOf(destWalletAddress) - destBefore, amt, "dest receives full amount");
-        assertEq(stEth.balanceOf(address(treasury)), prefundBefore, "prefund untouched");
+        assertEq(stEth.balanceOf(destWalletAddress) - destBefore, amt);
     }
 
-    function test_transfer_stETH_shortBy1_drawsFromPrefund() public {
+    function test_revert_transfer_stETH_shortBy1_strict() public {
         uint256 amt = 5 ether;
         delegationManager.setPull(IERC20(address(stEth)), amt, pullFrom);
         stEth.setShortBy(1);
 
-        uint256 prefundBefore = stEth.balanceOf(address(treasury));
-        uint256 destBefore = stEth.balanceOf(destWalletAddress);
-
-        vm.expectEmit(false, false, false, true, address(treasury));
-        emit TreasuryManager.StEthShortfallCovered(1);
         vm.prank(caller);
-        treasury.transfer(_dummyDelegations(), IERC20(address(stEth)), amt, destWalletAddress);
-
-        // The downstream `_sendTokens` debits treasury by full `amt`. Treasury net change after both hops:
-        // +(amt - 1) [pull] - amt [send] = -1 wei. Prefund covers exactly the redemption shortfall.
-        assertEq(stEth.balanceOf(destWalletAddress) - destBefore, amt - 1, "dest receives amt - 1 (mock send-hop loses 1)");
-        assertEq(prefundBefore - stEth.balanceOf(address(treasury)), 1, "prefund covers the 1-wei redemption shortfall");
-    }
-
-    function test_transfer_stETH_shortBy10_drawsFromPrefund() public {
-        // Tolerance is 10 wei; shortfall at the boundary still passes and draws 10 wei from prefund.
-        uint256 amt = 5 ether;
-        delegationManager.setPull(IERC20(address(stEth)), amt, pullFrom);
-        stEth.setShortBy(10);
-
-        uint256 prefundBefore = stEth.balanceOf(address(treasury));
-
-        vm.prank(caller);
-        treasury.transfer(_dummyDelegations(), IERC20(address(stEth)), amt, destWalletAddress);
-
-        assertEq(prefundBefore - stEth.balanceOf(address(treasury)), 10, "prefund covers 10-wei redemption shortfall");
-    }
-
-    function test_revert_transfer_stETH_shortBy11_exceedsTolerance() public {
-        uint256 amt = 5 ether;
-        delegationManager.setPull(IERC20(address(stEth)), amt, pullFrom);
-        stEth.setShortBy(11);
-
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(TreasuryManager.UnexpectedTokenFromAmount.selector, amt, amt - 11));
+        vm.expectRevert(abi.encodeWithSelector(TreasuryManager.UnexpectedRedeemedAmount.selector, amt, amt - 1));
         treasury.transfer(_dummyDelegations(), IERC20(address(stEth)), amt, destWalletAddress);
     }
 
     function test_revert_transfer_stETH_overCredit() public {
-        // Even on stETH (where shortfalls within tolerance are accepted), an over-credit must still revert.
-        // Exercises the `_obtained >= _amount` short-circuit in `_isWithinStEthTolerance`.
         uint256 amt = 5 ether;
         delegationManager.setPull(IERC20(address(stEth)), amt, pullFrom);
         delegationManager.setPullExtra(1);
 
         vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(TreasuryManager.UnexpectedTokenFromAmount.selector, amt, amt + 1));
+        vm.expectRevert(abi.encodeWithSelector(TreasuryManager.UnexpectedRedeemedAmount.selector, amt, amt + 1));
         treasury.transfer(_dummyDelegations(), IERC20(address(stEth)), amt, destWalletAddress);
     }
 
-    function test_revert_transfer_stETH_insufficientPrefund() public {
-        // Drain the treasury's stETH prefund first via withdraw; shortfall then has nothing to draw from.
-        vm.prank(owner);
-        treasury.withdraw(IERC20(address(stEth)), STETH_PREFUND, owner);
-        assertEq(stEth.balanceOf(address(treasury)), 0);
-
-        uint256 amt = 5 ether;
-        delegationManager.setPull(IERC20(address(stEth)), amt, pullFrom);
-        stEth.setShortBy(2);
-
-        vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(TreasuryManager.InsufficientStEthPrefund.selector, 2, 0));
-        treasury.transfer(_dummyDelegations(), IERC20(address(stEth)), amt, destWalletAddress);
-    }
-
-    function test_transfer_stETH_toleranceDisabledWhenStEthZero() public {
-        // Non-mainnet deployment with stEth=address(0) must NOT apply tolerance even if the token used happens
-        // to be the same contract address (it's not configured as the canonical stEth).
-        TreasuryManager nonMainnet =
-            new TreasuryManager(owner, apiSigner, delegationManager, metaSwap, metaBridge, IERC20(address(weth)), address(0));
+    /// @dev `initialize` with `stEth` / `wstEth` zero (non–mainnet-style config); transfer still enforces strict redemption.
+    function test_transfer_stETH_strictWhenStEthUnsetInInitialize() public {
+        TreasuryManager nonMainnet = new TreasuryManager(owner);
         vm.startPrank(owner);
+        nonMainnet.initialize(apiSigner, delegationManager, metaSwap, metaBridge, IERC20(address(weth)), address(0), address(0));
         nonMainnet.updateAllowedCallers(_singleAddr(caller), _singleBool(true));
         nonMainnet.updateAllowedDestWallets(_singleAddr(destWalletAddress), _singleBool(true));
-        stEth.mint(address(nonMainnet), STETH_PREFUND);
         vm.stopPrank();
 
         uint256 amt = 5 ether;
@@ -901,26 +1080,196 @@ contract TreasuryManagerTest is Test {
         stEth.setShortBy(1);
 
         vm.prank(caller);
-        vm.expectRevert(abi.encodeWithSelector(TreasuryManager.UnexpectedTokenFromAmount.selector, amt, amt - 1));
+        vm.expectRevert(abi.encodeWithSelector(TreasuryManager.UnexpectedRedeemedAmount.selector, amt, amt - 1));
         nonMainnet.transfer(_dummyDelegations(), IERC20(address(stEth)), amt, destWalletAddress);
+    }
+
+    /////////////////////// wrapStEth ///////////////////////
+
+    function test_wrapStEth_forwardsAllMintedWstEth_exactPull() public {
+        uint256 amt = 1 ether;
+        delegationManager.setPull(IERC20(address(stEth)), amt, pullFrom);
+        stEth.setShortBy(0);
+
+        uint256 destBefore = wstEth.balanceOf(destWalletAddress);
+        vm.prank(caller);
+        uint256 sent = treasury.wrapStEth(_dummyDelegations(), amt, destWalletAddress);
+
+        assertEq(sent, amt, "mock mint 1:1");
+        assertEq(wstEth.balanceOf(destWalletAddress) - destBefore, amt);
+        assertEq(stEth.balanceOf(address(treasury)), 0);
+    }
+
+    function test_wrapStEth_shortBy1Wei() public {
+        uint256 amt = 1 ether;
+        delegationManager.setPull(IERC20(address(stEth)), amt, pullFrom);
+        stEth.setShortBy(1);
+
+        uint256 destBefore = wstEth.balanceOf(destWalletAddress);
+        vm.prank(caller);
+        uint256 sent = treasury.wrapStEth(_dummyDelegations(), amt, destWalletAddress);
+
+        assertEq(sent, amt - 1);
+        assertEq(wstEth.balanceOf(destWalletAddress) - destBefore, amt - 1);
+        assertEq(stEth.balanceOf(address(treasury)), 0);
+    }
+
+    function test_wrapStEth_shortBy3Wei() public {
+        uint256 amt = 1 ether;
+        delegationManager.setPull(IERC20(address(stEth)), amt, pullFrom);
+        stEth.setShortBy(3);
+
+        uint256 destBefore = wstEth.balanceOf(destWalletAddress);
+        vm.prank(caller);
+        uint256 sent = treasury.wrapStEth(_dummyDelegations(), amt, destWalletAddress);
+
+        assertEq(sent, amt - 3);
+        assertEq(wstEth.balanceOf(destWalletAddress) - destBefore, amt - 3);
+        assertEq(stEth.balanceOf(address(treasury)), 0);
+    }
+
+    function test_wrapStEth_shortBy4Wei_wrapsActualReceived() public {
+        uint256 amt = 1 ether;
+        delegationManager.setPull(IERC20(address(stEth)), amt, pullFrom);
+        stEth.setShortBy(4);
+
+        uint256 destBefore = wstEth.balanceOf(destWalletAddress);
+        vm.prank(caller);
+        uint256 sent = treasury.wrapStEth(_dummyDelegations(), amt, destWalletAddress);
+
+        assertEq(sent, amt - 4);
+        assertEq(wstEth.balanceOf(destWalletAddress) - destBefore, amt - 4);
+        assertEq(stEth.balanceOf(address(treasury)), 0);
+    }
+
+    function test_revert_wrapStEth_CallerNotAllowed() public {
+        delegationManager.setPull(IERC20(address(stEth)), 1 ether, pullFrom);
+        vm.prank(stranger);
+        vm.expectRevert(TreasuryManager.CallerNotAllowed.selector);
+        treasury.wrapStEth(_dummyDelegations(), 1 ether, destWalletAddress);
+    }
+
+    function test_revert_wrapStEth_DestinationWalletNotAllowed() public {
+        vm.prank(owner);
+        treasury.updateAllowedDestWallets(_singleAddr(destWalletAddress), _singleBool(false));
+
+        delegationManager.setPull(IERC20(address(stEth)), 1 ether, pullFrom);
+        vm.prank(caller);
+        vm.expectRevert(TreasuryManager.DestinationWalletNotAllowed.selector);
+        treasury.wrapStEth(_dummyDelegations(), 1 ether, destWalletAddress);
+    }
+
+    /// @dev Same Safe path as `swap`: allowlisted payout not required when dest equals `safe()` on the root delegator.
+    function test_wrapStEth_succeeds_when_destIsRootSafe_notOnDestAllowlist() public {
+        address safeWallet = makeAddr("safeBehindModule");
+        vm.prank(owner);
+        treasury.updateAllowedDestWallets(_singleAddr(safeWallet), _singleBool(false));
+
+        MockDeleGatorModule module = new MockDeleGatorModule(safeWallet);
+
+        uint256 amt = 1 ether;
+        delegationManager.setPull(IERC20(address(stEth)), amt, pullFrom);
+        stEth.setShortBy(0);
+
+        uint256 destBefore = wstEth.balanceOf(safeWallet);
+        vm.prank(caller);
+        uint256 sent = treasury.wrapStEth(_delegationsWithRoot(address(module)), amt, safeWallet);
+        assertEq(sent, amt);
+        assertEq(wstEth.balanceOf(safeWallet) - destBefore, amt);
+    }
+
+    /// @dev Payout must match `safe()` when using the Safe path and dest is not allowlisted.
+    function test_revert_wrapStEth_destMismatch_rootSafe() public {
+        address safeWallet = makeAddr("safeBehindModule");
+        MockDeleGatorModule module = new MockDeleGatorModule(safeWallet);
+
+        vm.prank(owner);
+        treasury.updateAllowedDestWallets(_singleAddr(destWalletAddress), _singleBool(false));
+
+        uint256 amt = 1 ether;
+        delegationManager.setPull(IERC20(address(stEth)), amt, pullFrom);
+        stEth.setShortBy(0);
+
+        vm.prank(caller);
+        vm.expectRevert(TreasuryManager.DestinationWalletNotAllowed.selector);
+        treasury.wrapStEth(_delegationsWithRoot(address(module)), amt, destWalletAddress);
+    }
+
+    function test_revert_wrapStEth_safeReturnsZero_destNotAllowlisted() public {
+        address payout = makeAddr("wrapDestNotMatchingZeroSafe");
+        vm.prank(owner);
+        treasury.updateAllowedDestWallets(_singleAddr(payout), _singleBool(false));
+
+        MockDeleGatorModuleZeroSafe module = new MockDeleGatorModuleZeroSafe();
+
+        uint256 amt = 1 ether;
+        delegationManager.setPull(IERC20(address(stEth)), amt, pullFrom);
+        stEth.setShortBy(0);
+
+        vm.prank(caller);
+        vm.expectRevert(TreasuryManager.DestinationWalletNotAllowed.selector);
+        treasury.wrapStEth(_delegationsWithRoot(address(module)), amt, payout);
+    }
+
+    function test_revert_wrapStEth_rootHasNoSafeFunction_destNotAllowlisted() public {
+        address payout = makeAddr("wrapDestNoSafeOnRoot");
+        vm.prank(owner);
+        treasury.updateAllowedDestWallets(_singleAddr(payout), _singleBool(false));
+
+        MockContractWithoutSafe rootNoSafe = new MockContractWithoutSafe();
+
+        uint256 amt = 1 ether;
+        delegationManager.setPull(IERC20(address(stEth)), amt, pullFrom);
+        stEth.setShortBy(0);
+
+        vm.prank(caller);
+        vm.expectRevert(TreasuryManager.DestinationWalletNotAllowed.selector);
+        treasury.wrapStEth(_delegationsWithRoot(address(rootNoSafe)), amt, payout);
+    }
+
+    function test_revert_wrapStEth_StEthFlowNotConfigured() public {
+        TreasuryManager bare = new TreasuryManager(owner);
+        vm.startPrank(owner);
+        bare.initialize(apiSigner, delegationManager, metaSwap, metaBridge, IERC20(address(weth)), address(0), address(0));
+        bare.updateAllowedCallers(_singleAddr(caller), _singleBool(true));
+        bare.updateAllowedDestWallets(_singleAddr(destWalletAddress), _singleBool(true));
+        vm.stopPrank();
+
+        delegationManager.setPull(IERC20(address(stEth)), 1 ether, pullFrom);
+        vm.prank(caller);
+        vm.expectRevert(TreasuryManager.StEthFlowNotConfigured.selector);
+        bare.wrapStEth(_dummyDelegations(), 1 ether, destWalletAddress);
+    }
+
+    function test_revert_wrapStEth_InvalidEmptyDelegations() public {
+        delegationManager.setPull(IERC20(address(stEth)), 1 ether, pullFrom);
+        vm.prank(caller);
+        vm.expectRevert(TreasuryManager.InvalidEmptyDelegations.selector);
+        treasury.wrapStEth(new Delegation[](0), 1 ether, destWalletAddress);
     }
 
     function test_multichain_normalFlowsUnaffectedByZeroStEth() public {
         // Smoke test: deploy on a non-Lido chain (stEth = address(0)) and confirm the standard transfer + swap +
         // bridge flows for a normal ERC-20 still work. Proves the stEth feature is fully orthogonal to everything
         // else; nothing about the multichain config gates non-stETH flows.
-        TreasuryManager nonMainnet =
-            new TreasuryManager(owner, apiSigner, delegationManager, metaSwap, metaBridge, IERC20(address(weth)), address(0));
+        TreasuryManager nonMainnet = new TreasuryManager(owner);
         vm.startPrank(owner);
+        nonMainnet.initialize(apiSigner, delegationManager, metaSwap, metaBridge, IERC20(address(weth)), address(0), address(0));
         nonMainnet.updateAllowedCallers(_singleAddr(caller), _singleBool(true));
         nonMainnet.updateAllowedDestWallets(_singleAddr(destWalletAddress), _singleBool(true));
-        nonMainnet.updateAllowedTokensTo(_singleTok(tokenB), _singleBool(true));
         nonMainnet.setPairLimits(_pairLimits(tokenA, tokenB, true));
         uint256[] memory chains = new uint256[](1);
         chains[0] = DEST_CHAIN;
         nonMainnet.updateDestinationChains(chains, _singleBool(true));
-        nonMainnet.updateAllowedBridgeDestinations(DEST_CHAIN, _singleAddr(destWalletAddress), _singleBool(true));
-        nonMainnet.updateAllowedBridgeTokensTo(DEST_CHAIN, _singleAddr(address(tokenB)), _singleBool(true));
+        nonMainnet.updateAllowedBridgeDestWallets(DEST_CHAIN, _singleAddr(destWalletAddress), _singleBool(true));
+        TreasuryManager.BridgeRouteLimitInput[] memory routes = new TreasuryManager.BridgeRouteLimitInput[](1);
+        routes[0] = TreasuryManager.BridgeRouteLimitInput({
+            sourceTokenFrom: IERC20(address(tokenA)),
+            destinationChainId: DEST_CHAIN,
+            destinationTokenTo: address(tokenB),
+            limit: TreasuryManager.PairLimit({ maxSlippage: uint120(100e18), maxPriceImpact: uint120(100e18), enabled: true })
+        });
+        nonMainnet.setBridgeRouteLimits(routes);
         vm.stopPrank();
 
         // Phase 1: transfer
@@ -1090,47 +1439,30 @@ contract TreasuryManagerTest is Test {
         treasury.updateAllowedDestWallets(_singleAddr(destWalletAddress), new bool[](0));
     }
 
-    function test_updateAllowedTokensTo_canonicalizesWeth() public {
-        // Set via WETH; canonical key is address(0); should be readable as native. Emitted key is native, not WETH.
-        vm.prank(owner);
-        vm.expectEmit(true, true, false, false, address(treasury));
-        emit TreasuryManager.ChangedTokenToStatus(IERC20(address(0)), true);
-        treasury.updateAllowedTokensTo(_singleTok(IERC20(address(weth))), _singleBool(true));
-        assertTrue(treasury.isTokenToAllowed(IERC20(address(0))));
+    function test_revert_updateAllowedDestWallets_onlyOwner() public {
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger));
+        treasury.updateAllowedDestWallets(_singleAddr(destWalletAddress), _singleBool(true));
     }
 
-    function test_revert_updateAllowedTokensTo_InputLengthsMismatch() public {
-        vm.prank(owner);
-        vm.expectRevert(TreasuryManager.InputLengthsMismatch.selector);
-        treasury.updateAllowedTokensTo(_singleTok(tokenB), new bool[](0));
-    }
-
-    function test_updateAllowedBridgeDestinations_emits() public {
+    function test_updateAllowedBridgeDestWallets_emits() public {
         vm.prank(owner);
         vm.expectEmit(true, true, false, true, address(treasury));
-        emit TreasuryManager.ChangedBridgeDestinationStatus(DEST_CHAIN, destWalletAddress, true);
-        treasury.updateAllowedBridgeDestinations(DEST_CHAIN, _singleAddr(destWalletAddress), _singleBool(true));
-        assertTrue(treasury.allowedBridgeDestination(DEST_CHAIN, destWalletAddress));
+        emit TreasuryManager.ChangedBridgeDestWalletStatus(DEST_CHAIN, destWalletAddress, true);
+        treasury.updateAllowedBridgeDestWallets(DEST_CHAIN, _singleAddr(destWalletAddress), _singleBool(true));
+        assertTrue(treasury.isBridgeDestWalletAllowed(DEST_CHAIN, destWalletAddress));
     }
 
-    function test_revert_updateAllowedBridgeDestinations_InputLengthsMismatch() public {
+    function test_revert_updateAllowedBridgeDestWallets_InputLengthsMismatch() public {
         vm.prank(owner);
         vm.expectRevert(TreasuryManager.InputLengthsMismatch.selector);
-        treasury.updateAllowedBridgeDestinations(DEST_CHAIN, _singleAddr(destWalletAddress), new bool[](0));
+        treasury.updateAllowedBridgeDestWallets(DEST_CHAIN, _singleAddr(destWalletAddress), new bool[](0));
     }
 
-    function test_updateAllowedBridgeTokensTo_emits() public {
-        vm.prank(owner);
-        vm.expectEmit(true, true, false, true, address(treasury));
-        emit TreasuryManager.ChangedBridgeTokenToStatus(DEST_CHAIN, address(tokenB), true);
-        treasury.updateAllowedBridgeTokensTo(DEST_CHAIN, _singleAddr(address(tokenB)), _singleBool(true));
-        assertTrue(treasury.isBridgeTokenToAllowed(DEST_CHAIN, address(tokenB)));
-    }
-
-    function test_revert_updateAllowedBridgeTokensTo_InputLengthsMismatch() public {
-        vm.prank(owner);
-        vm.expectRevert(TreasuryManager.InputLengthsMismatch.selector);
-        treasury.updateAllowedBridgeTokensTo(DEST_CHAIN, _singleAddr(address(tokenB)), new bool[](0));
+    function test_revert_updateAllowedBridgeDestWallets_onlyOwner() public {
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger));
+        treasury.updateAllowedBridgeDestWallets(DEST_CHAIN, _singleAddr(destWalletAddress), _singleBool(true));
     }
 
     function test_updateDestinationChains_emits() public {
@@ -1151,22 +1483,40 @@ contract TreasuryManagerTest is Test {
         treasury.updateDestinationChains(chains, new bool[](0));
     }
 
+    function test_revert_updateDestinationChains_onlyOwner() public {
+        uint256[] memory chains = new uint256[](1);
+        chains[0] = DEST_CHAIN;
+        vm.prank(stranger);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, stranger));
+        treasury.updateDestinationChains(chains, _singleBool(true));
+    }
+
     /////////////////////// withdraw ///////////////////////
 
     function test_withdraw_erc20() public {
         vm.prank(owner);
         tokenA.mint(address(treasury), 5 ether);
         uint256 balBefore = tokenA.balanceOf(stranger);
-        vm.prank(owner);
+        vm.startPrank(owner);
+        vm.expectEmit(true, true, true, true, address(treasury));
+        emit TreasuryManager.SentTokens(IERC20(address(tokenA)), stranger, 5 ether);
+        vm.expectEmit(true, true, true, true, address(treasury));
+        emit TreasuryManager.Withdrawal(owner, IERC20(address(tokenA)), stranger, 5 ether);
         treasury.withdraw(IERC20(address(tokenA)), 5 ether, stranger);
+        vm.stopPrank();
         assertEq(tokenA.balanceOf(stranger) - balBefore, 5 ether);
     }
 
     function test_withdraw_native() public {
         vm.deal(address(treasury), 2 ether);
         uint256 balBefore = stranger.balance;
-        vm.prank(owner);
+        vm.startPrank(owner);
+        vm.expectEmit(true, true, true, true, address(treasury));
+        emit TreasuryManager.SentTokens(IERC20(address(0)), stranger, 2 ether);
+        vm.expectEmit(true, true, true, true, address(treasury));
+        emit TreasuryManager.Withdrawal(owner, IERC20(address(0)), stranger, 2 ether);
         treasury.withdraw(IERC20(address(0)), 2 ether, stranger);
+        vm.stopPrank();
         assertEq(stranger.balance - balBefore, 2 ether);
     }
 
@@ -1178,13 +1528,20 @@ contract TreasuryManagerTest is Test {
 
     /////////////////////// helpers ///////////////////////
 
-    function _allowBridge(uint256 chainId, address destToken) internal {
+    function _allowBridge(uint256 chainId, address sourceToken, address destToken) internal {
         uint256[] memory chains = new uint256[](1);
         chains[0] = chainId;
+        TreasuryManager.BridgeRouteLimitInput[] memory routes = new TreasuryManager.BridgeRouteLimitInput[](1);
+        routes[0] = TreasuryManager.BridgeRouteLimitInput({
+            sourceTokenFrom: IERC20(sourceToken),
+            destinationChainId: chainId,
+            destinationTokenTo: destToken,
+            limit: TreasuryManager.PairLimit({ maxSlippage: uint120(100e18), maxPriceImpact: uint120(100e18), enabled: true })
+        });
         vm.startPrank(owner);
         treasury.updateDestinationChains(chains, _singleBool(true));
-        treasury.updateAllowedBridgeDestinations(chainId, _singleAddr(destWalletAddress), _singleBool(true));
-        treasury.updateAllowedBridgeTokensTo(chainId, _singleAddr(destToken), _singleBool(true));
+        treasury.updateAllowedBridgeDestWallets(chainId, _singleAddr(destWalletAddress), _singleBool(true));
+        treasury.setBridgeRouteLimits(routes);
         vm.stopPrank();
     }
 
@@ -1261,6 +1618,13 @@ contract TreasuryManagerTest is Test {
         });
     }
 
+    function _delegationsWithRoot(address rootDelegator) internal pure returns (Delegation[] memory d) {
+        d = new Delegation[](1);
+        d[0] = Delegation({
+            delegate: address(0), delegator: rootDelegator, authority: bytes32(0), caveats: new Caveat[](0), salt: 0, signature: ""
+        });
+    }
+
     function _singleAddr(address a) internal pure returns (address[] memory o) {
         o = new address[](1);
         o[0] = a;
@@ -1269,11 +1633,6 @@ contract TreasuryManagerTest is Test {
     function _singleBool(bool b) internal pure returns (bool[] memory o) {
         o = new bool[](1);
         o[0] = b;
-    }
-
-    function _singleTok(IERC20 t) internal pure returns (IERC20[] memory o) {
-        o = new IERC20[](1);
-        o[0] = t;
     }
 
     function _pairLimits(IERC20 a, IERC20 b, bool enabled) internal pure returns (TreasuryManager.PairLimitInput[] memory pin) {
