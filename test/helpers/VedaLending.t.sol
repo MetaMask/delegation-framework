@@ -347,11 +347,9 @@ contract VedaLendingTest is BaseTest {
         delegations_[0] = redelegation_;
         delegations_[1] = delegation_;
 
-        // Expect event: check indexed delegator, delegate, and token. Amount and shares are checked via topic4.
-        vm.expectEmit(true, true, true, false, address(vedaAdapter));
-        emit VedaAdapter.DepositExecuted(
-            address(users.alice.deleGator), address(users.bob.deleGator), address(USDC), DEPOSIT_AMOUNT, 0
-        );
+        // Expect event: check indexed delegator and token. Amount and shares are checked via topic3.
+        vm.expectEmit(true, true, false, false, address(vedaAdapter));
+        emit VedaAdapter.DepositExecuted(address(users.alice.deleGator), address(USDC), DEPOSIT_AMOUNT, 0);
 
         vm.prank(address(users.bob.deleGator));
         vedaAdapter.depositByDelegation(delegations_, 0);
@@ -374,11 +372,9 @@ contract VedaLendingTest is BaseTest {
         delegations_[0] = redelegation_;
         delegations_[1] = delegation_;
 
-        // Expect event: check indexed delegator, delegate, and token. shareAmount and assetsOut are checked via topic4.
-        vm.expectEmit(true, true, true, false, address(vedaAdapter));
-        emit VedaAdapter.WithdrawExecuted(
-            address(users.alice.deleGator), address(users.bob.deleGator), address(USDC), aliceShares_, 0
-        );
+        // Expect event: check indexed delegator and token. shareAmount and assetsOut are checked via topic3.
+        vm.expectEmit(true, true, false, false, address(vedaAdapter));
+        emit VedaAdapter.WithdrawExecuted(address(users.alice.deleGator), address(USDC), aliceShares_, 0);
 
         vm.prank(address(users.bob.deleGator));
         vedaAdapter.withdrawByDelegation(delegations_, 0);

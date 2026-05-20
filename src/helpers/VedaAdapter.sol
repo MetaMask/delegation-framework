@@ -87,26 +87,20 @@ contract VedaAdapter is Ownable2Step {
     /**
      * @notice Emitted when a deposit operation is executed via delegation
      * @param delegator Address of the token owner (delegator)
-     * @param delegate Address of the executor (delegate)
      * @param token Address of the deposited token
      * @param amount Amount of tokens deposited
      * @param shares Amount of vault shares minted to the delegator
      */
-    event DepositExecuted(
-        address indexed delegator, address indexed delegate, address indexed token, uint256 amount, uint256 shares
-    );
+    event DepositExecuted(address indexed delegator, address indexed token, uint256 amount, uint256 shares);
 
     /**
      * @notice Emitted when a withdrawal operation is executed via delegation
      * @param delegator Address of the share owner (delegator)
-     * @param delegate Address of the executor (delegate)
      * @param token Address of the underlying token withdrawn (always `depositToken`)
      * @param shareAmount Amount of vault shares burned
      * @param assetsOut Amount of underlying tokens sent to the delegator
      */
-    event WithdrawExecuted(
-        address indexed delegator, address indexed delegate, address indexed token, uint256 shareAmount, uint256 assetsOut
-    );
+    event WithdrawExecuted(address indexed delegator, address indexed token, uint256 shareAmount, uint256 assetsOut);
 
     /**
      * @notice Emitted when a batch deposit is completed
@@ -367,7 +361,7 @@ contract VedaAdapter is Ownable2Step {
 
         uint256 shares_ = teller.deposit(address(depositToken), amount_, _minimumMint, rootDelegator_, address(0));
 
-        emit DepositExecuted(rootDelegator_, msg.sender, address(depositToken), amount_, shares_);
+        emit DepositExecuted(rootDelegator_, address(depositToken), amount_, shares_);
     }
 
     /**
@@ -400,6 +394,6 @@ contract VedaAdapter is Ownable2Step {
         // Withdraw from Teller: burns shares from this adapter, sends depositToken to root delegator
         uint256 assetsOut_ = teller.withdraw(address(depositToken), shareAmount_, _minimumAssets, rootDelegator_);
 
-        emit WithdrawExecuted(rootDelegator_, msg.sender, address(depositToken), shareAmount_, assetsOut_);
+        emit WithdrawExecuted(rootDelegator_, address(depositToken), shareAmount_, assetsOut_);
     }
 }
