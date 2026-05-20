@@ -41,8 +41,10 @@ import { ValueLteEnforcer } from "../src/enforcers/ValueLteEnforcer.sol";
 import { ERC20MultiOperationIncreaseBalanceEnforcer } from "../src/enforcers/ERC20MultiOperationIncreaseBalanceEnforcer.sol";
 import { ERC721MultiOperationIncreaseBalanceEnforcer } from "../src/enforcers/ERC721MultiOperationIncreaseBalanceEnforcer.sol";
 import { ERC1155MultiOperationIncreaseBalanceEnforcer } from "../src/enforcers/ERC1155MultiOperationIncreaseBalanceEnforcer.sol";
-import { NativeTokenMultiOperationIncreaseBalanceEnforcer } from
-    "../src/enforcers/NativeTokenMultiOperationIncreaseBalanceEnforcer.sol";
+import {
+    NativeTokenMultiOperationIncreaseBalanceEnforcer
+} from "../src/enforcers/NativeTokenMultiOperationIncreaseBalanceEnforcer.sol";
+import { ApprovalRevocationEnforcer } from "../src/enforcers/ApprovalRevocationEnforcer.sol";
 
 /**
  * @title DeployCaveatEnforcers
@@ -182,6 +184,9 @@ contract DeployCaveatEnforcers is Script {
 
         deployedAddress = address(new NativeTokenMultiOperationIncreaseBalanceEnforcer{ salt: salt }());
         console2.log("NativeTokenMultiOperationIncreaseBalanceEnforcer: %s", deployedAddress);
+
+        deployedAddress = address(new ApprovalRevocationEnforcer{ salt: salt }());
+        console2.log("ApprovalRevocationEnforcer: %s", deployedAddress);
 
         vm.stopBroadcast();
     }
