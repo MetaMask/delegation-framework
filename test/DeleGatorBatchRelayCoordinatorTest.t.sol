@@ -14,9 +14,6 @@ contract DeleGatorBatchRelayCoordinatorTest is BaseTest {
     DeleGatorBatchRelayCoordinator internal coordinator;
     EIP7702BatchDeleGator internal implementation;
 
-    uint256 internal ownerPk = 0xA11CE;
-    address internal owner;
-
     uint256 internal accountAPk = 0xA110;
     uint256 internal accountBPk = 0xB110;
     address internal accountAAddress;
@@ -33,8 +30,7 @@ contract DeleGatorBatchRelayCoordinatorTest is BaseTest {
     function setUp() public override {
         super.setUp();
 
-        owner = vm.addr(ownerPk);
-        coordinator = new DeleGatorBatchRelayCoordinator(owner);
+        coordinator = new DeleGatorBatchRelayCoordinator();
         implementation = new EIP7702BatchDeleGator(delegationManager, entryPoint);
 
         accountAAddress = vm.addr(accountAPk);
@@ -49,12 +45,14 @@ contract DeleGatorBatchRelayCoordinatorTest is BaseTest {
         counterB = new Counter(accountBAddress);
     }
 
-    function test_executeBatches_onlyOwner() public {
+    function test_executeBatches_anyCaller() public {
         IDeleGatorBatchRelayCoordinator.AccountBatch[] memory batches =
-            _singleSignedBatch(accountA, accountAPk, counterA, 1, address(0));
+            _singleSignedBatch(accountA, accountAPk, counterA, 1, address(coordinator));
 
-        vm.expectRevert();
+        vm.prank(address(0xBEEF));
         coordinator.executeBatches(batches);
+
+        assertEq(counterA.count(), 1);
     }
 
     function test_executeBatches_unsignedChildRow_recordsFailureAndContinues() public {
@@ -78,7 +76,6 @@ contract DeleGatorBatchRelayCoordinatorTest is BaseTest {
         });
 
         vm.recordLogs();
-        vm.prank(owner);
         coordinator.executeBatches(batches);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();
@@ -114,7 +111,6 @@ contract DeleGatorBatchRelayCoordinatorTest is BaseTest {
             )
         });
 
-        vm.prank(owner);
         coordinator.executeBatches(batches);
 
         assertEq(counterA.count(), 1);
@@ -131,7 +127,6 @@ contract DeleGatorBatchRelayCoordinatorTest is BaseTest {
         });
 
         vm.recordLogs();
-        vm.prank(owner);
         coordinator.executeBatches(batches);
 
         Vm.Log[] memory logs = vm.getRecordedLogs();

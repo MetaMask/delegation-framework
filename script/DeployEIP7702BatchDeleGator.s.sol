@@ -21,7 +21,6 @@ import { IDelegationManager } from "../src/interfaces/IDelegationManager.sol";
  *      - DELEGATION_MANAGER_ADDRESS
  * @dev Optional env:
  *      - BEACON_OWNER (defaults to deployer)
- *      - COORDINATOR_OWNER (defaults to deployer)
  *      - DEPLOY_PROXY=true|false (defaults to true)
  */
 contract DeployEIP7702BatchDeleGator is Script {
@@ -30,7 +29,6 @@ contract DeployEIP7702BatchDeleGator is Script {
     IDelegationManager internal delegationManager;
     address internal deployer;
     address internal beaconOwner;
-    address internal coordinatorOwner;
     bool internal deployProxy;
 
     function setUp() public {
@@ -39,7 +37,6 @@ contract DeployEIP7702BatchDeleGator is Script {
         delegationManager = IDelegationManager(vm.envAddress("DELEGATION_MANAGER_ADDRESS"));
         deployer = msg.sender;
         beaconOwner = vm.envOr("BEACON_OWNER", deployer);
-        coordinatorOwner = vm.envOr("COORDINATOR_OWNER", deployer);
         deployProxy = vm.envOr("DEPLOY_PROXY", true);
 
         console2.log("~~~ DeployEIP7702BatchDeleGator ~~~");
@@ -47,7 +44,6 @@ contract DeployEIP7702BatchDeleGator is Script {
         console2.log("Entry Point: %s", address(entryPoint));
         console2.log("Delegation Manager: %s", address(delegationManager));
         console2.log("Beacon Owner: %s", beaconOwner);
-        console2.log("Coordinator Owner: %s", coordinatorOwner);
         console2.log("Deploy Proxy: %s", deployProxy);
         console2.log("Salt:");
         console2.logBytes32(salt);
@@ -75,7 +71,7 @@ contract DeployEIP7702BatchDeleGator is Script {
             authorizationTarget = proxy;
         }
 
-        address coordinator = address(new DeleGatorBatchRelayCoordinator{ salt: salt }(coordinatorOwner));
+        address coordinator = address(new DeleGatorBatchRelayCoordinator{ salt: salt }());
         console2.log("DeleGatorBatchRelayCoordinator: %s", coordinator);
 
         console2.log("~~~ Release Metadata ~~~");
