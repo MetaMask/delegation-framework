@@ -59,13 +59,8 @@ contract ExactExecutionEnforcer is CaveatEnforcer {
      * @dev Reverts if any part of the execution (target, value, or calldata) does not match the expected terms.
      */
     function _validateExecution(bytes calldata _terms, bytes calldata _executionCallData) private pure {
-        // Decode execution data
-        (address execTarget_, uint256 execValue_, bytes calldata execCallData_) = _executionCallData.decodeSingle();
-
-        require(
-            address(bytes20(_terms[0:20])) == execTarget_ && uint256(bytes32(_terms[20:52])) == execValue_
-                && keccak256(_terms[52:]) == keccak256(execCallData_),
-            "ExactExecutionEnforcer:invalid-execution"
-        );
+        // `_terms` and `_executionCallData` are both `ExecutionLib.encodeSingle(target, value, callData)` (packed), so byte
+        // equality is exactly execution equality. A single keccak comparison avoids decoding both into their fields.
+        require(keccak256(_terms) == keccak256(_executionCallData), "ExactExecutionEnforcer:invalid-execution");
     }
 }

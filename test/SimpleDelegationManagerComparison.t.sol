@@ -11,7 +11,6 @@ import { BaseTest } from "./utils/BaseTest.t.sol";
 import { Implementation, SignatureType, TestUser } from "./utils/Types.t.sol";
 import { Execution, Caveat, Delegation, ModeCode } from "../src/utils/Types.sol";
 import { EncoderLib } from "../src/libraries/EncoderLib.sol";
-import { HookFlagsLib } from "../src/libraries/HookFlagsLib.sol";
 import { SigningUtilsLib } from "./utils/SigningUtilsLib.t.sol";
 import { StorageUtilsLib } from "./utils/StorageUtilsLib.t.sol";
 import { BasicERC20 } from "./utils/BasicERC20.t.sol";
@@ -22,9 +21,7 @@ import { DelegationManager } from "../src/DelegationManager.sol";
 import { SimpleDelegationManager } from "../src/SimpleDelegationManager.sol";
 import { EIP7702MultiManagerDeleGator } from "../src/EIP7702/EIP7702MultiManagerDeleGator.sol";
 import { EIP7702MultiManagerDeleGatorCore } from "../src/EIP7702/EIP7702MultiManagerDeleGatorCore.sol";
-import { ExactExecutionEnforcer } from "../src/enforcers/ExactExecutionEnforcer.sol";
-import { ExactExecutionBatchEnforcer } from "../src/enforcers/ExactExecutionBatchEnforcer.sol";
-import { LimitedCallsEnforcer } from "../src/enforcers/LimitedCallsEnforcer.sol";
+import { ExactExecutionBatchLimitedCallsEnforcer } from "../src/enforcers/ExactExecutionBatchLimitedCallsEnforcer.sol";
 
 /**
  * @title SimpleDelegationManager vs DelegationManager — side-by-side gas comparison
@@ -32,19 +29,22 @@ import { LimitedCallsEnforcer } from "../src/enforcers/LimitedCallsEnforcer.sol"
  * @notice Benchmarks `redeemDelegations` gas for the gasless flows on an EIP-7702 account, comparing the canonical
  *         `DelegationManager` against the gas-optimized `SimpleDelegationManager` (ADR #0002 Option 3).
  *
- * @dev SETUP that makes the comparison FAIR (only the manager logic differs):
- *      - The delegator is a NEW {EIP7702MultiManagerDeleGator} 7702 account that approves BOTH managers (an EIP-7201
- *        approved-manager set replaces the single immutable manager), so the SAME account can be driven by either.
- *      - Both managers redeem the SAME caveats against the SAME enforcer instances. Those enforcers are deployed at
- *        CREATE2-mined, flag-bearing addresses (low nibble = {HookFlagsLib.BEFORE_HOOK_FLAG}), so `SimpleDelegationManager`
- *        can skip the no-op hook phases via a pure address-bit test (Uniswap-v4-style), while `DelegationManager` ignores
- *        the bits and calls all four phases — exactly the overhead being measured.
- *      - Each manager is measured from an IDENTICAL cold state via `vm.snapshot()` / `vm.revertTo()`, so warm-storage
- *        ordering does not bias the result.
- *      - The 7702 "upgrade" is installed with `vm.etch` in setUp, so its gas is excluded (see
- *        OptimizedDelegationManagerBenchmark.t.sol for the rationale). Gas is measured with the portable `gasleft()` bracket.
+ * @dev The gasless flows use a SINGLE combined caveat — {ExactExecutionBatchLimitedCallsEnforcer}, which blends
+ *      `ExactExecutionBatchEnforcer` (pin the exact batch) + `LimitedCallsEnforcer` (one-shot replay) into one `beforeHook`.
+ *      Because it is a BATCH enforcer, both flows run in batch mode: the gasless swap is a one-element batch, the gasless
+ *      transaction a two-element batch (user action + fee).
  *
- * @dev Run with `-vv` to print the comparison. Use `--isolate` for cold per-call absolute numbers.
+ * @dev SETUP that makes the comparison FAIR (only the manager logic differs):
+ *      - The delegator is a {EIP7702MultiManagerDeleGator} 7702 account that approves BOTH managers (an EIP-7201
+ *        approved-manager set), so the SAME account can be driven by either.
+ *      - Both managers redeem the SAME caveat against the SAME enforcer instance. `SimpleDelegationManager` runs ONLY the
+ *        `beforeHook` phase, while the canonical `DelegationManager` runs all four phases (the other three are inherited
+ *        no-ops on this enforcer) — exactly the per-caveat overhead being measured.
+ *      - Each manager is measured from an IDENTICAL cold state via `vm.snapshot()` / `vm.revertTo()`.
+ *      - The 7702 "upgrade" is installed with `vm.etch` in setUp, so its gas is excluded. Gas is measured with the portable
+ *        `gasleft()` bracket.
+ *
+ * @dev Run with `-vv` to print the comparison.
  */
 contract SimpleDelegationManagerComparison is BaseTest {
     using MessageHashUtils for bytes32;
@@ -62,6 +62,7 @@ contract SimpleDelegationManagerComparison is BaseTest {
     uint256 internal constant SWAP_AMOUNT = 100e18;
     uint256 internal constant SEND_AMOUNT = 50e18;
     uint256 internal constant FEE_AMOUNT = 1e18;
+    uint256 internal constant CALL_LIMIT = 1; // one-shot replay protection
 
     /// @dev keccak256(abi.encode(uint256(keccak256("DeleGator.EIP7702MultiManager")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 internal constant EXPECTED_MULTI_MANAGER_SLOT = 0x49e56a63dc56241c65d46138ca3c27c5bf7b4df245f96cb568e8e7ba7c940400;
@@ -72,9 +73,7 @@ contract SimpleDelegationManagerComparison is BaseTest {
     SimpleDelegationManager internal simpleManager; // the gas-optimized manager
     EIP7702MultiManagerDeleGator internal multiManagerImpl; // the new multi-manager 7702 account implementation
 
-    ExactExecutionEnforcer internal exactExecutionEnforcer;
-    ExactExecutionBatchEnforcer internal exactExecutionBatchEnforcer;
-    LimitedCallsEnforcer internal limitedCallsEnforcer;
+    ExactExecutionBatchLimitedCallsEnforcer internal comboEnforcer; // ExactExecutionBatch + LimitedCalls, blended
 
     BasicERC20 internal token;
     Counter internal counter;
@@ -105,13 +104,10 @@ contract SimpleDelegationManagerComparison is BaseTest {
         aliceAccount_.approveDelegationManager(IDelegationManager(address(simpleManager)));
         vm.stopPrank();
 
-        // Deploy the three gasless enforcers at flag-bearing addresses (BEFORE_HOOK_FLAG only) via CREATE2 salt mining.
-        exactExecutionEnforcer = ExactExecutionEnforcer(_deployFlagged(type(ExactExecutionEnforcer).creationCode));
-        exactExecutionBatchEnforcer = ExactExecutionBatchEnforcer(_deployFlagged(type(ExactExecutionBatchEnforcer).creationCode));
-        limitedCallsEnforcer = LimitedCallsEnforcer(_deployFlagged(type(LimitedCallsEnforcer).creationCode));
-        vm.label(address(exactExecutionEnforcer), "ExactExecutionEnforcer(flagged)");
-        vm.label(address(exactExecutionBatchEnforcer), "ExactExecutionBatchEnforcer(flagged)");
-        vm.label(address(limitedCallsEnforcer), "LimitedCallsEnforcer(flagged)");
+        // The single combined gasless enforcer (both managers use the same instance; SimpleDelegationManager only invokes
+        // beforeHook).
+        comboEnforcer = new ExactExecutionBatchLimitedCallsEnforcer();
+        vm.label(address(comboEnforcer), "ExactExecutionBatchLimitedCallsEnforcer");
 
         token = new BasicERC20(address(this), "Mock USDC", "USDC", 0);
         token.mint(users.alice.addr, 1_000_000e18);
@@ -136,30 +132,18 @@ contract SimpleDelegationManagerComparison is BaseTest {
         );
     }
 
-    /// @notice Each gasless enforcer is deployed at an address advertising BEFORE_HOOK_FLAG (and nothing else).
-    function test_enforcers_haveBeforeHookFlagOnly() public {
-        _assertBeforeHookOnly(address(exactExecutionEnforcer));
-        _assertBeforeHookOnly(address(exactExecutionBatchEnforcer));
-        _assertBeforeHookOnly(address(limitedCallsEnforcer));
-    }
-
     /// @notice The multi-manager account rejects an unapproved manager trying to drive it.
     function test_multiManager_rejectsUnapprovedManager() public {
         SimpleDelegationManager rogue_ = new SimpleDelegationManager();
 
         bytes memory swapCallData_ = abi.encodeWithSelector(IERC20.transfer.selector, recipient, SWAP_AMOUNT);
-        Caveat[] memory caveats_ = _gaslessSwapCaveats(swapCallData_);
-        Delegation memory unsigned_ = _rootDelegation(relayer, users.alice.addr, caveats_);
+        Delegation memory unsigned_ = _rootDelegation(relayer, users.alice.addr, _gaslessSwapCaveats(swapCallData_));
 
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = _signDelegationFor(IDelegationManager(address(rogue_)), users.alice, unsigned_);
 
-        bytes[] memory pc_ = new bytes[](1);
-        pc_[0] = abi.encode(delegations_);
-        ModeCode[] memory modes_ = new ModeCode[](1);
-        modes_[0] = ModeLib.encodeSimpleSingle();
-        bytes[] memory ecd_ = new bytes[](1);
-        ecd_[0] = ExecutionLib.encodeSingle(address(token), 0, swapCallData_);
+        (bytes[] memory pc_, ModeCode[] memory modes_, bytes[] memory ecd_) =
+            _redeemArgs(delegations_, ModeLib.encodeSimpleBatch(), _swapExecData(swapCallData_));
 
         vm.prank(relayer);
         vm.expectRevert(EIP7702MultiManagerDeleGatorCore.NotDelegationManager.selector);
@@ -173,9 +157,7 @@ contract SimpleDelegationManagerComparison is BaseTest {
         bytes memory swapCallData_ = abi.encodeWithSelector(IERC20.transfer.selector, recipient, SWAP_AMOUNT);
         Delegation[] memory delegations_ = _signedGaslessSwap(relayer, swapCallData_);
 
-        _redeemSimple(
-            relayer, delegations_, ModeLib.encodeSimpleSingle(), ExecutionLib.encodeSingle(address(token), 0, swapCallData_)
-        );
+        _redeemSimple(relayer, delegations_, ModeLib.encodeSimpleBatch(), _swapExecData(swapCallData_));
         assertEq(token.balanceOf(recipient), SWAP_AMOUNT, "swap proceeds reached recipient");
     }
 
@@ -185,9 +167,7 @@ contract SimpleDelegationManagerComparison is BaseTest {
         bytes memory swapCallData_ = abi.encodeWithSelector(IERC20.transfer.selector, recipient, SWAP_AMOUNT);
         Delegation[] memory delegations_ = _signedGaslessSwap(ANY_DELEGATE, swapCallData_);
 
-        _redeemSimple(
-            randomRedeemer_, delegations_, ModeLib.encodeSimpleSingle(), ExecutionLib.encodeSingle(address(token), 0, swapCallData_)
-        );
+        _redeemSimple(randomRedeemer_, delegations_, ModeLib.encodeSimpleBatch(), _swapExecData(swapCallData_));
         assertEq(token.balanceOf(recipient), SWAP_AMOUNT, "ANY_DELEGATE redemption succeeded");
     }
 
@@ -196,7 +176,7 @@ contract SimpleDelegationManagerComparison is BaseTest {
         bytes memory swapCallData_ = abi.encodeWithSelector(IERC20.transfer.selector, recipient, SWAP_AMOUNT);
         Delegation[] memory delegations_ = _signedGaslessSwap(relayer, swapCallData_);
         (bytes[] memory pc_, ModeCode[] memory modes_, bytes[] memory ecd_) =
-            _redeemArgs(delegations_, ModeLib.encodeSimpleSingle(), ExecutionLib.encodeSingle(address(token), 0, swapCallData_));
+            _redeemArgs(delegations_, ModeLib.encodeSimpleBatch(), _swapExecData(swapCallData_));
 
         vm.prank(makeAddr("NotTheDelegate"));
         vm.expectRevert(IDelegationManager.InvalidDelegate.selector);
@@ -230,7 +210,7 @@ contract SimpleDelegationManagerComparison is BaseTest {
         delegations_[0] = leaf_;
         delegations_[1] = root_;
         (bytes[] memory pc_, ModeCode[] memory modes_, bytes[] memory ecd_) =
-            _redeemArgs(delegations_, ModeLib.encodeSimpleSingle(), ExecutionLib.encodeSingle(address(token), 0, swapCallData_));
+            _redeemArgs(delegations_, ModeLib.encodeSimpleBatch(), _swapExecData(swapCallData_));
 
         vm.prank(relayer);
         vm.expectRevert(IDelegationManager.InvalidAuthority.selector);
@@ -246,7 +226,7 @@ contract SimpleDelegationManagerComparison is BaseTest {
         delegations_[0] = _signDelegationFor(IDelegationManager(address(simpleManager)), users.bob, unsigned_);
 
         (bytes[] memory pc_, ModeCode[] memory modes_, bytes[] memory ecd_) =
-            _redeemArgs(delegations_, ModeLib.encodeSimpleSingle(), ExecutionLib.encodeSingle(address(token), 0, swapCallData_));
+            _redeemArgs(delegations_, ModeLib.encodeSimpleBatch(), _swapExecData(swapCallData_));
 
         vm.prank(relayer);
         vm.expectRevert(IDelegationManager.InvalidERC1271Signature.selector);
@@ -263,25 +243,25 @@ contract SimpleDelegationManagerComparison is BaseTest {
         simpleManager.disableDelegation(delegations_[0]);
 
         (bytes[] memory pc_, ModeCode[] memory modes_, bytes[] memory ecd_) =
-            _redeemArgs(delegations_, ModeLib.encodeSimpleSingle(), ExecutionLib.encodeSingle(address(token), 0, swapCallData_));
+            _redeemArgs(delegations_, ModeLib.encodeSimpleBatch(), _swapExecData(swapCallData_));
 
         vm.prank(relayer);
         vm.expectRevert(IDelegationManager.CannotUseADisabledDelegation.selector);
         simpleManager.redeemDelegations(pc_, modes_, ecd_);
     }
 
-    /// @notice LimitedCallsEnforcer (limit = 1) blocks a second redemption of the same delegation.
+    /// @notice The combined enforcer's limit (= 1) blocks a second redemption of the same delegation.
     function test_simple_limitedCalls_blocksReplay() public {
         bytes memory swapCallData_ = abi.encodeWithSelector(IERC20.transfer.selector, recipient, SWAP_AMOUNT);
         Delegation[] memory delegations_ = _signedGaslessSwap(relayer, swapCallData_);
-        bytes memory execData_ = ExecutionLib.encodeSingle(address(token), 0, swapCallData_);
+        bytes memory execData_ = _swapExecData(swapCallData_);
 
-        _redeemSimple(relayer, delegations_, ModeLib.encodeSimpleSingle(), execData_);
+        _redeemSimple(relayer, delegations_, ModeLib.encodeSimpleBatch(), execData_);
 
         (bytes[] memory pc_, ModeCode[] memory modes_, bytes[] memory ecd_) =
-            _redeemArgs(delegations_, ModeLib.encodeSimpleSingle(), execData_);
+            _redeemArgs(delegations_, ModeLib.encodeSimpleBatch(), execData_);
         vm.prank(relayer);
-        vm.expectRevert(bytes("LimitedCallsEnforcer:limit-exceeded"));
+        vm.expectRevert(bytes("ExactExecutionBatchLimitedCallsEnforcer:limit-exceeded"));
         simpleManager.redeemDelegations(pc_, modes_, ecd_);
     }
 
@@ -298,23 +278,22 @@ contract SimpleDelegationManagerComparison is BaseTest {
         assertEq(counter.count(), 1, "counter incremented exactly once (post-revert state)");
     }
 
-    /// @notice Gasless swap: single execution, ExactExecution + LimitedCalls.
+    /// @notice Gasless swap: one-element batch, gated by the combined ExactExecutionBatch + LimitedCalls enforcer.
     function test_compare_gaslessSwap_singleExecution() public {
         bytes memory swapCallData_ = abi.encodeWithSelector(IERC20.transfer.selector, recipient, SWAP_AMOUNT);
-        bytes memory execData_ = ExecutionLib.encodeSingle(address(token), 0, swapCallData_);
 
         Delegation memory unsigned_ = _rootDelegation(relayer, users.alice.addr, _gaslessSwapCaveats(swapCallData_));
         _runComparison(
-            "gasless swap | single execution | ExactExecution + LimitedCalls",
+            "gasless swap | 1-exec batch | ExactExecutionBatch + LimitedCalls (combined)",
             unsigned_,
             users.alice,
-            ModeLib.encodeSimpleSingle(),
-            execData_
+            ModeLib.encodeSimpleBatch(),
+            _swapExecData(swapCallData_)
         );
         assertEq(token.balanceOf(recipient), SWAP_AMOUNT, "swap proceeds reached recipient");
     }
 
-    /// @notice Gasless transaction: 2-execution batch (user transfer + fee transfer), ExactExecutionBatch + LimitedCalls.
+    /// @notice Gasless transaction: two-element batch (user transfer + fee transfer), gated by the combined enforcer.
     function test_compare_gaslessTransaction_batchTwoExecutions() public {
         Execution[] memory executions_ = new Execution[](2);
         executions_[0] = Execution({
@@ -325,14 +304,9 @@ contract SimpleDelegationManagerComparison is BaseTest {
         });
         bytes memory execData_ = ExecutionLib.encodeBatch(executions_);
 
-        Caveat[] memory caveats_ = new Caveat[](2);
-        caveats_[0] =
-            Caveat({ enforcer: address(exactExecutionBatchEnforcer), terms: ExecutionLib.encodeBatch(executions_), args: hex"" });
-        caveats_[1] = Caveat({ enforcer: address(limitedCallsEnforcer), terms: abi.encode(uint256(1)), args: hex"" });
-
-        Delegation memory unsigned_ = _rootDelegation(relayer, users.alice.addr, caveats_);
+        Delegation memory unsigned_ = _rootDelegation(relayer, users.alice.addr, _comboCaveats(executions_));
         _runComparison(
-            "gasless transaction | 2-exec batch | ExactExecutionBatch + LimitedCalls",
+            "gasless transaction | 2-exec batch | ExactExecutionBatch + LimitedCalls (combined)",
             unsigned_,
             users.alice,
             ModeLib.encodeSimpleBatch(),
@@ -345,8 +319,8 @@ contract SimpleDelegationManagerComparison is BaseTest {
     /// @notice Gasless swap over a 2-link chain (root Alice->Bob, leaf Bob->relayer): measures leaf-to-root validation cost.
     function test_compare_gaslessSwap_chainedDelegation() public {
         bytes memory swapCallData_ = abi.encodeWithSelector(IERC20.transfer.selector, recipient, SWAP_AMOUNT);
-        bytes memory execData_ = ExecutionLib.encodeSingle(address(token), 0, swapCallData_);
-        ModeCode mode_ = ModeLib.encodeSimpleSingle();
+        bytes memory execData_ = _swapExecData(swapCallData_);
+        ModeCode mode_ = ModeLib.encodeSimpleBatch();
 
         // Build the unsigned chain once; sign per-manager domain inside the comparison.
         Delegation memory rootUnsigned_ = _rootDelegation(address(users.bob.addr), users.alice.addr, new Caveat[](0));
@@ -402,7 +376,7 @@ contract SimpleDelegationManagerComparison is BaseTest {
         vm.revertTo(snap_);
         (uint256 simpleGas_,) = _measureRedeem(IDelegationManager(address(simpleManager)), relayer, forSimple_, _mode, _execData);
 
-        // Functional equivalence: both managers must produce byte-identical observable effects on the tracked state.
+        // Functional equivalence: both managers must produce identical observable effects on the tracked state.
         assertEq(token.balanceOf(recipient), curRecipient_, "recipient effect must match across managers");
         assertEq(token.balanceOf(feeAccount), curFee_, "fee effect must match across managers");
         assertEq(counter.count(), curCounter_, "counter effect must match across managers");
@@ -444,12 +418,7 @@ contract SimpleDelegationManagerComparison is BaseTest {
         internal
         returns (uint256 executionGas_, bytes memory cd_)
     {
-        bytes[] memory pc_ = new bytes[](1);
-        pc_[0] = abi.encode(_delegations);
-        ModeCode[] memory modes_ = new ModeCode[](1);
-        modes_[0] = _mode;
-        bytes[] memory ecd_ = new bytes[](1);
-        ecd_[0] = _execData;
+        (bytes[] memory pc_, ModeCode[] memory modes_, bytes[] memory ecd_) = _redeemArgs(_delegations, _mode, _execData);
 
         cd_ = abi.encodeWithSelector(IDelegationManager.redeemDelegations.selector, pc_, modes_, ecd_);
 
@@ -490,7 +459,7 @@ contract SimpleDelegationManagerComparison is BaseTest {
 
     ////////////////////////////// Internal: builders //////////////////////////////
 
-    /// @dev Builds + signs (for SimpleDelegationManager's domain) a single gasless-swap root delegation.
+    /// @dev Builds + signs (for SimpleDelegationManager's domain) a single gasless-swap root delegation (one-element batch).
     function _signedGaslessSwap(
         address _delegate,
         bytes memory _swapCallData
@@ -529,14 +498,31 @@ contract SimpleDelegationManagerComparison is BaseTest {
         ecd_[0] = _execData;
     }
 
+    /// @dev A one-element batch [swap] as a `BasicERC20.transfer` (stand-in for the swap-router call).
+    function _swapExecutions(bytes memory _swapCallData) internal view returns (Execution[] memory executions_) {
+        executions_ = new Execution[](1);
+        executions_[0] = Execution({ target: address(token), value: 0, callData: _swapCallData });
+    }
+
+    /// @dev The batch-encoded executionCallData for a one-element swap batch.
+    function _swapExecData(bytes memory _swapCallData) internal view returns (bytes memory) {
+        return ExecutionLib.encodeBatch(_swapExecutions(_swapCallData));
+    }
+
+    /// @dev The combined-enforcer caveat for a one-element swap batch.
     function _gaslessSwapCaveats(bytes memory _swapCallData) internal view returns (Caveat[] memory caveats_) {
-        caveats_ = new Caveat[](2);
+        return _comboCaveats(_swapExecutions(_swapCallData));
+    }
+
+    /// @dev A single combined-enforcer caveat pinning `_executions` exactly + bounding redemptions to CALL_LIMIT.
+    /// @dev terms = abi.encodePacked(uint256 limit, encodeBatch(Execution[])).
+    function _comboCaveats(Execution[] memory _executions) internal view returns (Caveat[] memory caveats_) {
+        caveats_ = new Caveat[](1);
         caveats_[0] = Caveat({
-            enforcer: address(exactExecutionEnforcer),
-            terms: ExecutionLib.encodeSingle(address(token), 0, _swapCallData),
+            enforcer: address(comboEnforcer),
+            terms: abi.encodePacked(uint256(CALL_LIMIT), ExecutionLib.encodeBatch(_executions)),
             args: hex""
         });
-        caveats_[1] = Caveat({ enforcer: address(limitedCallsEnforcer), terms: abi.encode(uint256(1)), args: hex"" });
     }
 
     function _rootDelegation(
@@ -581,24 +567,6 @@ contract SimpleDelegationManagerComparison is BaseTest {
     /// @dev Installs the EIP-7702 delegation designator (0xef0100 || impl) onto an EOA — the upgrade, excluded from measurement.
     function _etchMultiManager(address _eoa) internal {
         vm.etch(_eoa, bytes.concat(hex"ef0100", abi.encodePacked(address(multiManagerImpl))));
-    }
-
-    /// @dev Mines a CREATE2 salt until the deployed address's low nibble equals BEFORE_HOOK_FLAG, then deploys via SimpleFactory.
-    function _deployFlagged(bytes memory _creationCode) internal returns (address addr_) {
-        bytes32 codeHash_ = keccak256(_creationCode);
-        for (uint256 salt_;; ++salt_) {
-            address predicted_ = simpleFactory.computeAddress(codeHash_, bytes32(salt_));
-            if (uint160(predicted_) & HookFlagsLib.HOOK_FLAG_MASK == HookFlagsLib.BEFORE_HOOK_FLAG) {
-                return simpleFactory.deploy(_creationCode, bytes32(salt_));
-            }
-        }
-    }
-
-    function _assertBeforeHookOnly(address _enforcer) internal {
-        assertTrue(HookFlagsLib.hasFlag(_enforcer, HookFlagsLib.BEFORE_HOOK_FLAG), "missing BEFORE_HOOK_FLAG");
-        assertFalse(HookFlagsLib.hasFlag(_enforcer, HookFlagsLib.AFTER_HOOK_FLAG), "unexpected AFTER_HOOK_FLAG");
-        assertFalse(HookFlagsLib.hasFlag(_enforcer, HookFlagsLib.BEFORE_ALL_HOOK_FLAG), "unexpected BEFORE_ALL_HOOK_FLAG");
-        assertFalse(HookFlagsLib.hasFlag(_enforcer, HookFlagsLib.AFTER_ALL_HOOK_FLAG), "unexpected AFTER_ALL_HOOK_FLAG");
     }
 
     /// @dev EIP-2028 calldata cost: 4 gas per zero byte, 16 per non-zero byte.
