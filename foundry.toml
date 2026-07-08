@@ -13,6 +13,14 @@ sparse_mode = true
 evm_version = "london"
 optimizer = true
 
+# Profile for Linea fork tests (e.g. DelegationMetaSwapAdapterNewApiForkTest). Linea mainnet now runs post-London
+# fork rules and the live aggregator contracts (1inch v6 executors, KyberSwap, Mayan, Relay) use post-London opcodes
+# such as PUSH0, which revert with EvmError: NotActivated under the default "london" executor spec. solc 0.8.23 caps
+# the compile-time EVM target automatically, so only the runtime spec changes.
+# Usage: FOUNDRY_PROFILE=linea-fork forge test --match-contract DelegationMetaSwapAdapterNewApiForkTest
+[profile.linea-fork]
+evm_version = "prague"
+
 [fmt]
   bracket_spacing = true
   int_types = "long"
