@@ -85,15 +85,20 @@ abstract contract DelegationMetaSwapAdapterNewApiTestHelpers is DelegationMetaSw
  * @title DelegationMetaSwapAdapterNewApiSignatureCompatTest
  * @notice NON-FORK tests (no RPC needed) proving that the REAL signatures returned by the new signed-quote API
  *         (bridge.dev-api.cx.metamask.io/getQuote?signQuotes=true) validate against the CURRENT, unmodified
- *         DelegationMetaSwapAdapter configured with the production swap API signer.
+ *         DelegationMetaSwapAdapter configured with the dev-API signer (expected to match production).
  * @dev CRITICAL: nothing in this contract is signed locally. Every signature/expiration comes verbatim from the
  *      API fixtures — locally re-signing would defeat the entire purpose of the compatibility suite.
+ * @dev SCOPE: the fixtures come from the DEV endpoint, so seconds-unit sigExpiration and the signer are proven
+ *      for dev only. Rolling out against production still requires confirming the production endpoint also emits
+ *      seconds-unit sigExpiration and that the deployed adapter's swapApiSigner matches (see the ForkTest SCOPE
+ *      note below).
  */
 contract DelegationMetaSwapAdapterNewApiSignatureCompatTest is Test, DelegationMetaSwapAdapterNewApiTestHelpers {
     DelegationMetaSwapAdapterSignatureTest public adapter;
 
     function setUp() public {
-        // Harness configured with the REAL production swap API signer (recovered from the fixtures' signatures).
+        // Harness configured with the REAL dev-API signer (recovered from the fixtures' signatures; expected to
+        // match production, but confirm the deployed adapter's swapApiSigner at rollout).
         adapter = new DelegationMetaSwapAdapterSignatureTest(
             address(this), NEW_API_SWAP_API_SIGNER, address(0x123), address(0x456), address(0x789)
         );
@@ -102,7 +107,7 @@ contract DelegationMetaSwapAdapterNewApiSignatureCompatTest is Test, DelegationM
     ////////////////////////////// Helpers //////////////////////////////
 
     function _toSigData(NewApiFixture memory _fixture) internal pure returns (DelegationMetaSwapAdapter.SignatureData memory) {
-        // apiData, sigExpiration (milliseconds) and signature are used VERBATIM — no local signing.
+        // apiData, sigExpiration (UNIX seconds) and signature are used VERBATIM — no local signing.
         return DelegationMetaSwapAdapter.SignatureData({
             apiData: _fixture.apiData, expiration: _fixture.sigExpiration, signature: _fixture.signature
         });
@@ -111,7 +116,7 @@ contract DelegationMetaSwapAdapterNewApiSignatureCompatTest is Test, DelegationM
     ////////////////////////////// Signature compatibility //////////////////////////////
 
     /// @notice All 15 real API signatures (3 pairs x 5 aggregators) pass _validateSignature verbatim with the
-    /// production signer configured. This is the core zero-contract-changes signature compatibility proof.
+    /// dev-API signer configured. This is the core zero-contract-changes signature compatibility proof.
     function test_newApi_validateSignature_allFixtures() public view {
         for (uint256 i = 0; i < NEW_API_FIXTURE_COUNT; ++i) {
             NewApiFixture memory fixture_ = _getNewApiFixture(i);
@@ -150,35 +155,42 @@ contract DelegationMetaSwapAdapterNewApiSignatureCompatTest is Test, DelegationM
     }
 
     /**
-     * @notice EXPIRATION SEMANTICS — sigExpiration is in MILLISECONDS, block.timestamp is in SECONDS.
+     * @notice EXPIRATION SEMANTICS — sigExpiration is a UNIX timestamp in SECONDS, the same unit as
+     * block.timestamp, so the contract's expiry check is FUNCTIONAL.
      *
-     * The new API returns `sigExpiration` as a UNIX timestamp in MILLISECONDS (e.g. ~1.78e12), and the API signs
-     * keccak256(abi.encode(apiData, sigExpiration)) with that millisecond value, so it MUST be passed on-chain
-     * verbatim. The contract compares it directly against block.timestamp (seconds):
+     * The API returns `sigExpiration` as a UNIX timestamp in SECONDS (~5 minute TTL observed) and signs
+     * keccak256(abi.encode(apiData, sigExpiration)) with that value, so it MUST be passed on-chain verbatim.
+     * The contract compares it directly against block.timestamp:
      *
      *     if (block.timestamp >= _signatureData.expiration) revert SignatureExpired();
      *
-     * Since a millisecond timestamp is ~1000x larger than the current second timestamp, the expiry check only
-     * bites when block.timestamp reaches the raw millisecond value — around year ~58,000. In other words the
-     * on-chain expiration is EFFECTIVELY NEVER enforced in realistic time; quotes that are long stale in
-     * real-world terms still validate on-chain.
+     * Because both sides are now in seconds, this check genuinely enforces the quote's TTL on-chain: a quote
+     * validates strictly before its expiration instant and is rejected from that instant onward (the boundary
+     * is inclusive, >=). Stale quotes are now genuinely rejected on-chain — an intentional API improvement.
      *
-     * IMPORTANT: this is a PRE-EXISTING semantic, not a new-API regression — the old API used millisecond
-     * expirations too (see test_validateSignature_hardcodedSignature in DelegationMetaSwapAdapter.t.sol, which
-     * uses expiration 1745454591251). The new API behaves identically to the old one in this respect.
+     * HISTORICAL NOTE: quotes signed before this API change (and by the old API) carried MILLISECOND
+     * expirations (e.g. ~1.78e12; see test_validateSignature_hardcodedSignature in
+     * DelegationMetaSwapAdapter.t.sol, expiration 1745454591251). The contract has no unit validation — it
+     * trusts whatever value the signer signed — so those millisecond quotes validated but never effectively
+     * expired (block.timestamp would only reach the raw millisecond value around year ~58,000). The switch to
+     * seconds is what makes the existing, unmodified check bite.
      */
-    function test_newApi_expirationIsMillisecondsNotSeconds() public {
+    function test_newApi_expirationIsSeconds_enforcedOnChain() public {
         NewApiFixture memory fixture_ = _getNewApiFixture(0);
         DelegationMetaSwapAdapter.SignatureData memory sigData_ = _toSigData(fixture_);
 
-        // Warp to 30 days AFTER the quote's real-world expiration instant (ms / 1000 = seconds). The quote is
-        // long expired in real-world terms, yet validation still passes because the contract compares seconds
-        // against the raw millisecond value.
-        vm.warp(fixture_.sigExpiration / 1000 + 30 days);
+        // One second before the expiration instant: the quote still validates.
+        vm.warp(fixture_.sigExpiration - 1);
         adapter.exposedValidateSignature(sigData_);
 
-        // Only when block.timestamp (seconds) reaches the raw millisecond value (~year 58,000) does it expire.
+        // At the expiration instant the quote is rejected — the boundary is inclusive (>=).
         vm.warp(fixture_.sigExpiration);
+        vm.expectRevert(DelegationMetaSwapAdapter.SignatureExpired.selector);
+        adapter.exposedValidateSignature(sigData_);
+
+        // Long after expiration the quote stays rejected: stale quotes are now genuinely refused on-chain
+        // (under the old millisecond semantics this warp would still have validated).
+        vm.warp(fixture_.sigExpiration + 30 days);
         vm.expectRevert(DelegationMetaSwapAdapter.SignatureExpired.selector);
         adapter.exposedValidateSignature(sigData_);
     }
@@ -252,7 +264,12 @@ contract DelegationMetaSwapAdapterNewApiSignatureCompatTest is Test, DelegationM
      *   - the full 3 pairs x 5 aggregators matrix is present (15 unique pair/aggregator combinations);
      *   - both fee modes are represented: at least one feeTo=true payload (fee taken from the OUTPUT token,
      *     exempt from AmountFromMismatch) and one feeTo=false payload (fee taken from tokenFrom, exercising the
-     *     AmountFromMismatch invariant).
+     *     AmountFromMismatch invariant);
+     *   - every sigExpiration is an ABSOLUTE UNIX timestamp in SECONDS, bounded on BOTH sides: < 1e11 catches an
+     *     accidental API flip back to milliseconds (which would silently disarm the on-chain expiry check again),
+     *     and > 1.7e9 catches a flip to a RELATIVE TTL or garbage value (e.g. `300` seconds), which would
+     *     otherwise pass every non-fork test — the boundary test warps relative to the fixture value, so only
+     *     the fork suite's setUp guard (deferred to the FOUNDRY_PROFILE=linea-fork CI step) would notice.
      */
     function test_newApi_fixtureSetCoverageInvariants() public {
         assertEq(NEW_API_FIXTURE_COUNT, 15, "fixture set must cover the full 3 pairs x 5 aggregators matrix");
@@ -266,6 +283,20 @@ contract DelegationMetaSwapAdapterNewApiSignatureCompatTest is Test, DelegationM
         for (uint256 i = 0; i < NEW_API_FIXTURE_COUNT; ++i) {
             NewApiFixture memory fixture_ = _getNewApiFixture(i);
             string memory label_ = _fixtureLabel(fixture_);
+
+            // Seconds-unit guard: a UNIX-seconds timestamp stays < 1e11 until year ~5138, while a millisecond
+            // one is ~1.7e12 already. A fixture failing this means the API flipped back to milliseconds and the
+            // on-chain expiry check would be inert again.
+            assertLt(fixture_.sigExpiration, 1e11, string.concat(label_, ": sigExpiration must be UNIX SECONDS, not ms"));
+            // Absolute-timestamp guard: any plausible fetch time is past Nov 2023 (1.7e9). A fixture failing this
+            // means sigExpiration became a RELATIVE TTL (e.g. 300) or garbage — small values would still pass the
+            // validate-at-default-timestamp and unit-agnostic boundary tests, hiding the regression until the
+            // fork suite runs.
+            assertGt(
+                fixture_.sigExpiration,
+                1_700_000_000,
+                string.concat(label_, ": sigExpiration must be an absolute UNIX-seconds timestamp, not a relative TTL")
+            );
 
             (,,,, bytes memory swapData_) = _decodeNewApiData(fixture_.apiData);
             NewApiSwapData memory swap_ = _decodeNewApiSwapData(swapData_);
@@ -300,8 +331,8 @@ contract DelegationMetaSwapAdapterNewApiSignatureCompatTest is Test, DelegationM
  * @title DelegationMetaSwapAdapterNewApiForkTest
  * @notice FORK tests replaying the 15 real signed quotes (3 pairs x 5 aggregators) end to end through
  *         swapByDelegation on a Linea fork pinned at the block the quotes were fetched (NEW_API_FORK_BLOCK).
- *         The adapter is constructed with the REAL production swap API signer and the SignatureData is built
- *         from the fixture verbatim — nothing is signed locally.
+ *         The adapter is constructed with the REAL dev-API signer (expected to match production) and the
+ *         SignatureData is built from the fixture verbatim — nothing is signed locally.
  * @dev When the fixtures are refreshed (scripts/fetch_new_api_signed_quotes.sh) the fork block pin is
  *      regenerated together with the quotes, keeping on-chain liquidity consistent with the quoted amounts.
  * @dev EVM VERSION: this suite requires a post-London executor spec because the live Linea aggregator
@@ -347,6 +378,18 @@ contract DelegationMetaSwapAdapterNewApiForkTest is DelegationMetaSwapAdapterBas
         // The block MUST stay pinned to NEW_API_FORK_BLOCK (the block the signed quotes were fetched at) so the
         // on-chain liquidity matches the quotes. Do not bump this block without re-fetching fixtures.
         mainnetFork = vm.createSelectFork(vm.envOr("LINEA_RPC_URL", string("https://rpc.linea.build")), NEW_API_FORK_BLOCK);
+
+        // GUARD: sigExpiration is a UNIX timestamp in SECONDS with a short TTL (~5 min observed), and the
+        // adapter enforces it on-chain (block.timestamp >= expiration => SignatureExpired). The pinned fork
+        // block's timestamp must therefore precede EVERY fixture's expiration, or the replays would revert with
+        // SignatureExpired for a timing reason that reads like a compatibility failure. Fail loudly here instead.
+        for (uint256 i = 0; i < NEW_API_FIXTURE_COUNT; ++i) {
+            require(
+                block.timestamp < _getNewApiFixture(i).sigExpiration,
+                "DelegationMetaSwapAdapterNewApiForkTest: pinned fork block is at/after quote expiration - re-run "
+                "scripts/fetch_new_api_signed_quotes.sh which re-fetches quotes and re-pins the block together"
+            );
+        }
 
         super.setUp();
     }
@@ -467,7 +510,9 @@ contract DelegationMetaSwapAdapterNewApiForkTest is DelegationMetaSwapAdapterBas
         uint256 vaultTokenToBalanceBefore_ = _balanceOf(address(tokenB), address(vault.deleGator));
         uint256 feeWalletTokenToBalanceBefore_ = _balanceOf(address(tokenB), swap_.feeWallet);
 
-        // The REAL API signature data, replayed VERBATIM (apiData + millisecond sigExpiration + signature).
+        // The REAL API signature data, replayed VERBATIM (apiData + seconds-unit sigExpiration + signature).
+        // This only validates because the fork is pinned at the fetch-time block, whose timestamp is inside the
+        // quote's ~5 min TTL window (see the setUp guard).
         DelegationMetaSwapAdapter.SignatureData memory sigData_ = DelegationMetaSwapAdapter.SignatureData({
             apiData: _fixture.apiData, expiration: _fixture.sigExpiration, signature: _fixture.signature
         });
@@ -498,7 +543,8 @@ contract DelegationMetaSwapAdapterNewApiForkTest is DelegationMetaSwapAdapterBas
 
     /**
      * @dev Configures the fork contracts from the fixture's apiData, mirroring the original fork test setup but
-     *      with the adapter constructed with the REAL production swap API signer (NEW_API_SWAP_API_SIGNER).
+     *      with the adapter constructed with the REAL dev-API signer (NEW_API_SWAP_API_SIGNER, expected to match
+     *      production).
      */
     function _setUpNewApiForkContracts(bytes memory _apiData, bool _useTokenWhitelist) private returns (bytes memory swapData_) {
         // Overriding values with the Linea mainnet deployments

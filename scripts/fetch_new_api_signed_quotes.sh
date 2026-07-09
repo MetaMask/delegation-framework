@@ -16,6 +16,14 @@
 # fork block without re-fetching quotes (and vice versa), or the quoted amounts will not match on-chain
 # liquidity and the fork tests will produce false failures.
 #
+# EXPIRATION / TIMING: the API returns `sigExpiration` as a UNIX timestamp in SECONDS with a short TTL
+# (~5 minutes observed), and the adapter's on-chain check (block.timestamp >= expiration => SignatureExpired)
+# genuinely enforces it. That makes fetch->pin timing matter: the pinned block's timestamp MUST be earlier than
+# every quote's sigExpiration, or the fork tests will revert with SignatureExpired. This script fetches the
+# quotes and captures the block in one run precisely so the pinned timestamp lands inside the TTL window; if a
+# run is unusually slow (or the fork setUp guard trips later), simply re-run this script to re-fetch and re-pin
+# together.
+#
 # Requirements: curl, jq, cast (foundry), python3.
 #
 # Usage:
@@ -169,4 +177,6 @@ python3 "${REPO_ROOT}/scripts/generate_new_api_fixtures.py" "${OUT_JSON}"
 
 echo "Done. Run 'forge fmt && forge build' and then the test suites:" >&2
 echo "  forge test --match-contract DelegationMetaSwapAdapterNewApiSignatureCompatTest" >&2
-echo "  LINEA_RPC_URL=<archive rpc> forge test --match-contract DelegationMetaSwapAdapterNewApiForkTest" >&2
+echo "  FOUNDRY_PROFILE=linea-fork LINEA_RPC_URL=<archive rpc> forge test --match-contract DelegationMetaSwapAdapterNewApiForkTest" >&2
+echo "  (FOUNDRY_PROFILE=linea-fork is REQUIRED: under the default london profile the fork tests self-skip" >&2
+echo "   and report '16 skipped', validating nothing.)" >&2

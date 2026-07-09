@@ -28,7 +28,7 @@ The JSON file is produced by scripts/fetch_new_api_signed_quotes.sh and has the 
           "srcTokenAmount": "<dec>", "destTokenAmount": "<dec>", "minDestTokenAmount": "<dec>",
           "tradeTo": "0x...", "tradeValue": "0x<hex>",
           "apiData": "0x5f575529...",      # IMetaSwap.swap calldata, verbatim from trade.data
-          "sigExpiration": <uint, UNIX MILLISECONDS>,
+          "sigExpiration": <uint, UNIX SECONDS>,   # ~5 min TTL observed; the on-chain expiry check enforces it
           "signature": "0x...",            # 65-byte ECDSA signature, verbatim from the API
         }, ...
       ]
@@ -221,7 +221,10 @@ pragma solidity 0.8.23;
  *
  * `apiData` is the IMetaSwap.swap calldata (trade.data), `signature`/`sigExpiration` are the API's
  * signature over keccak256(abi.encode(apiData, sigExpiration)) (EIP-191 personal-sign) and its
- * expiration. NOTE: sigExpiration is a UNIX timestamp in MILLISECONDS.
+ * expiration. NOTE: sigExpiration is a UNIX timestamp in SECONDS (~5 min TTL observed), so the
+ * adapter's on-chain expiry check (block.timestamp >= expiration => SignatureExpired) genuinely
+ * enforces it. Fork tests still replay fine because the fork pins the block captured at fetch
+ * time, whose timestamp precedes every sigExpiration.
  * Nothing here is locally signed; the whole point of these fixtures is validating the REAL API
  * signer ({meta["expectedSigner"]}) against DelegationMetaSwapAdapter as deployed.
  */
@@ -238,7 +241,7 @@ abstract contract DelegationMetaSwapAdapterNewApiFixtures {{
         address tradeTo;
         uint256 tradeValue;
         bytes apiData;
-        uint256 sigExpiration; // UNIX timestamp in MILLISECONDS (not seconds!)
+        uint256 sigExpiration; // UNIX timestamp in SECONDS (on-chain expiry is enforced; ~5 min TTL)
         bytes signature;
     }}
 
@@ -249,7 +252,8 @@ abstract contract DelegationMetaSwapAdapterNewApiFixtures {{
     /// updates this constant automatically.
     uint256 internal constant NEW_API_FORK_BLOCK = {meta["fetchedAtLineaBlock"]};
 
-    /// @dev The production swap API signer the quotes' signatures recover to.
+    /// @dev The dev-API swap signer the quotes' signatures recover to (expected to match production; confirm the
+    /// deployed adapter's swapApiSigner and the production endpoint's seconds-unit sigExpiration at rollout).
     address internal constant NEW_API_SWAP_API_SIGNER = {addr(meta["expectedSigner"])};
 
     address internal constant NEW_API_META_SWAP = {addr(meta["metaSwap"])};
