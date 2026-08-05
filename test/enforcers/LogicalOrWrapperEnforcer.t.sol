@@ -766,7 +766,7 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
         bytes32 afterHashKey_ = erc20BalanceChangeEnforcer.getHashKey(
             address(logicalOrWrapperEnforcer), // LogicalOrWrapperEnforcer is the caller
             address(mockToken),
-            keccak256("")
+            _groupDelegationHash(keccak256(""), 0)
         );
         assertFalse(erc20BalanceChangeEnforcer.isLocked(afterHashKey_), "Balance cache should be unlocked after afterHook");
         // Note: balanceCache is not cleared, but isLocked is false, so it can be reused
