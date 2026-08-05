@@ -14,6 +14,7 @@ import { LogicalOrWrapperEnforcer } from "../../src/enforcers/LogicalOrWrapperEn
 import { ICaveatEnforcer } from "../../src/interfaces/ICaveatEnforcer.sol";
 import { AllowedMethodsEnforcer } from "../../src/enforcers/AllowedMethodsEnforcer.sol";
 import { AllowedTargetsEnforcer } from "../../src/enforcers/AllowedTargetsEnforcer.sol";
+import { LimitedCallsEnforcer } from "../../src/enforcers/LimitedCallsEnforcer.sol";
 import { NativeTokenTransferAmountEnforcer } from "../../src/enforcers/NativeTokenTransferAmountEnforcer.sol";
 import { TimestampEnforcer } from "../../src/enforcers/TimestampEnforcer.sol";
 import { ArgsEqualityCheckEnforcer } from "../../src/enforcers/ArgsEqualityCheckEnforcer.sol";
@@ -138,6 +139,12 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     ////////////////////// Helper Functions //////////////////////
+
+    /// @dev The namespaced delegation hash the wrapper forwards to sub-enforcers for a
+    /// given group — mirrors LogicalOrWrapperEnforcer._getGroupDelegationHash
+    function _groupDelegationHash(bytes32 delegationHash_, uint256 groupIndex_) internal pure returns (bytes32) {
+        return keccak256(abi.encode(delegationHash_, groupIndex_));
+    }
 
     function _createCaveatGroup(
         address[] memory _enforcers,
@@ -303,6 +310,54 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
             keccak256(""),
             address(0),
             address(0)
+        );
+    }
+
+    /// @notice Tests that stateful enforcers keep per-group isolated state when the same
+    /// stateful enforcer appears in multiple groups: each group's allowance is independent.
+    function test_statefulEnforcerStateIsIsolatedPerGroup() public {
+        LimitedCallsEnforcer limitedCallsEnforcer_ = new LimitedCallsEnforcer();
+
+        // Two groups, both referencing the same stateful enforcer with limit = 1 call each
+        LogicalOrWrapperEnforcer.CaveatGroup[] memory groups_ = new LogicalOrWrapperEnforcer.CaveatGroup[](2);
+        for (uint256 g_ = 0; g_ < 2; g_++) {
+            address[] memory enforcers_ = new address[](1);
+            enforcers_[0] = address(limitedCallsEnforcer_);
+            bytes[] memory terms_ = new bytes[](1);
+            terms_[0] = abi.encode(uint256(1));
+            groups_[g_] = _createCaveatGroup(enforcers_, terms_);
+        }
+
+        Execution memory execution_ = Execution({ target: address(aliceDeleGatorCounter), value: 0, callData: hex"" });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
+        bytes32 delegationHash_ = keccak256("some-delegation");
+
+        bytes[] memory caveatArgs_ = new bytes[](1);
+        caveatArgs_[0] = hex"";
+
+        // Group 0: first call consumes its allowance
+        vm.prank(address(delegationManager));
+        logicalOrWrapperEnforcer.beforeHook(
+            abi.encode(groups_), abi.encode(_createSelectedGroup(0, caveatArgs_)), singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
+        );
+        // Group 0: second call exceeds its own limit
+        vm.prank(address(delegationManager));
+        vm.expectRevert("LimitedCallsEnforcer:limit-exceeded");
+        logicalOrWrapperEnforcer.beforeHook(
+            abi.encode(groups_), abi.encode(_createSelectedGroup(0, caveatArgs_)), singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
+        );
+
+        // Group 1: independent allowance — without per-group namespacing this would revert
+        // because the shared counter was already exhausted by group 0
+        vm.prank(address(delegationManager));
+        logicalOrWrapperEnforcer.beforeHook(
+            abi.encode(groups_), abi.encode(_createSelectedGroup(1, caveatArgs_)), singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
+        );
+        // Group 1: second call also exceeds its own limit
+        vm.prank(address(delegationManager));
+        vm.expectRevert("LimitedCallsEnforcer:limit-exceeded");
+        logicalOrWrapperEnforcer.beforeHook(
+            abi.encode(groups_), abi.encode(_createSelectedGroup(1, caveatArgs_)), singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
         );
     }
 
@@ -684,7 +739,7 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
         bytes32 hashKey_ = erc20BalanceChangeEnforcer.getHashKey(
             address(logicalOrWrapperEnforcer), // LogicalOrWrapperEnforcer is the caller
             address(mockToken),
-            keccak256("")
+            _groupDelegationHash(keccak256(""), 0)
         );
         assertTrue(erc20BalanceChangeEnforcer.isLocked(hashKey_), "Balance cache should be locked during execution_");
         // Verify the cached balance is stored
@@ -812,7 +867,7 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
         // Validate state: spentMap should track the transfer amount
         uint256 spentAmount_ = erc20TransferAmountEnforcer.spentMap(
             address(logicalOrWrapperEnforcer), // LogicalOrWrapperEnforcer is the delegationManager
-            keccak256("")
+            _groupDelegationHash(keccak256(""), 0)
         );
         assertEq(spentAmount_, 50 ether, "SpentMap should track 50 ether spent");
 
@@ -859,7 +914,7 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
         );
 
         // Validate state after first transfer
-        uint256 spentAfterFirst_ = erc20TransferAmountEnforcer.spentMap(address(logicalOrWrapperEnforcer), keccak256(""));
+        uint256 spentAfterFirst_ = erc20TransferAmountEnforcer.spentMap(address(logicalOrWrapperEnforcer), _groupDelegationHash(keccak256(""), 0));
         assertEq(spentAfterFirst_, 50 ether, "SpentMap should show 50 ether spent after first transfer");
 
         // Simulate the transfer (would be done by the actual execution_ in prod)
@@ -1415,7 +1470,7 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
 
         // Validate state after first call
         assertEq(
-            erc20TransferAmountEnforcer.spentMap(address(logicalOrWrapperEnforcer), delegationHash_),
+            erc20TransferAmountEnforcer.spentMap(address(logicalOrWrapperEnforcer), _groupDelegationHash(delegationHash_, 0)),
             30 ether,
             "Should have 30 ether spent after first call"
         );
@@ -1437,7 +1492,7 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
 
         // Validate final state
         assertEq(
-            erc20TransferAmountEnforcer.spentMap(address(logicalOrWrapperEnforcer), delegationHash_),
+            erc20TransferAmountEnforcer.spentMap(address(logicalOrWrapperEnforcer), _groupDelegationHash(delegationHash_, 0)),
             80 ether,
             "Should have 80 ether spent after second call"
         );
@@ -1489,7 +1544,7 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
         // Validate state: streaming allowance should be initialized and track spent amount
         (,,,, uint256 spent_) = erc20StreamingEnforcer.streamingAllowances(
             address(logicalOrWrapperEnforcer), // LogicalOrWrapperEnforcer is the delegationManager
-            keccak256("")
+            _groupDelegationHash(keccak256(""), 0)
         );
         assertEq(spent_, 5 ether, "Spent amount should be 5 ether");
     }
@@ -1584,7 +1639,7 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
         // Validate state: periodic allowance should be initialized and track transferred amount
         (,,, uint256 lastTransferPeriod_, uint256 transferredInCurrentPeriod_) = erc20PeriodTransferEnforcer.periodicAllowances(
             address(logicalOrWrapperEnforcer), // LogicalOrWrapperEnforcer is the delegationManager
-            keccak256("")
+            _groupDelegationHash(keccak256(""), 0)
         );
         assertEq(lastTransferPeriod_, 1, "Last transfer period should be 1 (current period)");
         assertEq(transferredInCurrentPeriod_, 50 ether, "Transferred in current period should be 50 ether");
@@ -1826,7 +1881,7 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
 
         // Validate state: Check spent amount
         assertEq(
-            erc20TransferAmountEnforcer.spentMap(address(logicalOrWrapperEnforcer), keccak256("")),
+            erc20TransferAmountEnforcer.spentMap(address(logicalOrWrapperEnforcer), _groupDelegationHash(keccak256(""), 0)),
             75 ether,
             "ERC20 transfer enforcer should track 75 ether spent"
         );
@@ -2274,7 +2329,7 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
         // Validate enforcer state (LogicalOrWrapperEnforcer acts as delegationManager for wrapped enforcer)
         bytes32 delegationHash_ = EncoderLib._getDelegationHash(delegation);
         (,,, uint256 lastTransferPeriod, uint256 transferredInCurrentPeriod) =
-            erc20PeriodTransferEnforcer.periodicAllowances(address(logicalOrWrapperEnforcer), delegationHash_);
+            erc20PeriodTransferEnforcer.periodicAllowances(address(logicalOrWrapperEnforcer), _groupDelegationHash(delegationHash_, 0));
         assertEq(lastTransferPeriod, 1, "Should be in first period");
         assertEq(transferredInCurrentPeriod, 30 ether, "Should track 30 ether transferred");
     }
@@ -2301,7 +2356,8 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
 
         // Validate enforcer state (LogicalOrWrapperEnforcer acts as delegationManager for wrapped enforcer)
         bytes32 delegationHash_ = EncoderLib._getDelegationHash(delegation);
-        (,,,, uint256 spent) = erc20StreamingEnforcer.streamingAllowances(address(logicalOrWrapperEnforcer), delegationHash_);
+        (,,,, uint256 spent) =
+            erc20StreamingEnforcer.streamingAllowances(address(logicalOrWrapperEnforcer), _groupDelegationHash(delegationHash_, 0));
         assertEq(spent, 5 ether, "Should track 5 ether spent");
     }
 
@@ -2330,7 +2386,7 @@ contract LogicalOrWrapperEnforcerTest is CaveatEnforcerBaseTest {
         bytes memory terms_ = abi.encodePacked(address(mockToken), uint256(50 ether), uint256(1 days), block.timestamp);
         bytes memory args = abi.encode(uint256(0));
         (uint256 available,,) =
-            multiTokenPeriodEnforcer.getAvailableAmount(delegationHash_, address(logicalOrWrapperEnforcer), terms_, args);
+            multiTokenPeriodEnforcer.getAvailableAmount(_groupDelegationHash(delegationHash_, 0), address(logicalOrWrapperEnforcer), terms_, args);
         assertEq(available, 30 ether, "Should have 30 ether remaining (50 - 20)");
     }
 
