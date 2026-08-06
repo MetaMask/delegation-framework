@@ -53,6 +53,8 @@ CHAIN_IDS=(
   737373     # katana-bokuto
   13579      # intuition testnet
   1155       # intuition
+  46630      # robinhood testnet
+  4663       # robinhood
 )
 
 ##########################################
@@ -113,6 +115,8 @@ get_chain_config() {
         737373)   config=("$ETHERSCAN_API_KEY" "custom" "$KATANA_BOKUTO_RPC_URL" "https://api.etherscan.io/v2/api?chainid=737373") ;; # katana-bokuto
         13579)    config=("key" "blockscout" "$INTUITION_TESTNET_RPC_URL" "https://intuition-testnet.explorer.caldera.xyz/api/") ;; # intuition testnet
         1155)     config=("key" "blockscout" "$INTUITION_RPC_URL" "https://intuition.calderaexplorer.xyz/api/") ;; # intuition
+        46630) config=("key" "blockscout" "$ROBINHOOD_TESTNET_RPC_URL" "https://explorer.testnet.chain.robinhood.com/api/") ;; # robinhood testnet
+        4663) config=("key" "blockscout" "$ROBINHOOD_RPC_URL" "https://robinhoodchain.blockscout.com/api/") ;; # robinhood
         *)
             echo "Unknown chain ID: $chain_id" >&2
             return 1

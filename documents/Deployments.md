@@ -58,6 +58,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Mantle
 - Katana
 - Intuition
+- Robinhood Chain
 
 ### Testnets
 
@@ -84,6 +85,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Mantle sepolia
 - Katana Bokuto
 - Intuition testnet
+- Robinhood Chain testnet
 
 ## **Deployments**
 
