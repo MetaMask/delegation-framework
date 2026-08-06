@@ -55,6 +55,7 @@ CHAIN_IDS=(
   1155       # intuition
   46630      # robinhood testnet
   4663       # robinhood
+  5042002    # arc testnet
 )
 
 ##########################################
@@ -117,6 +118,7 @@ get_chain_config() {
         1155)     config=("key" "blockscout" "$INTUITION_RPC_URL" "https://intuition.calderaexplorer.xyz/api/") ;; # intuition
         46630) config=("key" "blockscout" "$ROBINHOOD_TESTNET_RPC_URL" "https://explorer.testnet.chain.robinhood.com/api/") ;; # robinhood testnet
         4663) config=("key" "blockscout" "$ROBINHOOD_RPC_URL" "https://robinhoodchain.blockscout.com/api/") ;; # robinhood
+        5042002) config=("key" "blockscout" "$ARC_TESTNET_RPC_URL" "https://testnet.arcscan.app/api/") ;; # arc testnet
         *)
             echo "Unknown chain ID: $chain_id" >&2
             return 1

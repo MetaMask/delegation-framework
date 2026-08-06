@@ -86,6 +86,7 @@ bytes32 salt = bytes32(abi.encodePacked("GATOR"));
 - Katana Bokuto
 - Intuition testnet
 - Robinhood Chain testnet
+- Arc Testnet
 
 ## **Deployments**
 
