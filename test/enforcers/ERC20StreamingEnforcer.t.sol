@@ -172,6 +172,19 @@ contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
         erc20StreamingEnforcer.beforeHook(terms_, bytes(""), singleDefaultMode, execData_, bytes32(0), address(0), alice);
     }
 
+    /// @notice Reverts if the execution value is not zero.
+    function test_invalidValue() public {
+        uint256 initialAmount_ = 100 ether;
+        uint256 maxAmount_ = 100 ether;
+        uint256 amountPerSecond_ = 1 ether;
+        uint256 startTime_ = block.timestamp;
+        bytes memory terms_ = abi.encodePacked(address(basicERC20), initialAmount_, maxAmount_, amountPerSecond_, startTime_);
+        bytes memory callData_ = _encodeERC20Transfer(bob, 100);
+        bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 1 ether, callData_);
+        vm.expectRevert("ERC20StreamingEnforcer:invalid-value");
+        erc20StreamingEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, bytes32(0), address(0), alice);
+    }
+
     //////////////////// Valid cases //////////////////////
     /**
      * @notice Test getTermsInfo() on correct 148-byte terms
@@ -418,7 +431,7 @@ contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
     /**
      * @notice Integration test: Successful native token streaming via delegation.
      * A delegation is created that uses the erc20StreamingEnforcer. Two native token transfers
-     * (user ops) are executed sequentially. The test verifies that the enforcer’s state is updated
+     * (user ops) are executed sequentially. The test verifies that the enforcer's state is updated
      * correctly and that the available amount decreases as expected.
      */
     function test_nativeTokenStreamingIntegration_Success() public {

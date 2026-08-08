@@ -37,7 +37,8 @@ contract ERC721TransferEnforcer is CaveatEnforcer {
         onlyDefaultExecutionMode(_mode)
     {
         (address permittedContract_, uint256 permittedTokenId_) = getTermsInfo(_terms);
-        (address target_,, bytes calldata callData_) = ExecutionLib.decodeSingle(_executionCallData);
+        (address target_, uint256 value_, bytes calldata callData_) = ExecutionLib.decodeSingle(_executionCallData);
+        require(value_ == 0, "ERC721TransferEnforcer:invalid-value");
 
         // Decode the remaining callData into NFT transfer parameters
         // The calldata should be at least 100 bytes (4 bytes for the selector + 96 bytes for the parameters)

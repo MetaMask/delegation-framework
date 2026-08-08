@@ -138,6 +138,23 @@ contract OwnershipTransferEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
     }
 
+    /// @notice Reverts if the execution value is not zero.
+    function test_invalidValue() public {
+        bytes memory terms_ = abi.encodePacked(mockContract);
+        transferOwnershipExecution = Execution({
+            target: mockContract,
+            value: 1 ether,
+            callData: abi.encodeWithSelector(bytes4(keccak256("transferOwnership(address)")), delegate)
+        });
+        transferOwnershipExecutionCallData = ExecutionLib.encodeSingle(
+            transferOwnershipExecution.target, transferOwnershipExecution.value, transferOwnershipExecution.callData
+        );
+
+        vm.prank(dm);
+        vm.expectRevert("OwnershipTransferEnforcer:invalid-value");
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, transferOwnershipExecutionCallData, bytes32(0), delegator, delegate);
+    }
+
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {
         return ICaveatEnforcer(address(enforcer));
     }
