@@ -200,6 +200,35 @@ contract ERC20TransferAmountEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(erc20TransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), 0);
     }
 
+    // should FAIL with non-zero native value on a token transfer
+    function test_revertOnNonZeroValue() public {
+        uint256 spendingLimit_ = 1 ether;
+        Execution memory execution_ = Execution({
+            target: address(basicERC20),
+            value: 1,
+            callData: abi.encodeWithSelector(IERC20.transfer.selector, address(users.bob.deleGator), spendingLimit_)
+        });
+        bytes memory executionCallData_ = ExecutionLib.encodeSingle(execution_.target, execution_.value, execution_.callData);
+        bytes memory inputTerms_ = abi.encodePacked(address(basicERC20), spendingLimit_);
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] = Caveat({ args: hex"", enforcer: address(erc20TransferAmountEnforcer), terms: inputTerms_ });
+        Delegation memory delegation_ = Delegation({
+            delegate: address(users.bob.deleGator),
+            delegator: address(users.alice.deleGator),
+            authority: ROOT_AUTHORITY,
+            caveats: caveats_,
+            salt: 0,
+            signature: hex""
+        });
+        bytes32 delegationHash_ = EncoderLib._getDelegationHash(delegation_);
+        vm.prank(address(delegationManager));
+        vm.expectRevert("ERC20TransferAmountEnforcer:invalid-value");
+        erc20TransferAmountEnforcer.beforeHook(
+            inputTerms_, hex"", singleDefaultMode, executionCallData_, delegationHash_, address(0), address(0)
+        );
+        assertEq(erc20TransferAmountEnforcer.spentMap(address(delegationManager), delegationHash_), 0);
+    }
+
     // should FAIL to INVOKE invalid method
     function test_methodFailsIfInvokesInvalidMethod() public {
         uint256 spendingLimit_ = 1 ether;
