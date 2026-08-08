@@ -63,6 +63,24 @@ contract OwnershipTransferEnforcerTest is CaveatEnforcerBaseTest {
 
     ////////////////////// Errors //////////////////////
 
+    // Reverts if ownership transfer execution carries non-zero native value
+    function test_revertOnNonZeroValue() public {
+        address newOwner = address(0x5678);
+        bytes memory terms_ = abi.encodePacked(mockContract);
+        transferOwnershipExecution = Execution({
+            target: mockContract,
+            value: 1,
+            callData: abi.encodeWithSelector(bytes4(keccak256("transferOwnership(address)")), newOwner)
+        });
+        transferOwnershipExecutionCallData = ExecutionLib.encodeSingle(
+            transferOwnershipExecution.target, transferOwnershipExecution.value, transferOwnershipExecution.callData
+        );
+
+        vm.prank(dm);
+        vm.expectRevert("OwnershipTransferEnforcer:invalid-value");
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, transferOwnershipExecutionCallData, bytes32(0), delegator, delegate);
+    }
+
     // Reverts if the terms length is invalid
     function test_invalid_termsLength() public {
         bytes memory invalidTerms = abi.encodePacked(mockContract, uint256(1)); // Too long
