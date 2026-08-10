@@ -20,7 +20,42 @@ struct EIP712Domain {
  * @title Delegation
  * @notice Struct representing a delegation to give a delegate authority to act on behalf of a delegator.
  * @dev `signature` is ignored during delegation hashing so it can be manipulated post signing.
+ * @dev Can be represented in a human-readable format using ReadableDelegation and ReadableTerm.
  */
+
+/**
+ * @title ReadableDelegation 
+ * @notice Human-readable version of a Delegation that uses string permission names and parameters.
+ */
+struct ReadableDelegation {
+    address delegate;
+    address delegator;
+    bytes32 authority;
+    ReadableTerm[] readableTerms;
+    uint256 salt;
+    bytes signature;
+}
+
+/**
+ * @title ReadableTerm
+ * @notice Human-readable version of a Caveat that uses string permission names and parameters.
+ */
+struct ReadableTerm {
+    string permissionName;
+    Parameter[] parameters;
+    bytes args;
+}
+
+/**
+ * @title Parameter
+ * @notice Name-value pair for readable delegation parameters.
+ */
+struct Parameter {
+    string name;
+    string value;
+}
+
+/**
 struct Delegation {
     address delegate;
     address delegator;
