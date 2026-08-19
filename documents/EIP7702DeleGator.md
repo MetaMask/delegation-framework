@@ -2,22 +2,22 @@
 
 ## Overview
 
-This document provides an overview of the implemented EIP-7702-compatible contracts. These contracts use a different upgrade mechanism than the previous UUPS proxy-based architecture (as implemented in DeleGatorCore) and instead follow the EIP-7702 standard.
+These contracts let an EOA delegate its code to a DeleGator implementation under EIP-7702. EIP-7702 changes code through an EOA authorization and has no initializer.
 
-Under EIP-7702, an Externally Owned Account (EOA) can submit an authorization to map the contract code of an existing contract to that EOA. Unlike UUPS proxy-based contracts, this approach neither supports contract initialization nor relies on UUPS-related code.
+## Production Stateless account
 
-## Contracts
+`EIP7702DeleGatorCore` and `EIP7702StatelessDeleGator` provide the single-`DelegationManager` account. They support ERC-4337 and require ERC-1271 and UserOperation signatures to recover to the EOA whose address hosts the delegated code.
 
-### 1. EIP7702DeleGatorCore.sol
+## EIP7702MultiManagerDeleGator
 
-**EIP7702DeleGatorCore** serves as the foundational contract for EIP-7702-compatible delegator functionality with ERC-7710. It acts as the primary interface for interactions under EIP-7702 and implements the EIP-7821 interface, which provides a method to execute calls in different modes (e.g., single or batch). These methods can be invoked either through the privileged ERC-4337 EntryPoint or directly via the EOA address.
+`EIP7702MultiManagerDeleGator` is a non-ERC-4337 account with two immutable default `DelegationManager` contracts and optional additional approved `DelegationManager` contracts.
 
-Future implementations may introduce additional features, such as signature validation, as outlined in EIP-7821.
+See the [implementation](../src/EIP7702/EIP7702MultiManagerDeleGator.sol) and [core](../src/EIP7702/EIP7702MultiManagerDeleGatorCore.sol) source for API and implementation behavior.
 
-This contract also integrates OpenZeppelin’s EIP712 functionality. The name and version used in the EIP712 constructor are limited to a maximum of 31 bytes. Exceeding this limit causes those variables to be stored in the contract state without namespace storage, leading to conflicts. Restricting the name and version size helps ensure that **EIP7702DeleGatorCore** remains stateless by avoiding additional storage.
+### Security considerations
 
-### 2. EIP7702StatelessDeleGator.sol
+> **Warning:** Every default or approved `DelegationManager` is a root authority over the account. It can execute arbitrary calls, self-call the account, and modify mutable manager approvals.
 
-**EIP7702StatelessDeleGator** does not maintain signer data within the contract state. Instead, control is granted to the EOA that shares the same address, in accordance with EIP-7702. The contract can be invoked either through the privileged ERC-4337 EntryPoint or directly via the EOA address. The signature is verified via the `isValidSignature()` function.
-
-This stateless design offers a lightweight and secure approach to delegator functionality under the EIP-7702 standard.
+- Unknown, unofficial, unaudited, compromised, or upgradeable `DelegationManager` contracts can compromise the account. Users and integrators must carefully verify and trust each one before configuring or approving it.
+- The two default `DelegationManager` contracts cannot be revoked for this implementation.
+- Under EIP-7702, changing the delegated implementation does not clear the EOA's storage. Mutable approvals use the ERC-7201 namespace `DeleGator.EIP7702MultiManager.v1`; a replacement implementation should use a different namespace unless it intentionally adopts the same approvals. There is no on-chain enumeration or revoke-all operation.
