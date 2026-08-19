@@ -7,6 +7,21 @@ Canonical controls remain unchanged:
 - `src/DelegationManager.sol`
 - `src/DeleGatorCore.sol` and account `executeFromExecutor` implementations
 
+## Phase 3 (O* one-shot / attested)
+
+| ID | Path | Status |
+| --- | --- | --- |
+| O-exact | `oneshot/OneShotExactLimitOrderLib.sol` + canonical enforcers | Implemented + benchmarked |
+| O-attested-trust | `oneshot/SignedExecutionEnforcer.sol`, `ServiceInstruction*.sol` | Implemented + benchmarked |
+| O-attested-receipt | `oneshot/SignedExecutionReceiptEnforcer.sol` | Implemented + benchmarked |
+| O-adapter | `oneshot/LimitOrderSwapAdapter.sol` | Implemented + unit tested |
+
+Docs: `documents/experiments/delegation-manager-gas/O.md`
+
+```bash
+forge test --isolate -vv --match-contract "OneShotExactLimitOrder|SignedExecutionEnforcer|LimitOrderSwapAdapter|OneShotGasBenchmark"
+```
+
 ## Phase 5 (X* exploratory)
 
 | ID | Path | Status |
