@@ -22,6 +22,19 @@ Docs: `documents/experiments/delegation-manager-gas/O.md`
 forge test --isolate -vv --match-contract "OneShotExactLimitOrder|SignedExecutionEnforcer|LimitOrderSwapAdapter|OneShotGasBenchmark"
 ```
 
+## Phase 4 (P* partial-fill RFQ)
+
+| ID | Path | Status |
+| --- | --- | --- |
+| P1 | `partial-fill/PartialFillRfqEnforcer.sol`, `PartialFillSettlementAdapter.sol`, `OrderTermsLib.sol` | Implemented + benchmarked |
+| P2 | `manager/LimitOrderDelegationManager.sol` | Implemented + benchmarked |
+
+Docs: `documents/experiments/delegation-manager-gas/P1-partial-fill-rfq-enforcer.md`, `P2-limit-order-delegation-manager.md`
+
+```bash
+forge test --isolate -vv --match-contract "PartialFill|LimitOrderManager"
+```
+
 ## Phase 5 (X* exploratory)
 
 | ID | Path | Status |

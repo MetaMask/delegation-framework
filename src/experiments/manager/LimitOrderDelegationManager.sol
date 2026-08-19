@@ -178,8 +178,6 @@ contract LimitOrderDelegationManager is IDelegationManager, ICaveatEnforcer, Own
         ctx_.maker = _delegation.delegator;
         ctx_.solver = msg.sender;
 
-        if (ctx_.terms.allowedSolver != address(0) && ctx_.solver != ctx_.terms.allowedSolver) revert InvalidDelegate();
-
         ctx_.makerSellBefore = IERC20(ctx_.terms.sellToken).balanceOf(ctx_.maker);
         ctx_.solverSellBefore = IERC20(ctx_.terms.sellToken).balanceOf(ctx_.solver);
         ctx_.receiverBuyBefore = IERC20(ctx_.terms.buyToken).balanceOf(ctx_.terms.receiver);

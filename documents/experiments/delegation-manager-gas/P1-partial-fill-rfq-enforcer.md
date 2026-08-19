@@ -17,31 +17,32 @@ Phase 4 control path: keep canonical `DelegationManager` and account `executeFro
 - `sellToken`, `buyToken`, `receiver`
 - `totalSell`, `minTotalBuy`, `minFillSell`
 - `validAfter`, `validUntil`, `epoch`, `allowPartial`
-- `allowedSolver` (optional; `address(0)` = permissionless via `ANY_DELEGATE` leaf)
 
 Caveat terms for P1: `abi.encode(OrderTerms, settlementAdapter)`.
 
-Fill args: `abi.encode(fillSellAmount, solverAddress)`.
+Fill args: `abi.encode(fillSellAmount)`.
+
+Leaf delegate: specific solver address or `ANY_DELEGATE` (`0xa11`) for permissionless fills.
 
 ## Semantic delta vs one-shot (O-exact)
 
 - **Retained:** EIP-712 root delegation, hook phases, canonical manager forwarding, disable/enable, epoch bump on enforcer.
-- **Gained:** Multiple partial fills, maker-favoring ceil pricing, min-fill / no-dust rules, optional private solver.
+- **Gained:** Multiple partial fills, maker-favoring ceil pricing, min-fill / no-dust rules, private or permissionless solver via delegate.
 - **Lost:** Pre-bound full execution batch; settlement is always `IERC20.transfer(solver, fillSell)`.
 
 ## Benchmark
 
 ```bash
-forge test --evm-version cancun --isolate -vv --match-test test_benchmark_p1_first_partial_subsequent
+forge test --isolate -vv --match-test test_benchmark_p1_first_partial_subsequent
 ```
 
-Environment: `solc 0.8.23`, Cancun EVM (balance delta checks), `via_ir` on enforcer.
+Environment: `solc 0.8.23`, `evm_version = london`, `via_ir` on enforcer, HybridDeleGator maker.
 
 | Scenario | Exec gas | Calldata bytes | Calldata gas | Est. tx gas |
 | --- | ---: | ---: | ---: | ---: |
-| First partial fill (100 sell) | 293,059 | 1,572 | 10,704 | 324,763 |
-| Subsequent partial fill (200 sell) | 225,014 | 1,572 | 10,704 | 256,718 |
-| Final fill (remainder 700 sell) | 225,003 | 1,572 | 10,704 | 256,707 |
+| First partial fill (100 sell) | 266,815 | 1,508 | 10,208 | 298,023 |
+| Subsequent partial fill (200 sell) | 255,166 | 1,508 | 10,208 | 286,374 |
+| Final fill (remainder 700 sell) | 257,666 | 1,508 | 10,208 | 288,874 |
 
 ## Security notes
 

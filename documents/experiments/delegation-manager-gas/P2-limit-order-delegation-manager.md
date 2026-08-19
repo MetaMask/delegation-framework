@@ -10,7 +10,7 @@ Phase 4 integrated experiment: single root delegation, direct bilateral settleme
 | --- | --- |
 | `LimitOrderDelegationManager.fillOrder` | Primary solver entry; validates signature, terms, fill rules, pulls buy, executes sell via maker account |
 | `LimitOrderDelegationManager.redeemDelegations` | Alternate entry accepting exactly one delegation + single ERC20 transfer execution (direct bilateral profile) |
-| Built-in policy | Replaces external enforcer chain: `filledSell`, `makerEpoch`, disable/enable, timing, epoch, optional `allowedSolver` |
+| Built-in policy | Replaces external enforcer chain: `filledSell`, `makerEpoch`, disable/enable, timing, epoch |
 
 ### OrderTerms (signed in caveat)
 
@@ -27,24 +27,23 @@ Delegate: specific solver address or `ANY_DELEGATE` (`0xa11`) for permissionless
 ## Benchmark
 
 ```bash
-forge test --evm-version cancun --isolate -vv --match-test test_benchmark_p2_first_partial_subsequent
+forge test --isolate -vv --match-test test_benchmark_p2_first_partial_subsequent
 ```
 
-Environment: `solc 0.8.23`, Cancun EVM, `via_ir` on manager.
+Environment: `solc 0.8.23`, `evm_version = london`, `via_ir` on manager, HybridDeleGator maker.
 
 | Scenario | Exec gas | Calldata bytes | Calldata gas | Est. tx gas |
 | --- | ---: | ---: | ---: | ---: |
-| First partial fill (100 sell) | 129,906 | 964 | 7,000 | 157,906 |
-| Subsequent partial fill (200 sell) | 55,406 | 964 | 7,000 | 83,406 |
-| Final fill (remainder 700 sell) | 55,337 | 964 | 7,000 | 83,337 |
+| First partial fill (100 sell) | 184,599 | 932 | 6,872 | 212,471 |
+| Subsequent partial fill (200 sell) | 128,799 | 932 | 6,872 | 156,671 |
+| Final fill (remainder 700 sell) | 133,230 | 932 | 6,872 | 161,102 |
 
-P2 first fill ~55% lower execution gas than P1; subsequent fills ~75% lower.
+P2 first fill ~31% lower execution gas than P1; subsequent fills ~50% lower.
 
 ## Security notes
 
 - Same economic guarantees as P1: ceil pricing, min-fill, no dust, fee-on-transfer rejection on sell leg.
 - Signature verified against manager EIP-712 domain (delegator signs manager domain, not canonical manager).
-- `allowedSolver` optional restriction in addition to leaf delegate check.
 - Pausable + ownable owner surface (experiment only).
 
 ## Verdict
