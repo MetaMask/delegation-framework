@@ -16,6 +16,10 @@ import { IDelegationManager } from "../../../src/interfaces/IDelegationManager.s
 import { IDeleGatorCore } from "../../../src/interfaces/IDeleGatorCore.sol";
 import { DelegationManager } from "../../../src/DelegationManager.sol";
 import { SimpleDelegationManager } from "../../../src/SimpleDelegationManager.sol";
+import { DelegationManagerC1 } from "../../../src/experiments/manager/DelegationManagerC1.sol";
+import { DelegationManagerC2 } from "../../../src/experiments/manager/DelegationManagerC2.sol";
+import { DelegationManagerC3 } from "../../../src/experiments/manager/DelegationManagerC3.sol";
+import { DelegationManagerC4 } from "../../../src/experiments/manager/DelegationManagerC4.sol";
 import { EIP7702MultiManagerDeleGator } from "../../../src/EIP7702/EIP7702MultiManagerDeleGator.sol";
 import { ExecuteFromExecutorWitnessEnforcer } from "./helpers/ExecuteFromExecutorWitnessEnforcer.sol";
 
@@ -27,6 +31,10 @@ import { ExecuteFromExecutorWitnessEnforcer } from "./helpers/ExecuteFromExecuto
 contract ExecuteFromExecutorForwardingSpy is BaseTest {
     DelegationManager internal canonicalManager;
     SimpleDelegationManager internal simpleManager;
+    DelegationManagerC1 internal c1Manager;
+    DelegationManagerC2 internal c2Manager;
+    DelegationManagerC3 internal c3Manager;
+    DelegationManagerC4 internal c4Manager;
     EIP7702MultiManagerDeleGator internal multiManagerImpl;
     ExecuteFromExecutorWitnessEnforcer internal witnessEnforcer;
     BasicERC20 internal token;
@@ -44,6 +52,10 @@ contract ExecuteFromExecutorForwardingSpy is BaseTest {
 
         canonicalManager = delegationManager;
         simpleManager = new SimpleDelegationManager();
+        c1Manager = new DelegationManagerC1(makeAddr("spy-c1-owner"));
+        c2Manager = new DelegationManagerC2(makeAddr("spy-c2-owner"));
+        c3Manager = new DelegationManagerC3(makeAddr("spy-c3-owner"));
+        c4Manager = new DelegationManagerC4(makeAddr("spy-c4-owner"));
         multiManagerImpl = new EIP7702MultiManagerDeleGator();
         witnessEnforcer = new ExecuteFromExecutorWitnessEnforcer();
         token = new BasicERC20(address(this), "Mock USDC", "USDC", 0);
@@ -55,10 +67,30 @@ contract ExecuteFromExecutorForwardingSpy is BaseTest {
         vm.startPrank(users.alice.addr);
         aliceAccount_.approveDelegationManager(IDelegationManager(address(canonicalManager)));
         aliceAccount_.approveDelegationManager(IDelegationManager(address(simpleManager)));
+        aliceAccount_.approveDelegationManager(IDelegationManager(address(c1Manager)));
+        aliceAccount_.approveDelegationManager(IDelegationManager(address(c2Manager)));
+        aliceAccount_.approveDelegationManager(IDelegationManager(address(c3Manager)));
+        aliceAccount_.approveDelegationManager(IDelegationManager(address(c4Manager)));
         vm.stopPrank();
 
         relayer = makeAddr("forwarding-spy-relayer");
         recipient = makeAddr("forwarding-spy-recipient");
+    }
+
+    function test_forwardingSpy_C1_matchesCanonical() public {
+        _assertForwardingMatchesCanonical(IDelegationManager(address(c1Manager)));
+    }
+
+    function test_forwardingSpy_C2_matchesCanonical() public {
+        _assertForwardingMatchesCanonical(IDelegationManager(address(c2Manager)));
+    }
+
+    function test_forwardingSpy_C3_matchesCanonical() public {
+        _assertForwardingMatchesCanonical(IDelegationManager(address(c3Manager)));
+    }
+
+    function test_forwardingSpy_C4_matchesCanonical() public {
+        _assertForwardingMatchesCanonical(IDelegationManager(address(c4Manager)));
     }
 
     function test_forwardingSpy_canonicalMatchesSimple_singleBatch() public {
@@ -77,9 +109,30 @@ contract ExecuteFromExecutorForwardingSpy is BaseTest {
         ForwardWitness memory simple_ = _captureForward(IDelegationManager(address(simpleManager)), mode_, execData_);
         vm.revertTo(snap_);
 
-        assertEq(ModeCode.unwrap(canonical_.mode), ModeCode.unwrap(simple_.mode), "mode mismatch");
-        assertEq(keccak256(canonical_.executionCalldata), keccak256(simple_.executionCalldata), "executionCalldata mismatch");
-        assertEq(canonical_.witnessCount, simple_.witnessCount, "witness hook count mismatch");
+        _assertForwardWitnessEqual(canonical_, simple_);
+    }
+
+    function _assertForwardingMatchesCanonical(IDelegationManager _variant) internal {
+        Execution[] memory executions_ = new Execution[](1);
+        executions_[0] = Execution({
+            target: address(token),
+            value: 0,
+            callData: abi.encodeWithSelector(IERC20.transfer.selector, recipient, 100e18)
+        });
+        ModeCode mode_ = ModeLib.encodeSimpleBatch();
+        bytes memory execData_ = ExecutionLib.encodeBatch(executions_);
+
+        ForwardWitness memory canonical_ = _captureForward(IDelegationManager(address(canonicalManager)), mode_, execData_);
+        uint256 snap_ = vm.snapshot();
+        ForwardWitness memory variant_ = _captureForward(_variant, mode_, execData_);
+        vm.revertTo(snap_);
+        _assertForwardWitnessEqual(canonical_, variant_);
+    }
+
+    function _assertForwardWitnessEqual(ForwardWitness memory _a, ForwardWitness memory _b) internal {
+        assertEq(ModeCode.unwrap(_a.mode), ModeCode.unwrap(_b.mode), "mode mismatch");
+        assertEq(keccak256(_a.executionCalldata), keccak256(_b.executionCalldata), "executionCalldata mismatch");
+        assertEq(_a.witnessCount, _b.witnessCount, "witness hook count mismatch");
     }
 
     struct ForwardWitness {

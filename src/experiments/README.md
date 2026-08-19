@@ -7,6 +7,23 @@ Canonical controls remain unchanged:
 - `src/DelegationManager.sol`
 - `src/DeleGatorCore.sol` and account `executeFromExecutor` implementations
 
+## Phase 2 (C* compatible ablations)
+
+| ID | Path | Change |
+| --- | --- | --- |
+| C1 | `manager/DelegationManagerC1.sol` | Hoist domain separator per batch |
+| C2 | `manager/DelegationManagerC2.sol` | Cached lengths + unchecked loops |
+| C3 | `manager/DelegationManagerC3.sol` | Single-redemption fast path |
+| C4 | `manager/DelegationManagerC4.sol` | Fused validation loop |
+| C5 | `manager/DelegationManagerC5.sol` | Lean redemption events |
+| Enforcer | `enforcers/ExactExecutionBatchLimitedCallsProfileEnforcer.sol` | Mode + validity profile v1 |
+
+Docs: `documents/experiments/delegation-manager-gas/C1.md` … `C5.md`, `ProfileEnforcer.md`, `phase-2-compatible-ablations.md`
+
+```bash
+forge test --isolate -vv --match-contract "CompatibleAblationDifferential|CompatibleAblationGasBenchmark|ExactExecutionBatchLimitedCallsProfileEnforcerTest|ExecuteFromExecutorForwardingSpy"
+```
+
 ## Phase 3 (O* one-shot / attested)
 
 | ID | Path | Status |
