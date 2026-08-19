@@ -51,6 +51,7 @@ contract ExactExecutionBatchLimitedCallsEnforcer is CaveatEnforcer {
         address
     )
         public
+        virtual
         override
         onlyBatchCallTypeMode(_mode)
         onlyDefaultExecutionMode(_mode)
