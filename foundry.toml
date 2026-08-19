@@ -13,15 +13,17 @@ sparse_mode = true
 evm_version = "london"
 optimizer = true
 skip = [
-    "src/experiments/manager/**",
+    "src/experiments/manager/DelegationManagerC*.sol",
     "src/experiments/oneshot/**",
-    "src/experiments/partial-fill/**",
     "src/experiments/enforcers/**",
     "src/experiments/X2/TransientStorageLib.sol",
     "src/experiments/X2/TransientERC20HookCoordinator.sol",
     "test/experiments/gas/X2TransientHookBenchmark.t.sol",
-    "test/experiments/partial-fill/**",
-    "test/experiments/oneshot/**"
+    "test/experiments/gas/ExactExecutionBatchLimitedCallsProfileEnforcer.t.sol",
+    "test/experiments/oneshot/**",
+    "test/experiments/enforcers/**",
+    "test/experiments/manager/**",
+    "test/experiments/gas/OneShotGasBenchmark.t.sol"
 ]
 
 [profile.cancun]
@@ -29,9 +31,8 @@ solc = "0.8.24"
 evm_version = "cancun"
 optimizer = true
 skip = [
-    "src/experiments/manager/**",
+    "src/experiments/manager/DelegationManagerC*.sol",
     "src/experiments/oneshot/**",
-    "src/experiments/partial-fill/**",
     "src/experiments/enforcers/**"
 ]
 
