@@ -14,15 +14,12 @@ evm_version = "london"
 optimizer = true
 skip = [
     "src/experiments/manager/LimitOrderDelegationManager.sol",
-    "src/experiments/oneshot/**",
     "src/experiments/partial-fill/**",
     "src/experiments/X1/**",
     "src/experiments/X2/TransientStorageLib.sol",
     "src/experiments/X2/TransientERC20HookCoordinator.sol",
     "src/experiments/X3/**",
-    "test/experiments/oneshot/**",
     "test/experiments/partial-fill/**",
-    "test/experiments/gas/OneShotGasBenchmark.t.sol",
     "test/experiments/gas/X1CompactOrderBenchmark.t.sol",
     "test/experiments/gas/X2TransientHookBenchmark.t.sol",
     "test/experiments/gas/X2PersistentHookBenchmark.t.sol",
@@ -35,9 +32,7 @@ evm_version = "cancun"
 optimizer = true
 skip = [
     "src/experiments/manager/LimitOrderDelegationManager.sol",
-    "src/experiments/oneshot/**",
-    "src/experiments/partial-fill/**",
-    "src/experiments/enforcers/**"
+    "src/experiments/partial-fill/**"
 ]
 
 [fmt]
