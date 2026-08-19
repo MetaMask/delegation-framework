@@ -167,21 +167,13 @@ library CompactOrderCodec {
         return _offset + len_;
     }
 
-    function _readAddressMem(bytes memory _buf, uint256 _offset)
-        private
-        pure
-        returns (address value_, uint256 nextOffset_)
-    {
+    function _readAddressMem(bytes memory _buf, uint256 _offset) private pure returns (address value_, uint256 nextOffset_) {
         if (_offset + 20 > _buf.length) revert CompactOrderTruncated();
         value_ = address(bytes20(_sliceMem(_buf, _offset, 20)));
         nextOffset_ = _offset + 20;
     }
 
-    function _readBytes32Mem(bytes memory _buf, uint256 _offset)
-        private
-        pure
-        returns (bytes32 value_, uint256 nextOffset_)
-    {
+    function _readBytes32Mem(bytes memory _buf, uint256 _offset) private pure returns (bytes32 value_, uint256 nextOffset_) {
         if (_offset + 32 > _buf.length) revert CompactOrderTruncated();
         value_ = bytes32(_sliceMem(_buf, _offset, 32));
         nextOffset_ = _offset + 32;
@@ -193,7 +185,11 @@ library CompactOrderCodec {
         nextOffset_ = _offset + 2;
     }
 
-    function _readBytesSliceMem(bytes memory _buf, uint256 _offset, uint256 _len)
+    function _readBytesSliceMem(
+        bytes memory _buf,
+        uint256 _offset,
+        uint256 _len
+    )
         private
         pure
         returns (bytes memory slice_, uint256 nextOffset_)
@@ -210,21 +206,13 @@ library CompactOrderCodec {
         }
     }
 
-    function _readAddress(bytes calldata _buf, uint256 _offset)
-        private
-        pure
-        returns (address value_, uint256 nextOffset_)
-    {
+    function _readAddress(bytes calldata _buf, uint256 _offset) private pure returns (address value_, uint256 nextOffset_) {
         if (_offset + 20 > _buf.length) revert CompactOrderTruncated();
         value_ = address(bytes20(_buf[_offset:_offset + 20]));
         nextOffset_ = _offset + 20;
     }
 
-    function _readBytes32(bytes calldata _buf, uint256 _offset)
-        private
-        pure
-        returns (bytes32 value_, uint256 nextOffset_)
-    {
+    function _readBytes32(bytes calldata _buf, uint256 _offset) private pure returns (bytes32 value_, uint256 nextOffset_) {
         if (_offset + 32 > _buf.length) revert CompactOrderTruncated();
         value_ = bytes32(_buf[_offset:_offset + 32]);
         nextOffset_ = _offset + 32;
@@ -236,7 +224,11 @@ library CompactOrderCodec {
         nextOffset_ = _offset + 2;
     }
 
-    function _readBytesSlice(bytes calldata _buf, uint256 _offset, uint256 _len)
+    function _readBytesSlice(
+        bytes calldata _buf,
+        uint256 _offset,
+        uint256 _len
+    )
         private
         pure
         returns (bytes memory slice_, uint256 nextOffset_)
@@ -248,8 +240,7 @@ library CompactOrderCodec {
 
     function _readMagicMem(bytes memory _buf) private pure returns (bytes4 magic_) {
         magic_ = bytes4(
-            (uint32(uint8(_buf[0])) << 24) | (uint32(uint8(_buf[1])) << 16) | (uint32(uint8(_buf[2])) << 8)
-                | uint32(uint8(_buf[3]))
+            (uint32(uint8(_buf[0])) << 24) | (uint32(uint8(_buf[1])) << 16) | (uint32(uint8(_buf[2])) << 8) | uint32(uint8(_buf[3]))
         );
     }
 }

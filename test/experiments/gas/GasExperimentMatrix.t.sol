@@ -89,23 +89,17 @@ contract GasExperimentMatrix is BaseTest, GasExperimentHarness {
     function _oneExecution() internal view returns (Execution[] memory executions_) {
         executions_ = new Execution[](1);
         executions_[0] = Execution({
-            target: address(token),
-            value: 0,
-            callData: abi.encodeWithSelector(IERC20.transfer.selector, recipient, USER_AMOUNT)
+            target: address(token), value: 0, callData: abi.encodeWithSelector(IERC20.transfer.selector, recipient, USER_AMOUNT)
         });
     }
 
     function _twoExecutions() internal view returns (Execution[] memory executions_) {
         executions_ = new Execution[](2);
         executions_[0] = Execution({
-            target: address(token),
-            value: 0,
-            callData: abi.encodeWithSelector(IERC20.transfer.selector, recipient, USER_AMOUNT)
+            target: address(token), value: 0, callData: abi.encodeWithSelector(IERC20.transfer.selector, recipient, USER_AMOUNT)
         });
         executions_[1] = Execution({
-            target: address(token),
-            value: 0,
-            callData: abi.encodeWithSelector(IERC20.transfer.selector, feeRecipient, FEE_AMOUNT)
+            target: address(token), value: 0, callData: abi.encodeWithSelector(IERC20.transfer.selector, feeRecipient, FEE_AMOUNT)
         });
     }
 }

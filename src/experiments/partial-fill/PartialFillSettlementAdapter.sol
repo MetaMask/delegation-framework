@@ -36,7 +36,10 @@ contract PartialFillSettlementAdapter {
     }
 
     /// @notice Computes the minimum buy amount owed for a fill.
-    function requiredBuyAmount(OrderTermsLib.OrderTerms calldata _terms, uint256 _fillSellAmount)
+    function requiredBuyAmount(
+        OrderTermsLib.OrderTerms calldata _terms,
+        uint256 _fillSellAmount
+    )
         external
         pure
         returns (uint256 buyAmount_)
@@ -45,14 +48,16 @@ contract PartialFillSettlementAdapter {
     }
 
     /// @notice Encodes the maker sell transfer execution expected by the enforcer.
-    function encodeSellExecution(address _sellToken, address _solver, uint256 _fillSellAmount)
+    function encodeSellExecution(
+        address _sellToken,
+        address _solver,
+        uint256 _fillSellAmount
+    )
         external
         pure
         returns (bytes memory executionCalldata_)
     {
-        executionCalldata_ = ExecutionLib.encodeSingle(
-            _sellToken, 0, abi.encodeCall(IERC20.transfer, (_solver, _fillSellAmount))
-        );
+        executionCalldata_ = ExecutionLib.encodeSingle(_sellToken, 0, abi.encodeCall(IERC20.transfer, (_solver, _fillSellAmount)));
     }
 
     /**
@@ -95,8 +100,7 @@ contract PartialFillSettlementAdapter {
         modes_ = new ModeCode[](1);
         modes_[0] = ModeLib.encodeSimpleSingle();
         executionCallDatas_ = new bytes[](1);
-        executionCallDatas_[0] = ExecutionLib.encodeSingle(
-            terms_.sellToken, 0, abi.encodeCall(IERC20.transfer, (_solver, _fillSellAmount))
-        );
+        executionCallDatas_[0] =
+            ExecutionLib.encodeSingle(terms_.sellToken, 0, abi.encodeCall(IERC20.transfer, (_solver, _fillSellAmount)));
     }
 }

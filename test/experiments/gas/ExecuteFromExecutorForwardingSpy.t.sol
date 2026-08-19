@@ -96,9 +96,7 @@ contract ExecuteFromExecutorForwardingSpy is BaseTest {
     function test_forwardingSpy_canonicalMatchesSimple_singleBatch() public {
         Execution[] memory executions_ = new Execution[](1);
         executions_[0] = Execution({
-            target: address(token),
-            value: 0,
-            callData: abi.encodeWithSelector(IERC20.transfer.selector, recipient, 100e18)
+            target: address(token), value: 0, callData: abi.encodeWithSelector(IERC20.transfer.selector, recipient, 100e18)
         });
 
         ModeCode mode_ = ModeLib.encodeSimpleBatch();
@@ -115,9 +113,7 @@ contract ExecuteFromExecutorForwardingSpy is BaseTest {
     function _assertForwardingMatchesCanonical(IDelegationManager _variant) internal {
         Execution[] memory executions_ = new Execution[](1);
         executions_[0] = Execution({
-            target: address(token),
-            value: 0,
-            callData: abi.encodeWithSelector(IERC20.transfer.selector, recipient, 100e18)
+            target: address(token), value: 0, callData: abi.encodeWithSelector(IERC20.transfer.selector, recipient, 100e18)
         });
         ModeCode mode_ = ModeLib.encodeSimpleBatch();
         bytes memory execData_ = ExecutionLib.encodeBatch(executions_);
@@ -141,7 +137,11 @@ contract ExecuteFromExecutorForwardingSpy is BaseTest {
         uint256 witnessCount;
     }
 
-    function _captureForward(IDelegationManager _manager, ModeCode _mode, bytes memory _execData)
+    function _captureForward(
+        IDelegationManager _manager,
+        ModeCode _mode,
+        bytes memory _execData
+    )
         internal
         returns (ForwardWitness memory w_)
     {
@@ -151,12 +151,7 @@ contract ExecuteFromExecutorForwardingSpy is BaseTest {
         caveats_[0] = Caveat({ enforcer: address(witnessEnforcer), terms: hex"", args: hex"" });
 
         Delegation memory unsigned_ = Delegation({
-            delegate: relayer,
-            delegator: users.alice.addr,
-            authority: ROOT_AUTHORITY,
-            caveats: caveats_,
-            salt: 0,
-            signature: hex""
+            delegate: relayer, delegator: users.alice.addr, authority: ROOT_AUTHORITY, caveats: caveats_, salt: 0, signature: hex""
         });
 
         Delegation memory signed_ = _signDelegationFor(_manager, users.alice, unsigned_);
@@ -170,10 +165,7 @@ contract ExecuteFromExecutorForwardingSpy is BaseTest {
         bytes[] memory executionCallDatas_ = new bytes[](1);
         executionCallDatas_[0] = _execData;
 
-        vm.expectCall(
-            users.alice.addr,
-            abi.encodeWithSelector(IDeleGatorCore.executeFromExecutor.selector, _mode, _execData)
-        );
+        vm.expectCall(users.alice.addr, abi.encodeWithSelector(IDeleGatorCore.executeFromExecutor.selector, _mode, _execData));
 
         vm.prank(relayer);
         _manager.redeemDelegations(permissionContexts_, modes_, executionCallDatas_);

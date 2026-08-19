@@ -50,7 +50,11 @@ library OrderTermsLib {
         (terms_, settlementAdapter_) = abi.decode(_terms, (OrderTerms, address));
     }
 
-    function decodeTermsCalldata(bytes calldata _terms) internal pure returns (OrderTerms memory terms_, address settlementAdapter_) {
+    function decodeTermsCalldata(bytes calldata _terms)
+        internal
+        pure
+        returns (OrderTerms memory terms_, address settlementAdapter_)
+    {
         (terms_, settlementAdapter_) = abi.decode(_terms, (OrderTerms, address));
     }
 

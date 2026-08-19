@@ -14,7 +14,9 @@ import { Caveat, Delegation, Execution, ModeCode } from "../../../src/utils/Type
 import { EncoderLib } from "../../../src/libraries/EncoderLib.sol";
 import { IDelegationManager } from "../../../src/interfaces/IDelegationManager.sol";
 import { ExactExecutionBatchLimitedCallsEnforcer } from "../../../src/enforcers/ExactExecutionBatchLimitedCallsEnforcer.sol";
-import { ExactExecutionBatchLimitedCallsProfileEnforcer } from "../../../src/experiments/enforcers/ExactExecutionBatchLimitedCallsProfileEnforcer.sol";
+import {
+    ExactExecutionBatchLimitedCallsProfileEnforcer
+} from "../../../src/experiments/enforcers/ExactExecutionBatchLimitedCallsProfileEnforcer.sol";
 import { DelegationManagerC1 } from "../../../src/experiments/manager/DelegationManagerC1.sol";
 import { DelegationManagerC2 } from "../../../src/experiments/manager/DelegationManagerC2.sol";
 import { DelegationManagerC3 } from "../../../src/experiments/manager/DelegationManagerC3.sol";
@@ -126,7 +128,8 @@ contract CompatibleAblationGasBenchmark is BaseTest, GasExperimentHarness {
     {
         Execution[] memory executions_ = _oneExecution();
         bytes memory execData_ = ExecutionLib.encodeBatch(executions_);
-        Delegation memory signed_ = _signForManager(_manager, _user, _unsignedDelegation(executions_, _delegator, _useProfileEnforcer));
+        Delegation memory signed_ =
+            _signForManager(_manager, _user, _unsignedDelegation(executions_, _delegator, _useProfileEnforcer));
 
         Delegation[] memory delegations_ = new Delegation[](1);
         delegations_[0] = signed_;
@@ -140,7 +143,11 @@ contract CompatibleAblationGasBenchmark is BaseTest, GasExperimentHarness {
         measureManagerCall(address(_manager), relayer, cd_);
     }
 
-    function _unsignedDelegation(Execution[] memory _executions, address _delegator, bool _useProfileEnforcer)
+    function _unsignedDelegation(
+        Execution[] memory _executions,
+        address _delegator,
+        bool _useProfileEnforcer
+    )
         internal
         view
         returns (Delegation memory)
@@ -168,16 +175,15 @@ contract CompatibleAblationGasBenchmark is BaseTest, GasExperimentHarness {
         }
 
         return Delegation({
-            delegate: relayer,
-            delegator: _delegator,
-            authority: ROOT_AUTHORITY,
-            caveats: caveats_,
-            salt: 0,
-            signature: hex""
+            delegate: relayer, delegator: _delegator, authority: ROOT_AUTHORITY, caveats: caveats_, salt: 0, signature: hex""
         });
     }
 
-    function _signForManager(IDelegationManager _manager, TestUser memory _user, Delegation memory _delegation)
+    function _signForManager(
+        IDelegationManager _manager,
+        TestUser memory _user,
+        Delegation memory _delegation
+    )
         internal
         view
         returns (Delegation memory signed_)
@@ -204,9 +210,7 @@ contract CompatibleAblationGasBenchmark is BaseTest, GasExperimentHarness {
     function _oneExecution() internal view returns (Execution[] memory executions_) {
         executions_ = new Execution[](1);
         executions_[0] = Execution({
-            target: address(token),
-            value: 0,
-            callData: abi.encodeWithSelector(IERC20.transfer.selector, recipient, USER_AMOUNT)
+            target: address(token), value: 0, callData: abi.encodeWithSelector(IERC20.transfer.selector, recipient, USER_AMOUNT)
         });
     }
 }

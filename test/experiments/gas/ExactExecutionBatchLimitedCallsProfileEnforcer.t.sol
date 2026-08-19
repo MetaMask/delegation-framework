@@ -7,7 +7,9 @@ import { ModeLib, ModePayload } from "@erc7579/lib/ModeLib.sol";
 import { CALLTYPE_BATCH, EXECTYPE_DEFAULT, MODE_DEFAULT } from "../../../src/utils/Constants.sol";
 import { CaveatEnforcerBaseTest } from "../../enforcers/CaveatEnforcerBaseTest.t.sol";
 import { Caveat, Delegation, Execution, ModeCode } from "../../../src/utils/Types.sol";
-import { ExactExecutionBatchLimitedCallsProfileEnforcer } from "../../../src/experiments/enforcers/ExactExecutionBatchLimitedCallsProfileEnforcer.sol";
+import {
+    ExactExecutionBatchLimitedCallsProfileEnforcer
+} from "../../../src/experiments/enforcers/ExactExecutionBatchLimitedCallsProfileEnforcer.sol";
 import { EncoderLib } from "../../../src/libraries/EncoderLib.sol";
 import { Counter } from "../../utils/Counter.t.sol";
 import { ICaveatEnforcer } from "../../../src/interfaces/ICaveatEnforcer.sol";
@@ -31,9 +33,7 @@ contract ExactExecutionBatchLimitedCallsProfileEnforcerTest is CaveatEnforcerBas
 
     function test_beforeHook_succeedsWithValidProfile() public {
         Execution memory execution_ = Execution({
-            target: address(aliceDeleGatorCounter),
-            value: 0,
-            callData: abi.encodeWithSelector(Counter.increment.selector)
+            target: address(aliceDeleGatorCounter), value: 0, callData: abi.encodeWithSelector(Counter.increment.selector)
         });
         bytes memory executionCallData_ = ExecutionLib.encodeBatch(_singleExecutionArray(execution_));
         ModeCode mode_ = batchDefaultMode;
@@ -48,9 +48,7 @@ contract ExactExecutionBatchLimitedCallsProfileEnforcerTest is CaveatEnforcerBas
 
     function test_beforeHook_revertsWhenTooEarly() public {
         Execution memory execution_ = Execution({
-            target: address(aliceDeleGatorCounter),
-            value: 0,
-            callData: abi.encodeWithSelector(Counter.increment.selector)
+            target: address(aliceDeleGatorCounter), value: 0, callData: abi.encodeWithSelector(Counter.increment.selector)
         });
         bytes memory executionCallData_ = ExecutionLib.encodeBatch(_singleExecutionArray(execution_));
         ModeCode mode_ = batchDefaultMode;
@@ -64,9 +62,7 @@ contract ExactExecutionBatchLimitedCallsProfileEnforcerTest is CaveatEnforcerBas
 
     function test_beforeHook_revertsWhenExpired() public {
         Execution memory execution_ = Execution({
-            target: address(aliceDeleGatorCounter),
-            value: 0,
-            callData: abi.encodeWithSelector(Counter.increment.selector)
+            target: address(aliceDeleGatorCounter), value: 0, callData: abi.encodeWithSelector(Counter.increment.selector)
         });
         bytes memory executionCallData_ = ExecutionLib.encodeBatch(_singleExecutionArray(execution_));
         ModeCode mode_ = batchDefaultMode;
@@ -81,9 +77,7 @@ contract ExactExecutionBatchLimitedCallsProfileEnforcerTest is CaveatEnforcerBas
 
     function test_beforeHook_revertsOnModeMismatch() public {
         Execution memory execution_ = Execution({
-            target: address(aliceDeleGatorCounter),
-            value: 0,
-            callData: abi.encodeWithSelector(Counter.increment.selector)
+            target: address(aliceDeleGatorCounter), value: 0, callData: abi.encodeWithSelector(Counter.increment.selector)
         });
         bytes memory executionCallData_ = ExecutionLib.encodeBatch(_singleExecutionArray(execution_));
         ModeCode expectedMode_ = batchDefaultMode;
@@ -97,16 +91,18 @@ contract ExactExecutionBatchLimitedCallsProfileEnforcerTest is CaveatEnforcerBas
 
     function test_beforeHook_revertsOnExecutionMismatch() public {
         Execution memory execution_ = Execution({
-            target: address(aliceDeleGatorCounter),
-            value: 0,
-            callData: abi.encodeWithSelector(Counter.increment.selector)
+            target: address(aliceDeleGatorCounter), value: 0, callData: abi.encodeWithSelector(Counter.increment.selector)
         });
         bytes memory expectedCallData_ = ExecutionLib.encodeBatch(_singleExecutionArray(execution_));
-        bytes memory wrongCallData_ = ExecutionLib.encodeBatch(_singleExecutionArray(Execution({
-            target: address(aliceDeleGatorCounter),
-            value: 0,
-            callData: abi.encodeWithSelector(Counter.unsafeIncrement.selector)
-        })));
+        bytes memory wrongCallData_ = ExecutionLib.encodeBatch(
+            _singleExecutionArray(
+                Execution({
+                    target: address(aliceDeleGatorCounter),
+                    value: 0,
+                    callData: abi.encodeWithSelector(Counter.unsafeIncrement.selector)
+                })
+            )
+        );
         ModeCode mode_ = batchDefaultMode;
         bytes memory terms_ = _encodeProfileTerms(1, 0, type(uint128).max, mode_, expectedCallData_);
 
@@ -117,9 +113,7 @@ contract ExactExecutionBatchLimitedCallsProfileEnforcerTest is CaveatEnforcerBas
 
     function test_getProfileTermsInfo_decodesHeader() public {
         Execution memory execution_ = Execution({
-            target: address(aliceDeleGatorCounter),
-            value: 0,
-            callData: abi.encodeWithSelector(Counter.increment.selector)
+            target: address(aliceDeleGatorCounter), value: 0, callData: abi.encodeWithSelector(Counter.increment.selector)
         });
         bytes memory executionCallData_ = ExecutionLib.encodeBatch(_singleExecutionArray(execution_));
         ModeCode mode_ = batchDefaultMode;
@@ -167,13 +161,15 @@ contract ExactExecutionBatchLimitedCallsProfileEnforcerTest is CaveatEnforcerBas
     }
 
     function _sampleDelegationHash() internal view returns (bytes32) {
-        return EncoderLib._getDelegationHash(Delegation({
-            delegate: address(users.bob.deleGator),
-            delegator: address(users.alice.deleGator),
-            authority: ROOT_AUTHORITY,
-            caveats: new Caveat[](0),
-            salt: 0,
-            signature: hex""
-        }));
+        return EncoderLib._getDelegationHash(
+            Delegation({
+                delegate: address(users.bob.deleGator),
+                delegator: address(users.alice.deleGator),
+                authority: ROOT_AUTHORITY,
+                caveats: new Caveat[](0),
+                salt: 0,
+                signature: hex""
+            })
+        );
     }
 }

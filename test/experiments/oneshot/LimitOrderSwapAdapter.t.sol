@@ -65,9 +65,7 @@ contract LimitOrderSwapAdapterTest is BaseTest {
         );
         vm.startPrank(address(users.alice.deleGator));
         sellToken.approve(address(adapter), SELL_AMOUNT);
-        vm.expectRevert(
-            abi.encodeWithSelector(LimitOrderSwapAdapter.InsufficientBuyDelivered.selector, MIN_BUY, MIN_BUY - 1)
-        );
+        vm.expectRevert(abi.encodeWithSelector(LimitOrderSwapAdapter.InsufficientBuyDelivered.selector, MIN_BUY, MIN_BUY - 1));
         adapter.swap(sellToken, buyToken, SELL_AMOUNT, MIN_BUY, receiver, address(router), routerCalldata_);
         vm.stopPrank();
     }

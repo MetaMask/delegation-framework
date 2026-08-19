@@ -36,18 +36,7 @@ contract TransientERC20HookCoordinator is CaveatEnforcer {
         TransientStorageLib.tstore(BALANCE_SLOT, IERC20(token_).balanceOf(recipient_));
     }
 
-    function afterHook(
-        bytes calldata _terms,
-        bytes calldata,
-        ModeCode,
-        bytes calldata,
-        bytes32,
-        address,
-        address
-    )
-        public
-        override
-    {
+    function afterHook(bytes calldata _terms, bytes calldata, ModeCode, bytes calldata, bytes32, address, address) public override {
         (bool enforceDecrease_, address token_, address recipient_, uint256 amount_) = getTermsInfo(_terms);
         uint256 cached_ = TransientStorageLib.tload(BALANCE_SLOT);
         TransientStorageLib.tstoreBool(LOCK_SLOT, false);

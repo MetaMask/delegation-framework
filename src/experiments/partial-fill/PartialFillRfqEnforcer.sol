@@ -156,14 +156,7 @@ contract PartialFillRfqEnforcer is CaveatEnforcer {
         _finalizeAfterHook(_terms, _delegationHash, _delegator, _redeemer);
     }
 
-    function _finalizeAfterHook(
-        bytes calldata _terms,
-        bytes32 _delegationHash,
-        address _delegator,
-        address _redeemer
-    )
-        private
-    {
+    function _finalizeAfterHook(bytes calldata _terms, bytes32 _delegationHash, address _delegator, address _redeemer) private {
         FillSnapshot memory snap_ = _snapshots[_delegationHash];
         (OrderTermsLib.OrderTerms memory terms_,) = OrderTermsLib.decodeTermsCalldata(_terms);
         _verifyAfterHookDeltas(terms_, snap_, _delegator, _redeemer);
@@ -196,7 +189,15 @@ contract PartialFillRfqEnforcer is CaveatEnforcer {
         if (solverBuyDelta_ < _snap.minBuyAmount) revert SolverBuyDeltaInsufficient(_snap.minBuyAmount, solverBuyDelta_);
     }
 
-    function afterAllHook(bytes calldata, bytes calldata, ModeCode, bytes calldata, bytes32 _delegationHash, address, address)
+    function afterAllHook(
+        bytes calldata,
+        bytes calldata,
+        ModeCode,
+        bytes calldata,
+        bytes32 _delegationHash,
+        address,
+        address
+    )
         public
         override
     {

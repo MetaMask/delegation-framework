@@ -53,12 +53,13 @@ contract SignedExecutionReceiptEnforcer is SignedExecutionEnforcer {
         delete balanceBeforeCache[key_];
 
         uint256 after_ = IERC20(instruction_.buyToken).balanceOf(instruction_.receiver);
-        require(
-            after_ >= before_ + instruction_.minBuyAmount, "SignedExecutionReceiptEnforcer:insufficient-balance-increase"
-        );
+        require(after_ >= before_ + instruction_.minBuyAmount, "SignedExecutionReceiptEnforcer:insufficient-balance-increase");
     }
 
-    function _receiptKey(bytes32 _delegationHash, ServiceInstructionTypes.ServiceInstruction memory _instruction)
+    function _receiptKey(
+        bytes32 _delegationHash,
+        ServiceInstructionTypes.ServiceInstruction memory _instruction
+    )
         private
         pure
         returns (bytes32)

@@ -117,9 +117,7 @@ contract OneShotGasBenchmark is BaseTest, GasExperimentHarness {
         });
         caveats_[1] = Caveat({
             enforcer: address(timestampEnforcer),
-            terms: OneShotExactLimitOrderLib.encodeTimestampTerms(
-                uint128(block.timestamp - 1), uint128(block.timestamp + 1 days)
-            ),
+            terms: OneShotExactLimitOrderLib.encodeTimestampTerms(uint128(block.timestamp - 1), uint128(block.timestamp + 1 days)),
             args: hex""
         });
 
@@ -155,8 +153,7 @@ contract OneShotGasBenchmark is BaseTest, GasExperimentHarness {
         });
 
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] =
-            Caveat({ enforcer: _enforcer, terms: ServiceInstructionLib.encodeMakerBoundsTerms(bounds_), args: hex"" });
+        caveats_[0] = Caveat({ enforcer: _enforcer, terms: ServiceInstructionLib.encodeMakerBoundsTerms(bounds_), args: hex"" });
 
         Delegation memory delegation_ = signDelegation(
             users.alice,
@@ -204,8 +201,7 @@ contract OneShotGasBenchmark is BaseTest, GasExperimentHarness {
         });
 
         bytes32 structHash_ = ServiceInstructionLib.hashServiceInstruction(instruction_);
-        bytes32 digest_ =
-            MessageHashUtils.toTypedDataHash(ServiceInstructionLib.serviceDomainSeparator(quoteSigner), structHash_);
+        bytes32 digest_ = MessageHashUtils.toTypedDataHash(ServiceInstructionLib.serviceDomainSeparator(quoteSigner), structHash_);
         (uint8 v_, bytes32 r_, bytes32 s_) = vm.sign(quoteSignerKey, digest_);
         delegation_.caveats[0].args = abi.encode(
             ServiceInstructionTypes.ServiceAttestation({ instruction: instruction_, signature: abi.encodePacked(r_, s_, v_) })

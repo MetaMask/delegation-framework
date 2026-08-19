@@ -126,7 +126,11 @@ contract CompatibleAblationDifferential is BaseTest {
         vm.revertTo(snap_);
 
         assertEq(variantRecipientDelta_, canonicalRecipientDelta_, "recipient delta");
-        assertEq(delegatorBeforeCanonical_ - canonicalDelegatorAfter_, delegatorBeforeVariant_ - variantDelegatorAfter_, "delegator spend");
+        assertEq(
+            delegatorBeforeCanonical_ - canonicalDelegatorAfter_,
+            delegatorBeforeVariant_ - variantDelegatorAfter_,
+            "delegator spend"
+        );
     }
 
     function test_differential_invalidSignature_sameRevert() public {
@@ -140,8 +144,7 @@ contract CompatibleAblationDifferential is BaseTest {
 
         Delegation memory badCanonical_ =
             _signForManager(delegationManager, wrongSigner_, _unsignedDelegation(executions_, maker_.addr));
-        Delegation memory badC1_ =
-            _signForManager(c1, wrongSigner_, _unsignedDelegation(executions_, maker_.addr));
+        Delegation memory badC1_ = _signForManager(c1, wrongSigner_, _unsignedDelegation(executions_, maker_.addr));
 
         vm.expectRevert(IDelegationManager.InvalidEOASignature.selector);
         _redeemSigned(delegationManager, badCanonical_, mode_, execData_);
@@ -155,9 +158,8 @@ contract CompatibleAblationDifferential is BaseTest {
         bytes memory execData_ = ExecutionLib.encodeBatch(executions_);
         ModeCode mode_ = ModeLib.encodeSimpleBatch();
 
-        Delegation memory signed_ = _signForManager(
-            delegationManager, users.alice, _unsignedDelegation(executions_, address(users.alice.deleGator))
-        );
+        Delegation memory signed_ =
+            _signForManager(delegationManager, users.alice, _unsignedDelegation(executions_, address(users.alice.deleGator)));
         vm.prank(address(users.alice.deleGator));
         delegationManager.disableDelegation(signed_);
 
@@ -166,8 +168,7 @@ contract CompatibleAblationDifferential is BaseTest {
         vm.expectRevert(expectedSelector_);
         _redeemSigned(delegationManager, signed_, mode_, execData_);
 
-        Delegation memory signedC1_ =
-            _signForManager(c1, c1User, _unsignedDelegation(executions_, address(c1User.deleGator)));
+        Delegation memory signedC1_ = _signForManager(c1, c1User, _unsignedDelegation(executions_, address(c1User.deleGator)));
         vm.prank(address(c1User.deleGator));
         c1.disableDelegation(signedC1_);
 
@@ -180,7 +181,8 @@ contract CompatibleAblationDifferential is BaseTest {
         bytes memory execData_ = ExecutionLib.encodeBatch(executions_);
         ModeCode mode_ = ModeLib.encodeSimpleBatch();
 
-        ForwardWitness memory canonical_ = _captureForward(delegationManager, users.alice, address(users.alice.deleGator), mode_, execData_, executions_);
+        ForwardWitness memory canonical_ =
+            _captureForward(delegationManager, users.alice, address(users.alice.deleGator), mode_, execData_, executions_);
         ForwardWitness memory c1_ = _captureForward(c1, c1User, address(c1User.deleGator), mode_, execData_, executions_);
         ForwardWitness memory c2_ = _captureForward(c2, c2User, address(c2User.deleGator), mode_, execData_, executions_);
         ForwardWitness memory c3_ = _captureForward(c3, c3User, address(c3User.deleGator), mode_, execData_, executions_);
@@ -283,7 +285,12 @@ contract CompatibleAblationDifferential is BaseTest {
         _redeemSigned(_manager, signed_, _mode, _execData);
     }
 
-    function _redeemSigned(IDelegationManager _manager, Delegation memory _signed, ModeCode _mode, bytes memory _execData)
+    function _redeemSigned(
+        IDelegationManager _manager,
+        Delegation memory _signed,
+        ModeCode _mode,
+        bytes memory _execData
+    )
         internal
     {
         Delegation[] memory delegations_ = new Delegation[](1);
@@ -308,12 +315,7 @@ contract CompatibleAblationDifferential is BaseTest {
         });
 
         return Delegation({
-            delegate: relayer,
-            delegator: _delegator,
-            authority: ROOT_AUTHORITY,
-            caveats: caveats_,
-            salt: 0,
-            signature: hex""
+            delegate: relayer, delegator: _delegator, authority: ROOT_AUTHORITY, caveats: caveats_, salt: 0, signature: hex""
         });
     }
 
@@ -327,16 +329,15 @@ contract CompatibleAblationDifferential is BaseTest {
         });
 
         return Delegation({
-            delegate: relayer,
-            delegator: _delegator,
-            authority: ROOT_AUTHORITY,
-            caveats: caveats_,
-            salt: 0,
-            signature: hex""
+            delegate: relayer, delegator: _delegator, authority: ROOT_AUTHORITY, caveats: caveats_, salt: 0, signature: hex""
         });
     }
 
-    function _signForManager(IDelegationManager _manager, TestUser memory _user, Delegation memory _delegation)
+    function _signForManager(
+        IDelegationManager _manager,
+        TestUser memory _user,
+        Delegation memory _delegation
+    )
         internal
         view
         returns (Delegation memory signed_)
@@ -363,9 +364,7 @@ contract CompatibleAblationDifferential is BaseTest {
     function _oneExecution() internal view returns (Execution[] memory executions_) {
         executions_ = new Execution[](1);
         executions_[0] = Execution({
-            target: address(token),
-            value: 0,
-            callData: abi.encodeWithSelector(IERC20.transfer.selector, recipient, USER_AMOUNT)
+            target: address(token), value: 0, callData: abi.encodeWithSelector(IERC20.transfer.selector, recipient, USER_AMOUNT)
         });
     }
 }

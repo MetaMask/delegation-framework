@@ -11,7 +11,8 @@ import { ModeCode, Execution } from "../../utils/Types.sol";
  * @notice Versioned external profile extending {ExactExecutionBatchLimitedCallsEnforcer} with validity window and full
  *         `ModeCode` binding for limit-order style delegations.
  *
- * @dev TERMS LAYOUT — `abi.encodePacked(uint256 limit, uint128 validAfter, uint128 validUntil, bytes32 modeCode, ExecutionLib.encodeBatch(...))`:
+ * @dev TERMS LAYOUT — `abi.encodePacked(uint256 limit, uint128 validAfter, uint128 validUntil, bytes32 modeCode,
+ * ExecutionLib.encodeBatch(...))`:
  *        - `terms[0:32]`   : maximum redemptions (inherited limited-calls semantics).
  *        - `terms[32:48]`  : `validAfter` — redemption allowed only when `block.timestamp > validAfter` (0 = unset).
  *        - `terms[48:64]`  : `validUntil` — redemption allowed only when `block.timestamp < validUntil` (0 = unset).
@@ -57,7 +58,9 @@ contract ExactExecutionBatchLimitedCallsProfileEnforcer is ExactExecutionBatchLi
         ModeCode expectedMode_ = ModeCode.wrap(bytes32(_terms[64:96]));
 
         _validateProfileWindow(validAfter_, validUntil_);
-        require(ModeCode.unwrap(_mode) == ModeCode.unwrap(expectedMode_), "ExactExecutionBatchLimitedCallsProfileEnforcer:invalid-mode");
+        require(
+            ModeCode.unwrap(_mode) == ModeCode.unwrap(expectedMode_), "ExactExecutionBatchLimitedCallsProfileEnforcer:invalid-mode"
+        );
         _validateExactExecution(_terms, _executionCallData);
 
         uint256 callCount_ = ++callCounts[msg.sender][_delegationHash];
@@ -83,13 +86,7 @@ contract ExactExecutionBatchLimitedCallsProfileEnforcer is ExactExecutionBatchLi
     function getProfileTermsInfo(bytes calldata _terms)
         public
         pure
-        returns (
-            uint256 limit_,
-            uint128 validAfter_,
-            uint128 validUntil_,
-            ModeCode expectedMode_,
-            Execution[] memory executions_
-        )
+        returns (uint256 limit_, uint128 validAfter_, uint128 validUntil_, ModeCode expectedMode_, Execution[] memory executions_)
     {
         require(_terms.length >= PROFILE_HEADER_BYTES, "ExactExecutionBatchLimitedCallsProfileEnforcer:invalid-terms-length");
         limit_ = uint256(bytes32(_terms[0:32]));

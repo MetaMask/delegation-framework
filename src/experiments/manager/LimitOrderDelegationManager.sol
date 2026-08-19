@@ -148,10 +148,7 @@ contract LimitOrderDelegationManager is IDelegationManager, ICaveatEnforcer, Own
         _settleFill(_delegation, ctx_);
     }
 
-    function _prepareFill(Delegation memory _delegation, uint256 _fillSellAmount)
-        private
-        returns (FillContext memory ctx_)
-    {
+    function _prepareFill(Delegation memory _delegation, uint256 _fillSellAmount) private returns (FillContext memory ctx_) {
         if (_delegation.delegate != msg.sender && _delegation.delegate != ANY_DELEGATE) revert InvalidDelegate();
         if (_delegation.authority != ROOT_AUTHORITY) revert InvalidAuthority();
         if (_delegation.caveats.length == 0 || _delegation.caveats[0].enforcer != address(this)) {
@@ -197,16 +194,24 @@ contract LimitOrderDelegationManager is IDelegationManager, ICaveatEnforcer, Own
         IDeleGatorCore(_ctx.maker).executeFromExecutor(ModeLib.encodeSimpleSingle(), executionCalldata_);
 
         if (_ctx.makerSellBefore - IERC20(_ctx.terms.sellToken).balanceOf(_ctx.maker) != _ctx.fillSellAmount) {
-            revert MakerSellDeltaMismatch(_ctx.fillSellAmount, _ctx.makerSellBefore - IERC20(_ctx.terms.sellToken).balanceOf(_ctx.maker));
+            revert MakerSellDeltaMismatch(
+                _ctx.fillSellAmount, _ctx.makerSellBefore - IERC20(_ctx.terms.sellToken).balanceOf(_ctx.maker)
+            );
         }
         if (IERC20(_ctx.terms.sellToken).balanceOf(_ctx.solver) - _ctx.solverSellBefore != _ctx.fillSellAmount) {
-            revert SolverSellDeltaMismatch(_ctx.fillSellAmount, IERC20(_ctx.terms.sellToken).balanceOf(_ctx.solver) - _ctx.solverSellBefore);
+            revert SolverSellDeltaMismatch(
+                _ctx.fillSellAmount, IERC20(_ctx.terms.sellToken).balanceOf(_ctx.solver) - _ctx.solverSellBefore
+            );
         }
         if (IERC20(_ctx.terms.buyToken).balanceOf(_ctx.terms.receiver) - _ctx.receiverBuyBefore < _ctx.minBuyAmount) {
-            revert ReceiverBuyDeltaInsufficient(_ctx.minBuyAmount, IERC20(_ctx.terms.buyToken).balanceOf(_ctx.terms.receiver) - _ctx.receiverBuyBefore);
+            revert ReceiverBuyDeltaInsufficient(
+                _ctx.minBuyAmount, IERC20(_ctx.terms.buyToken).balanceOf(_ctx.terms.receiver) - _ctx.receiverBuyBefore
+            );
         }
         if (_ctx.solverBuyBefore - IERC20(_ctx.terms.buyToken).balanceOf(_ctx.solver) < _ctx.minBuyAmount) {
-            revert SolverBuyDeltaInsufficient(_ctx.minBuyAmount, _ctx.solverBuyBefore - IERC20(_ctx.terms.buyToken).balanceOf(_ctx.solver));
+            revert SolverBuyDeltaInsufficient(
+                _ctx.minBuyAmount, _ctx.solverBuyBefore - IERC20(_ctx.terms.buyToken).balanceOf(_ctx.solver)
+            );
         }
 
         emit RedeemedDelegation(_ctx.maker, _ctx.solver, _delegation);

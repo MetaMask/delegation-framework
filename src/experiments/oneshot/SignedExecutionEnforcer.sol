@@ -59,9 +59,7 @@ contract SignedExecutionEnforcer is CaveatEnforcer {
             );
         }
 
-        require(
-            keccak256(_executionCallData) == _instruction.executionHash, "SignedExecutionEnforcer:execution-hash-mismatch"
-        );
+        require(keccak256(_executionCallData) == _instruction.executionHash, "SignedExecutionEnforcer:execution-hash-mismatch");
         require(ModeCode.unwrap(_mode) == ModeCode.unwrap(_instruction.mode), "SignedExecutionEnforcer:mode-mismatch");
         require(_instruction.delegationHash == _delegationHash, "SignedExecutionEnforcer:delegation-hash-mismatch");
         require(_instruction.maker == _delegator, "SignedExecutionEnforcer:maker-mismatch");

@@ -7,8 +7,7 @@ import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/Mes
 import { ServiceInstructionTypes } from "./ServiceInstructionTypes.sol";
 
 library ServiceInstructionLib {
-    bytes32 internal constant SERVICE_INSTRUCTION_TYPEHASH =
-        0x39e6f995c25cda51a838cf40330c1bdcf2c97fe8ca2f5b2f706c7a404fc76eb7;
+    bytes32 internal constant SERVICE_INSTRUCTION_TYPEHASH = 0x39e6f995c25cda51a838cf40330c1bdcf2c97fe8ca2f5b2f706c7a404fc76eb7;
 
     string internal constant SERVICE_DOMAIN_NAME = "LimitOrderQuoteService";
     string internal constant SERVICE_DOMAIN_VERSION = "1";
@@ -63,9 +62,8 @@ library ServiceInstructionLib {
         view
         returns (address signer_)
     {
-        bytes32 digest_ = MessageHashUtils.toTypedDataHash(
-            serviceDomainSeparator(_verifyingContract), hashServiceInstruction(_instruction)
-        );
+        bytes32 digest_ =
+            MessageHashUtils.toTypedDataHash(serviceDomainSeparator(_verifyingContract), hashServiceInstruction(_instruction));
         signer_ = ECDSA.recover(digest_, _signature);
     }
 }

@@ -49,8 +49,7 @@ contract OneShotExactLimitOrderTest is BaseTest {
     }
 
     function test_happyPath_oneShotExactExecution() public {
-        Delegation memory delegation_ =
-            _signOneShotDelegation(uint128(block.timestamp - 1), uint128(block.timestamp + 1 days));
+        Delegation memory delegation_ = _signOneShotDelegation(uint128(block.timestamp - 1), uint128(block.timestamp + 1 days));
         _redeemOnce(delegation_, _buildExactBatchExecution());
         assertEq(sellToken.balanceOf(receiver), 0);
         assertEq(buyToken.balanceOf(receiver), MIN_BUY);
@@ -64,16 +63,14 @@ contract OneShotExactLimitOrderTest is BaseTest {
     }
 
     function test_revertWhen_replaySecondRedemption() public {
-        Delegation memory delegation_ =
-            _signOneShotDelegation(uint128(block.timestamp - 1), uint128(block.timestamp + 1 days));
+        Delegation memory delegation_ = _signOneShotDelegation(uint128(block.timestamp - 1), uint128(block.timestamp + 1 days));
         _redeemOnce(delegation_, _buildExactBatchExecution());
         vm.expectRevert("ExactExecutionBatchLimitedCallsEnforcer:limit-exceeded");
         _redeemOnce(delegation_, _buildExactBatchExecution());
     }
 
     function test_revertWhen_executionMismatch() public {
-        Delegation memory delegation_ =
-            _signOneShotDelegation(uint128(block.timestamp - 1), uint128(block.timestamp + 1 days));
+        Delegation memory delegation_ = _signOneShotDelegation(uint128(block.timestamp - 1), uint128(block.timestamp + 1 days));
         Execution[] memory wrong_ = _wrongExecutions();
         vm.expectRevert("ExactExecutionBatchLimitedCallsEnforcer:invalid-execution");
         _redeemOnce(delegation_, ExecutionLib.encodeBatch(wrong_));

@@ -104,8 +104,7 @@ contract DelegationManagerC1 is IDelegationManager, Ownable2Step, Pausable, EIP7
                         );
                         if (result_ != delegation_.delegator) revert InvalidEOASignature();
                     } else {
-                        bytes32 typedDataHash_ =
-                            MessageHashUtils.toTypedDataHash(domainHash_, delegationHashes_[delegationsIndex_]);
+                        bytes32 typedDataHash_ = MessageHashUtils.toTypedDataHash(domainHash_, delegationHashes_[delegationsIndex_]);
                         bytes32 result_ = IERC1271(delegation_.delegator).isValidSignature(typedDataHash_, delegation_.signature);
                         if (result_ != ERC1271Lib.EIP1271_MAGIC_VALUE) revert InvalidERC1271Signature();
                     }
@@ -155,17 +154,28 @@ contract DelegationManagerC1 is IDelegationManager, Ownable2Step, Pausable, EIP7
     {
         for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
             _beforeAllHooks(
-                batchDelegations_[batchIndex_], batchDelegationHashes_[batchIndex_], _modes[batchIndex_], _executionCallDatas[batchIndex_]
+                batchDelegations_[batchIndex_],
+                batchDelegationHashes_[batchIndex_],
+                _modes[batchIndex_],
+                _executionCallDatas[batchIndex_]
             );
         }
 
         for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
-            _executeBatch(batchDelegations_[batchIndex_], batchDelegationHashes_[batchIndex_], _modes[batchIndex_], _executionCallDatas[batchIndex_]);
+            _executeBatch(
+                batchDelegations_[batchIndex_],
+                batchDelegationHashes_[batchIndex_],
+                _modes[batchIndex_],
+                _executionCallDatas[batchIndex_]
+            );
         }
 
         for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
             _afterAllHooks(
-                batchDelegations_[batchIndex_], batchDelegationHashes_[batchIndex_], _modes[batchIndex_], _executionCallDatas[batchIndex_]
+                batchDelegations_[batchIndex_],
+                batchDelegationHashes_[batchIndex_],
+                _modes[batchIndex_],
+                _executionCallDatas[batchIndex_]
             );
         }
     }
@@ -185,9 +195,10 @@ contract DelegationManagerC1 is IDelegationManager, Ownable2Step, Pausable, EIP7
             bytes32 delegationHash_ = _delegationHashes[i_];
             uint256 caveatCount_ = caveats_.length;
             for (uint256 j_; j_ < caveatCount_; ++j_) {
-                ICaveatEnforcer(caveats_[j_].enforcer).beforeAllHook(
-                    caveats_[j_].terms, caveats_[j_].args, _mode, _executionCalldata, delegationHash_, delegator_, msg.sender
-                );
+                ICaveatEnforcer(caveats_[j_].enforcer)
+                    .beforeAllHook(
+                        caveats_[j_].terms, caveats_[j_].args, _mode, _executionCalldata, delegationHash_, delegator_, msg.sender
+                    );
             }
         }
     }
@@ -212,9 +223,10 @@ contract DelegationManagerC1 is IDelegationManager, Ownable2Step, Pausable, EIP7
             bytes32 delegationHash_ = _delegationHashes[i_];
             uint256 caveatCount_ = caveats_.length;
             for (uint256 j_; j_ < caveatCount_; ++j_) {
-                ICaveatEnforcer(caveats_[j_].enforcer).beforeHook(
-                    caveats_[j_].terms, caveats_[j_].args, _mode, _executionCalldata, delegationHash_, delegator_, msg.sender
-                );
+                ICaveatEnforcer(caveats_[j_].enforcer)
+                    .beforeHook(
+                        caveats_[j_].terms, caveats_[j_].args, _mode, _executionCalldata, delegationHash_, delegator_, msg.sender
+                    );
             }
         }
 
@@ -226,9 +238,16 @@ contract DelegationManagerC1 is IDelegationManager, Ownable2Step, Pausable, EIP7
             bytes32 delegationHash_ = _delegationHashes[i_ - 1];
             uint256 caveatCount_ = caveats_.length;
             for (uint256 j_ = caveatCount_; j_ > 0; --j_) {
-                ICaveatEnforcer(caveats_[j_ - 1].enforcer).afterHook(
-                    caveats_[j_ - 1].terms, caveats_[j_ - 1].args, _mode, _executionCalldata, delegationHash_, delegator_, msg.sender
-                );
+                ICaveatEnforcer(caveats_[j_ - 1].enforcer)
+                    .afterHook(
+                        caveats_[j_ - 1].terms,
+                        caveats_[j_ - 1].args,
+                        _mode,
+                        _executionCalldata,
+                        delegationHash_,
+                        delegator_,
+                        msg.sender
+                    );
             }
         }
     }
@@ -248,9 +267,16 @@ contract DelegationManagerC1 is IDelegationManager, Ownable2Step, Pausable, EIP7
             bytes32 delegationHash_ = _delegationHashes[i_ - 1];
             uint256 caveatCount_ = caveats_.length;
             for (uint256 j_ = caveatCount_; j_ > 0; --j_) {
-                ICaveatEnforcer(caveats_[j_ - 1].enforcer).afterAllHook(
-                    caveats_[j_ - 1].terms, caveats_[j_ - 1].args, _mode, _executionCalldata, delegationHash_, delegator_, msg.sender
-                );
+                ICaveatEnforcer(caveats_[j_ - 1].enforcer)
+                    .afterAllHook(
+                        caveats_[j_ - 1].terms,
+                        caveats_[j_ - 1].args,
+                        _mode,
+                        _executionCalldata,
+                        delegationHash_,
+                        delegator_,
+                        msg.sender
+                    );
             }
         }
     }

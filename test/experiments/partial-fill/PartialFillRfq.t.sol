@@ -103,7 +103,11 @@ abstract contract PartialFillRfqBase is BaseTest {
         }
     }
 
-    function _buildP1Redemption(Delegation memory _delegation, uint256 _fillSell, address _solver)
+    function _buildP1Redemption(
+        Delegation memory _delegation,
+        uint256 _fillSell,
+        address _solver
+    )
         internal
         view
         returns (bytes[] memory contexts_, ModeCode[] memory modes_, bytes[] memory execs_)
@@ -113,9 +117,7 @@ abstract contract PartialFillRfqBase is BaseTest {
         (contexts_, modes_, execs_) = adapter.buildFillRedemption(delegations_, _fillSell, _solver);
     }
 
-    function _redeemP1(bytes[] memory _contexts, ModeCode[] memory _modes, bytes[] memory _execs, address _solver)
-        internal
-    {
+    function _redeemP1(bytes[] memory _contexts, ModeCode[] memory _modes, bytes[] memory _execs, address _solver) internal {
         vm.prank(_solver);
         delegationManager.redeemDelegations(_contexts, _modes, _execs);
     }
@@ -293,20 +295,14 @@ contract LimitOrderManagerTest is PartialFillRfqBase {
         xValues_[0] = users.alice.x;
         yValues_[0] = users.alice.y;
         p2Maker = HybridDeleGator(
-            payable(
-                address(
+            payable(address(
                     new ERC1967Proxy(
                         address(impl_),
                         abi.encodeWithSignature(
-                            "initialize(address,string[],uint256[],uint256[])",
-                            users.alice.addr,
-                            keyIds_,
-                            xValues_,
-                            yValues_
+                            "initialize(address,string[],uint256[],uint256[])", users.alice.addr, keyIds_, xValues_, yValues_
                         )
                     )
-                )
-            )
+                ))
         );
         vm.prank(address(users.alice.deleGator));
         sellToken.mint(address(p2Maker), INITIAL_BALANCE);
@@ -399,7 +395,9 @@ contract PartialFillGasBenchmark is PartialFillRfqBase, GasExperimentHarness {
         GasMeasurement memory final_ = measureManagerCall(
             address(delegationManager),
             users.bob.addr,
-            encodeRedeemCall(_delegationArray(delegation_, remainder_, users.bob.addr), singleDefaultMode, _sellExecution(remainder_))
+            encodeRedeemCall(
+                _delegationArray(delegation_, remainder_, users.bob.addr), singleDefaultMode, _sellExecution(remainder_)
+            )
         );
         restoreGasSnapshot(snap_);
         logGasReport("P1 | final fill (remainder)", final_);
@@ -414,20 +412,14 @@ contract PartialFillGasBenchmark is PartialFillRfqBase, GasExperimentHarness {
         xValues_[0] = users.alice.x;
         yValues_[0] = users.alice.y;
         HybridDeleGator p2Maker_ = HybridDeleGator(
-            payable(
-                address(
+            payable(address(
                     new ERC1967Proxy(
                         address(impl_),
                         abi.encodeWithSignature(
-                            "initialize(address,string[],uint256[],uint256[])",
-                            users.alice.addr,
-                            keyIds_,
-                            xValues_,
-                            yValues_
+                            "initialize(address,string[],uint256[],uint256[])", users.alice.addr, keyIds_, xValues_, yValues_
                         )
                     )
-                )
-            )
+                ))
         );
         vm.prank(address(users.alice.deleGator));
         sellToken.mint(address(p2Maker_), INITIAL_BALANCE);
@@ -455,19 +447,11 @@ contract PartialFillGasBenchmark is PartialFillRfqBase, GasExperimentHarness {
         logGasReport("P2 | final fill (remainder)", final_);
     }
 
-    function _buildP2DelegationFor(HybridDeleGator _maker, address _delegate)
-        private
-        returns (Delegation memory delegation_)
-    {
+    function _buildP2DelegationFor(HybridDeleGator _maker, address _delegate) private returns (Delegation memory delegation_) {
         Caveat[] memory caveats_ = new Caveat[](1);
         caveats_[0] = Caveat({ enforcer: address(limitOrderManager), terms: _p2Terms(), args: hex"" });
         delegation_ = Delegation({
-            delegate: _delegate,
-            delegator: address(_maker),
-            authority: ROOT_AUTHORITY,
-            caveats: caveats_,
-            salt: 0,
-            signature: hex""
+            delegate: _delegate, delegator: address(_maker), authority: ROOT_AUTHORITY, caveats: caveats_, salt: 0, signature: hex""
         });
         bytes32 delegationHash_ = EncoderLib._getDelegationHash(delegation_);
         bytes32 typedDataHash_ = MessageHashUtils.toTypedDataHash(limitOrderManager.getDomainHash(), delegationHash_);
@@ -489,10 +473,7 @@ contract PartialFillGasBenchmark is PartialFillRfqBase, GasExperimentHarness {
         limitOrderManager.fillOrder(_delegation, _fillSell);
     }
 
-    function _measureP2Fill(Delegation memory _delegation, uint256 _fillSell)
-        private
-        returns (GasMeasurement memory m_)
-    {
+    function _measureP2Fill(Delegation memory _delegation, uint256 _fillSell) private returns (GasMeasurement memory m_) {
         bytes memory callData_ = abi.encodeWithSelector(limitOrderManager.fillOrder.selector, _delegation, _fillSell);
         m_.calldataBytes = callData_.length;
         m_.calldataGas = calldataGas(callData_);
@@ -510,7 +491,11 @@ contract PartialFillGasBenchmark is PartialFillRfqBase, GasExperimentHarness {
         }
     }
 
-    function _delegationArray(Delegation memory _delegation, uint256 _fillSell, address)
+    function _delegationArray(
+        Delegation memory _delegation,
+        uint256 _fillSell,
+        address
+    )
         private
         pure
         returns (Delegation[] memory delegations_)
@@ -521,8 +506,6 @@ contract PartialFillGasBenchmark is PartialFillRfqBase, GasExperimentHarness {
     }
 
     function _sellExecution(uint256 _amount) private view returns (bytes memory execution_) {
-        execution_ = ExecutionLib.encodeSingle(
-            address(sellToken), 0, abi.encodeCall(IERC20.transfer, (users.bob.addr, _amount))
-        );
+        execution_ = ExecutionLib.encodeSingle(address(sellToken), 0, abi.encodeCall(IERC20.transfer, (users.bob.addr, _amount)));
     }
 }

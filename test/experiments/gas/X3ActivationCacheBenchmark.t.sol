@@ -152,16 +152,15 @@ contract X3ActivationCacheBenchmark is BaseTest, GasExperimentHarness {
         });
 
         return Delegation({
-            delegate: relayer,
-            delegator: _delegator,
-            authority: ROOT_AUTHORITY,
-            caveats: caveats_,
-            salt: 0,
-            signature: hex""
+            delegate: relayer, delegator: _delegator, authority: ROOT_AUTHORITY, caveats: caveats_, salt: 0, signature: hex""
         });
     }
 
-    function _signForManager(IDelegationManager _manager, TestUser memory _user, Delegation memory _delegation)
+    function _signForManager(
+        IDelegationManager _manager,
+        TestUser memory _user,
+        Delegation memory _delegation
+    )
         internal
         view
         returns (Delegation memory signed_)
@@ -181,9 +180,7 @@ contract X3ActivationCacheBenchmark is BaseTest, GasExperimentHarness {
     function _oneExecution() internal view returns (Execution[] memory executions_) {
         executions_ = new Execution[](1);
         executions_[0] = Execution({
-            target: address(token),
-            value: 0,
-            callData: abi.encodeWithSelector(IERC20.transfer.selector, recipient, USER_AMOUNT)
+            target: address(token), value: 0, callData: abi.encodeWithSelector(IERC20.transfer.selector, recipient, USER_AMOUNT)
         });
     }
 

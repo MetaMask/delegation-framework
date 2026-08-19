@@ -53,16 +53,11 @@ contract X2PersistentHookBenchmark is BaseTest, GasExperimentHarness {
     function _buildRedeemCalldata() internal returns (bytes memory) {
         Execution[] memory executions_ = new Execution[](1);
         executions_[0] = Execution({
-            target: address(token),
-            value: 0,
-            callData: abi.encodeWithSelector(IERC20.transfer.selector, recipient, USER_AMOUNT)
+            target: address(token), value: 0, callData: abi.encodeWithSelector(IERC20.transfer.selector, recipient, USER_AMOUNT)
         });
 
         bytes memory terms_ = abi.encodePacked(
-            bytes1(0x01),
-            bytes20(address(token)),
-            bytes20(address(users.alice.deleGator)),
-            bytes32(USER_AMOUNT)
+            bytes1(0x01), bytes20(address(token)), bytes20(address(users.alice.deleGator)), bytes32(USER_AMOUNT)
         );
 
         Caveat[] memory caveats_ = new Caveat[](1);

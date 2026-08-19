@@ -64,7 +64,10 @@ contract LimitOrderSwapAdapter is ExecutionHelper {
         if (buyReceived_ < _minBuyAmount) revert InsufficientBuyDelivered(_minBuyAmount, buyReceived_);
     }
 
-    function executeFromExecutor(ModeCode _mode, bytes calldata _executionCalldata)
+    function executeFromExecutor(
+        ModeCode _mode,
+        bytes calldata _executionCalldata
+    )
         external
         payable
         onlyDelegationManager

@@ -177,8 +177,7 @@ contract DelegationManagerC3 is IDelegationManager, Ownable2Step, Pausable, EIP7
                 IDeleGatorCore(batchDelegations_[batchIndex_][batchDelegations_[batchIndex_].length - 1].delegator)
                     .executeFromExecutor(_modes[batchIndex_], _executionCallDatas[batchIndex_]);
 
-                for (uint256 delegationsIndex_ = batchDelegations_[batchIndex_].length; delegationsIndex_ > 0; --delegationsIndex_)
-                {
+                for (uint256 delegationsIndex_ = batchDelegations_[batchIndex_].length; delegationsIndex_ > 0; --delegationsIndex_) {
                     Caveat[] memory caveats_ = batchDelegations_[batchIndex_][delegationsIndex_ - 1].caveats;
                     for (uint256 caveatsIndex_ = caveats_.length; caveatsIndex_ > 0; --caveatsIndex_) {
                         ICaveatEnforcer enforcer_ = ICaveatEnforcer(caveats_[caveatsIndex_ - 1].enforcer);
@@ -198,8 +197,7 @@ contract DelegationManagerC3 is IDelegationManager, Ownable2Step, Pausable, EIP7
 
         for (uint256 batchIndex_; batchIndex_ < batchSize_; ++batchIndex_) {
             if (batchDelegations_[batchIndex_].length > 0) {
-                for (uint256 delegationsIndex_ = batchDelegations_[batchIndex_].length; delegationsIndex_ > 0; --delegationsIndex_)
-                {
+                for (uint256 delegationsIndex_ = batchDelegations_[batchIndex_].length; delegationsIndex_ > 0; --delegationsIndex_) {
                     Caveat[] memory caveats_ = batchDelegations_[batchIndex_][delegationsIndex_ - 1].caveats;
                     for (uint256 caveatsIndex_ = caveats_.length; caveatsIndex_ > 0; --caveatsIndex_) {
                         ICaveatEnforcer enforcer_ = ICaveatEnforcer(caveats_[caveatsIndex_ - 1].enforcer);
@@ -248,8 +246,7 @@ contract DelegationManagerC3 is IDelegationManager, Ownable2Step, Pausable, EIP7
 
             if (delegation_.delegator.code.length == 0) {
                 address result_ = ECDSA.recover(
-                    MessageHashUtils.toTypedDataHash(getDomainHash(), delegationHashes_[delegationsIndex_]),
-                    delegation_.signature
+                    MessageHashUtils.toTypedDataHash(getDomainHash(), delegationHashes_[delegationsIndex_]), delegation_.signature
                 );
                 if (result_ != delegation_.delegator) revert InvalidEOASignature();
             } else {

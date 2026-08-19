@@ -57,7 +57,11 @@ abstract contract GasExperimentHarness is Test {
         );
     }
 
-    function measureManagerCall(address _manager, address _redeemer, bytes memory _redeemCalldata)
+    function measureManagerCall(
+        address _manager,
+        address _redeemer,
+        bytes memory _redeemCalldata
+    )
         internal
         returns (GasMeasurement memory m_)
     {
