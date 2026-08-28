@@ -151,7 +151,7 @@ contract LimitOrderDelegationManager is IDelegationManager, ICaveatEnforcer, Own
     function _prepareFill(Delegation memory _delegation, uint256 _fillSellAmount) private returns (FillContext memory ctx_) {
         if (_delegation.delegate != msg.sender && _delegation.delegate != ANY_DELEGATE) revert InvalidDelegate();
         if (_delegation.authority != ROOT_AUTHORITY) revert InvalidAuthority();
-        if (_delegation.caveats.length == 0 || _delegation.caveats[0].enforcer != address(this)) {
+        if (_delegation.caveats.length != 1 || _delegation.caveats[0].enforcer != address(this)) {
             revert InvalidOrderProfile();
         }
 
@@ -227,7 +227,9 @@ contract LimitOrderDelegationManager is IDelegationManager, ICaveatEnforcer, Own
         view
     {
         if (_delegation.authority != ROOT_AUTHORITY) revert InvalidAuthority();
-        if (_delegation.caveats.length == 0 || _delegation.caveats[0].enforcer != address(this)) revert InvalidOrderProfile();
+        if (_delegation.caveats.length != 1 || _delegation.caveats[0].enforcer != address(this)) {
+            revert InvalidOrderProfile();
+        }
         if (CallType.unwrap(ModeLib.getCallType(_mode)) != CallType.unwrap(CALLTYPE_SINGLE)) revert InvalidOrderProfile();
         (, ExecType execType_,,) = _mode.decode();
         if (ExecType.unwrap(execType_) != ExecType.unwrap(EXECTYPE_DEFAULT)) revert InvalidOrderProfile();

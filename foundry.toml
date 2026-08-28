@@ -13,13 +13,10 @@ sparse_mode = true
 evm_version = "london"
 optimizer = true
 skip = [
-    "src/experiments/manager/LimitOrderDelegationManager.sol",
-    "src/experiments/partial-fill/**",
     "src/experiments/X1/**",
     "src/experiments/X2/TransientStorageLib.sol",
     "src/experiments/X2/TransientERC20HookCoordinator.sol",
     "src/experiments/X3/**",
-    "test/experiments/partial-fill/**",
     "test/experiments/gas/X1CompactOrderBenchmark.t.sol",
     "test/experiments/gas/X2TransientHookBenchmark.t.sol",
     "test/experiments/gas/X2PersistentHookBenchmark.t.sol",

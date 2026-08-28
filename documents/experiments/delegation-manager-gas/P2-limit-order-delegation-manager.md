@@ -34,9 +34,11 @@ Environment: `solc 0.8.23`, `evm_version = london`, `via_ir` on manager, HybridD
 
 | Scenario | Exec gas | Calldata bytes | Calldata gas | Est. tx gas |
 | --- | ---: | ---: | ---: | ---: |
-| First partial fill (100 sell) | 184,599 | 932 | 6,872 | 212,471 |
-| Subsequent partial fill (200 sell) | 128,799 | 932 | 6,872 | 156,671 |
-| Final fill (remainder 700 sell) | 133,230 | 932 | 6,872 | 161,102 |
+| First partial fill (100 sell) via `fillOrder` | 184,599 | 932 | 6,872 | 212,471 |
+| Subsequent partial fill (200 sell) via `fillOrder` | 128,799 | 932 | 6,872 | 156,671 |
+| Final fill (remainder 700 sell) via `fillOrder` | 133,230 | 932 | 6,872 | 161,102 |
+| First partial via `redeemDelegations` (same ABI as original manager) | 194,852 | 1,444 | 9,628 | 225,480 |
+| Subsequent partial via `redeemDelegations` | 139,052 | 1,444 | 9,628 | 169,680 |
 
 P2 first fill ~31% lower execution gas than P1; subsequent fills ~50% lower.
 

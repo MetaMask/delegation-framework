@@ -363,6 +363,22 @@ contract LimitOrderManagerTest is PartialFillRfqBase {
         _fillP2(delegation_, 150 ether, users.dave.addr);
         assertEq(sellToken.balanceOf(users.dave.addr), 150 ether);
     }
+
+    function test_p2_rejectsAdditionalUnsupportedCaveat() public {
+        Delegation memory delegation_ = _buildP2Delegation(users.bob.addr);
+        Caveat[] memory caveats_ = new Caveat[](2);
+        caveats_[0] = delegation_.caveats[0];
+        caveats_[1] = Caveat({ enforcer: makeAddr("unsupported-enforcer"), terms: hex"", args: hex"" });
+        delegation_.caveats = caveats_;
+
+        bytes32 delegationHash_ = EncoderLib._getDelegationHash(delegation_);
+        bytes32 typedDataHash_ = MessageHashUtils.toTypedDataHash(limitOrderManager.getDomainHash(), delegationHash_);
+        delegation_.signature = signHash(users.alice, typedDataHash_);
+
+        vm.prank(users.bob.addr);
+        vm.expectRevert(LimitOrderDelegationManager.InvalidOrderProfile.selector);
+        limitOrderManager.fillOrder(delegation_, 100 ether);
+    }
 }
 
 contract PartialFillGasBenchmark is PartialFillRfqBase, GasExperimentHarness {
@@ -444,7 +460,45 @@ contract PartialFillGasBenchmark is PartialFillRfqBase, GasExperimentHarness {
         snap_ = saveGasSnapshot();
         GasMeasurement memory final_ = _measureP2Fill(delegation_, remainder_);
         restoreGasSnapshot(snap_);
-        logGasReport("P2 | final fill (remainder)", final_);
+        logGasReport("P2 | final fill (remainder) via fillOrder", final_);
+    }
+
+    /// @notice Same ERC-7710 `redeemDelegations(bytes[],ModeCode[],bytes[])` entry as canonical DelegationManager.
+    function test_benchmark_p2_redeemDelegations_same_signature() public {
+        HybridDeleGator impl_ = new HybridDeleGator(limitOrderManager, entryPoint);
+        string[] memory keyIds_ = new string[](1);
+        uint256[] memory xValues_ = new uint256[](1);
+        uint256[] memory yValues_ = new uint256[](1);
+        keyIds_[0] = users.alice.name;
+        xValues_[0] = users.alice.x;
+        yValues_[0] = users.alice.y;
+        HybridDeleGator p2Maker_ = HybridDeleGator(
+            payable(address(
+                    new ERC1967Proxy(
+                        address(impl_),
+                        abi.encodeWithSignature(
+                            "initialize(address,string[],uint256[],uint256[])", users.alice.addr, keyIds_, xValues_, yValues_
+                        )
+                    )
+                ))
+        );
+        vm.prank(address(users.alice.deleGator));
+        sellToken.mint(address(p2Maker_), INITIAL_BALANCE);
+        baseTerms.sellToken = address(sellToken);
+
+        Delegation memory delegation_ = _buildP2DelegationFor(p2Maker_, users.bob.addr);
+        _prepareSolverP2For(MIN_TOTAL_BUY);
+
+        uint256 snap_ = saveGasSnapshot();
+        GasMeasurement memory first_ = _measureP2Redeem(delegation_, 100 ether);
+        restoreGasSnapshot(snap_);
+        logGasReport("P2 | first partial via redeemDelegations", first_);
+
+        _redeemP2(delegation_, 100 ether);
+        snap_ = saveGasSnapshot();
+        GasMeasurement memory partial_ = _measureP2Redeem(delegation_, 200 ether);
+        restoreGasSnapshot(snap_);
+        logGasReport("P2 | subsequent partial via redeemDelegations", partial_);
     }
 
     function _buildP2DelegationFor(HybridDeleGator _maker, address _delegate) private returns (Delegation memory delegation_) {
@@ -471,6 +525,48 @@ contract PartialFillGasBenchmark is PartialFillRfqBase, GasExperimentHarness {
     function _fillP2For(Delegation memory _delegation, uint256 _fillSell) private {
         vm.prank(_delegation.delegate);
         limitOrderManager.fillOrder(_delegation, _fillSell);
+    }
+
+    function _redeemP2(Delegation memory _delegation, uint256 _fillSell) private {
+        (bytes[] memory pc_, ModeCode[] memory modes_, bytes[] memory ecd_) = _p2RedeemArgs(_delegation, _fillSell);
+        vm.prank(_delegation.delegate);
+        limitOrderManager.redeemDelegations(pc_, modes_, ecd_);
+    }
+
+    function _p2RedeemArgs(
+        Delegation memory _delegation,
+        uint256 _fillSell
+    )
+        private
+        view
+        returns (bytes[] memory pc_, ModeCode[] memory modes_, bytes[] memory ecd_)
+    {
+        Delegation[] memory delegations_ = new Delegation[](1);
+        delegations_[0] = _delegation;
+        pc_ = new bytes[](1);
+        pc_[0] = abi.encode(delegations_);
+        modes_ = new ModeCode[](1);
+        modes_[0] = ModeLib.encodeSimpleSingle();
+        ecd_ = new bytes[](1);
+        ecd_[0] =
+            ExecutionLib.encodeSingle(address(sellToken), 0, abi.encodeCall(IERC20.transfer, (_delegation.delegate, _fillSell)));
+    }
+
+    function _measureP2Redeem(Delegation memory _delegation, uint256 _fillSell) private returns (GasMeasurement memory m_) {
+        (bytes[] memory pc_, ModeCode[] memory modes_, bytes[] memory ecd_) = _p2RedeemArgs(_delegation, _fillSell);
+        bytes memory callData_ = abi.encodeWithSelector(limitOrderManager.redeemDelegations.selector, pc_, modes_, ecd_);
+        m_.calldataBytes = callData_.length;
+        m_.calldataGas = calldataGas(callData_);
+        vm.prank(_delegation.delegate);
+        uint256 gasBefore_ = gasleft();
+        (bool ok_, bytes memory ret_) = address(limitOrderManager).call(callData_);
+        m_.executionGas = gasBefore_ - gasleft();
+        m_.estimatedTxGas = INTRINSIC_GAS + m_.calldataGas + m_.executionGas;
+        if (!ok_) {
+            assembly {
+                revert(add(ret_, 0x20), mload(ret_))
+            }
+        }
     }
 
     function _measureP2Fill(Delegation memory _delegation, uint256 _fillSell) private returns (GasMeasurement memory m_) {

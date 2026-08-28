@@ -57,7 +57,6 @@ Balance Change Enforcers allow setting up guardrails around balance changes for 
 2. **Hash Key Generation**: The hash key is generated using the delegation manager address and delegation hash (plus token address and token ID for ERC1155), ensuring each delegation has its own isolated state.
 
 3. **Balance Caching**: In `beforeHook`, the enforcer:
-
    - Checks that the enforcer isn't already locked for this delegation
    - Locks the enforcer to prevent concurrent access
    - Caches the current balance of the recipient
@@ -191,15 +190,15 @@ The Permit2 branches are restricted to the canonical deployment at `0x0000000000
 
 The enforcer reads a **1-byte bitmask** from `terms` to control which revocation primitives the delegate may use:
 
-| Bit | Hex mask | Allowed primitive |
-|-----|----------|-------------------|
-| 0   | `0x01`   | ERC-20 `approve(spender, 0)` |
-| 1   | `0x02`   | ERC-721 `approve(address(0), tokenId)` |
+| Bit | Hex mask | Allowed primitive                                         |
+| --- | -------- | --------------------------------------------------------- |
+| 0   | `0x01`   | ERC-20 `approve(spender, 0)`                              |
+| 1   | `0x02`   | ERC-721 `approve(address(0), tokenId)`                    |
 | 2   | `0x04`   | `setApprovalForAll(operator, false)` (ERC-721 & ERC-1155) |
-| 3   | `0x08`   | Permit2 `approve(token, spender, 0, 0)` |
-| 4   | `0x10`   | Permit2 `lockdown((address,address)[])` |
-| 5   | `0x20`   | Permit2 `invalidateNonces(token, spender, newNonce)` |
-| 6–7 | —        | Reserved; MUST be zero |
+| 3   | `0x08`   | Permit2 `approve(token, spender, 0, 0)`                   |
+| 4   | `0x10`   | Permit2 `lockdown((address,address)[])`                   |
+| 5   | `0x20`   | Permit2 `invalidateNonces(token, spender, newNonce)`      |
+| 6–7 | —        | Reserved; MUST be zero                                    |
 
 - Terms MUST be exactly 1 byte.
 - A zero mask (`0x00`) is rejected — at least one primitive must be permitted.
@@ -223,11 +222,11 @@ terms = 0x3F  →  all six primitives allowed
 
 The three Permit2 primitives target different parts of Permit2's state, and **none of them subsumes the others**:
 
-| Primitive             | Zeros `amount`? | Resets `expiration`?            | Bumps `nonce`? | Invalidates pending signed permits? |
-|-----------------------|-----------------|---------------------------------|----------------|-------------------------------------|
+| Primitive             | Zeros `amount`? | Resets `expiration`?           | Bumps `nonce`? | Invalidates pending signed permits? |
+| --------------------- | --------------- | ------------------------------ | -------------- | ----------------------------------- |
 | `approve(_,_,0,0)`    | yes             | yes (set to `block.timestamp`) | no             | no                                  |
-| `lockdown(pairs)`     | yes             | no                              | no             | no                                  |
-| `invalidateNonces(…)` | no              | no                              | yes            | yes                                 |
+| `lockdown(pairs)`     | yes             | no                             | no             | no                                  |
+| `invalidateNonces(…)` | no              | no                             | yes            | yes                                 |
 
 To **fully sever** a delegator's Permit2 exposure to a `(token, spender)` pair, both an on-chain allowance revocation (bit 3 or 4) **and** a nonce invalidation (bit 5) are typically required. Enabling only on-chain revocation leaves any signed-but-unredeemed `permit` payloads live; enabling only nonce invalidation leaves the existing on-chain allowance intact. Bit-mask `0x38` enables all three.
 
@@ -262,7 +261,7 @@ The three Permit2 branches intentionally **omit** this on-chain liveness pre-che
 The Permit2 branches assume the canonical Uniswap-deployed Permit2 contract is at `_PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3` on the target chain. On chains where Uniswap has deployed Permit2 this is a safe deterministic address. On chains where canonical Permit2 is **not** deployed:
 
 - if the address is empty, the executor's call returns successfully with no effect (harmless no-op);
-- if a *different* contract happens to live at that address, the selector dispatches into whatever that contract does. The `approve(0, 0)` branch is partially self-protected by its structural calldata checks (any contract under that selector would have to interpret the layout identically to grant authority), but `lockdown` and `invalidateNonces` have no such structural moat.
+- if a _different_ contract happens to live at that address, the selector dispatches into whatever that contract does. The `approve(0, 0)` branch is partially self-protected by its structural calldata checks (any contract under that selector would have to interpret the layout identically to grant authority), but `lockdown` and `invalidateNonces` have no such structural moat.
 
 Delegators on chains without canonical Permit2 should NOT enable bits 3, 4, or 5.
 
@@ -306,6 +305,42 @@ On an intermediate (redelegation) link the two differ. The implications are diff
 Neither case is an authority escalation (the structural constraints above still hold — the call can only reduce permissions), but the sanity guard is misaligned with the executed effect for the standard branches and absent entirely for the Permit2 branches.
 
 If a redelegator needs a root-scoped guarantee (e.g. "Carol may only revoke one of Alice's specific approvals"), they should rely on structural caveats that compose cleanly across links, such as `AllowedTargetsEnforcer`, `AllowedCalldataEnforcer`, or `ExactCalldataEnforcer`. Placing `ApprovalRevocationEnforcer` on an intermediate link in the hope of validating the root's approval state does not achieve that.
+
+### MetaSwapApproveSwapEnforcer
+
+One-shot batch enforcer for a direct MetaSwap redemption: ERC-20 approval of `tokenIn` to `metaSwap`, then `IMetaSwap.swap`. It is batch + default execution only (`EXECTYPE_TRY` is rejected so a failed swap rolls back the approval). `tokenIn` and `tokenOut` must differ.
+
+Supported shapes:
+
+1. `approve(tokenInAmount)` → `swap`
+2. `approve(0)` → `approve(tokenInAmount)` → `swap` (USDT / KNC-style reset when a non-zero allowance already exists)
+
+Terms: `abi.encode({ metaSwap, tokenIn, tokenOut, tokenInAmount, minTokenOut })`. Aggregator id and route metadata stay flexible. Inner Swaps API `swapData` must match `tokenIn` / `tokenOut`, encode `amountTo >= minTokenOut`, and when `feeTo == false` satisfy `feeAmount + swapAmountFrom == amountFrom`.
+
+`afterHook` (canonical `DelegationManager` only — `SimpleDelegationManager` does not run it) checks:
+
+- the delegator received at least `minTokenOut` of `tokenOut`
+- leftover `allowance(delegator, metaSwap) == 0`
+
+Compose with `RedeemerEnforcer` to restrict who can submit the redemption.
+
+#### Token / chain compatibility
+
+This is **not** universal ERC-20 support. Pick the batch shape off-chain (simulate 2-action, then 3-action). Behavior is per **chain + token address**, not symbol.
+
+| Issue                                                     | Tokens / examples                                                                          | Effect                                                                                                                                                 |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Non-zero → non-zero `approve` reverts                     | Ethereum USDT, KNC                                                                         | Use the 3-action reset. 2-action fails if leftover allowance exists.                                                                                   |
+| `approve(spender, 0)` reverts                             | Ethereum BNB (`0xB8c77482…`)                                                               | 3-action always reverts. Use 2-action only, and only when current allowance is already 0.                                                              |
+| Infinite approval is not decremented                      | OZ ERC-20, WETH9, DAI when allowance is `type(uint256).max`                                | `afterHook` `RemainingAllowance` if the signed amount is max. This enforcer pins exact `tokenInAmount`; avoid max.                                     |
+| `uint96` / truncated allowances                           | Historical UNI, COMP                                                                       | `approve(uint256.max)` may store `type(uint96).max`. Exact finite amounts are usually fine.                                                            |
+| `approve` returns `false` without reverting               | ZRX, EURS, some USDT-like tokens                                                           | Batch execution does not decode the bool (unlike `SafeERC20`). A failed approve may continue; the swap or leftover-allowance check should then revert. |
+| Partial pull / non-standard `transferFrom`                | Tokens that do not decrement finite allowances; MetaSwap pulling less than `tokenInAmount` | `RemainingAllowance` in `afterHook`.                                                                                                                   |
+| Temporary allowances (ERC-7674)                           | Tokens with a temporary + standard allowance slot                                          | `approve` only updates the standard slot; leftover spendable rights can remain.                                                                        |
+| Fee-on-transfer, rebase, pause, blocklist, transfer hooks | Various                                                                                    | Approval can succeed while the swap fails. Default mode keeps the batch atomic.                                                                        |
+| Same token in and out                                     | Any                                                                                        | `IdenticalTokens`. Needed because the output snapshot is a net balance delta.                                                                          |
+
+`forceApprove` cannot be reproduced in the batch: the enforcer cannot probe `approve` on behalf of the smart account. The 2/3-action choice is explicit, not detected on-chain.
 
 ## LogicalOrWrapperEnforcer Context Switching
 
