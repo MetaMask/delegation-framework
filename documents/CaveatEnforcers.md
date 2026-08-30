@@ -25,6 +25,27 @@ Enforcers can target specific call type modes: **single** or **batch**, and exec
 
 ---
 
+### MetaSwapBatchCalldataEnforcer
+
+Authorizes one direct `BATCH_DEFAULT_MODE` redemption containing one of these exact execution shapes:
+
+- Native token: `MetaSwap.swap{ value: tokenInAmount }(...)`
+- ERC-20: `approve(metaSwap, tokenInAmount)`, then `MetaSwap.swap(...)`
+- ERC-20 with reset: `approve(metaSwap, 0)`, `approve(metaSwap, tokenInAmount)`, then `MetaSwap.swap(...)`
+
+Terms are packed as `metaSwap(20) | tokenIn(20) | tokenInAmount(32) | resetApproval(1)`, where `address(0)` identifies the
+native token. The enforcer binds the targets, values, selectors, approval spender and amounts, and MetaSwap's `tokenFrom`
+and `amount`. MetaSwap's dynamic `aggregatorId` and route `data` remain unrestricted so the redeemer can select the route.
+
+#### Trust Assumptions
+
+The delegator trusts the delegate to supply safe swap data and trusts the configured MetaSwap contract and its adapters.
+This enforcer does not validate route side effects or swap output, and a residual allowance may remain if MetaSwap spends
+less than the approved amount. Add `LimitedCallsEnforcer` for one-shot orders and the appropriate
+`ERC20BalanceChangeEnforcer` or `NativeBalanceChangeEnforcer` to enforce a minimum output.
+
+---
+
 ## Enforcer Details
 
 ### NativeTokenPaymentEnforcer
