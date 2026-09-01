@@ -46,6 +46,64 @@ less than the approved amount. Add `LimitedCallsEnforcer` for one-shot orders an
 
 ---
 
+### MetaSwapOneShotLimitOrderEnforcer
+
+Combines `MetaSwapBatchCalldataEnforcer`, `LimitedCallsEnforcer(1)`, and minimum-output balance enforcement into one
+purpose-specific enforcer. A successful order is permanently consumed; a reverted fill, including insufficient output,
+rolls back the consumed state and remains retryable.
+
+It accepts one direct `BATCH_DEFAULT_MODE` redemption with:
+
+- Native input: `MetaSwap.swap{ value: tokenInAmount }(...)`
+- ERC-20 using existing allowance: `MetaSwap.swap(...)`
+- ERC-20 approval: `approve(metaSwap, tokenInAmount)`, then `MetaSwap.swap(...)`
+- ERC-20 reset approval: `approve(metaSwap, 0)`, `approve(metaSwap, tokenInAmount)`, then `MetaSwap.swap(...)`
+
+Terms are packed as:
+
+```text
+metaSwap(20) | tokenIn(20) | tokenInAmount(32) | approvalPolicy(1) |
+tokenOut(20) | recipient(20) | tokenOutMin(32)
+```
+
+`address(0)` represents the native token. Native input requires an approval policy of zero. For ERC-20 input, the signed
+policy is a bitmask: `0x01` allows using an existing allowance, `0x02` allows `approve(amount)`, and `0x04` allows
+`approve(0) + approve(amount)`. Combine bits to authorize multiple shapes. The batch length selects a signed shape; caveat
+args are not used.
+
+Example terms for an ERC-20 order that permits every approval shape:
+
+```solidity
+bytes memory terms = abi.encodePacked(
+    metaSwap,
+    tokenIn,
+    tokenInAmount,
+    uint8(0x01 | 0x02 | 0x04),
+    tokenOut,
+    recipient,
+    tokenOutMin
+);
+```
+
+The enforcer stores the pre-execution output balance, execution lock, and consumed marker in one storage slot keyed by
+the DelegationManager and delegation hash. This avoids separate call-count, lock, and balance-cache mappings.
+
+#### Trust Assumptions
+
+MetaSwap's `aggregatorId` and route `data` remain unrestricted. The delegator trusts the delegate to provide safe route
+data and trusts the configured MetaSwap contract and its adapters. The enforcer fixes the input token, input amount,
+approval spender, approval amounts, output token, output recipient, and minimum net balance increase, but it cannot
+prevent arbitrary route side effects or protect unrelated assets already approved to MetaSwap or its adapters.
+
+The minimum output may be satisfied by any balance increase during the execution, including unrelated transfers or token
+rebases. A malicious or non-standard output token may report misleading balances. A residual input allowance may remain
+if MetaSwap spends less than the approved amount.
+
+Deployment uses `script/DeployCaveatEnforcers.s.sol`. After recording deployed addresses, verification uses the shared
+`script/verification/verify-enforcer-contracts.sh` flow.
+
+---
+
 ## Enforcer Details
 
 ### NativeTokenPaymentEnforcer

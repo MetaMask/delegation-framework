@@ -27,6 +27,7 @@ import { IdEnforcer } from "../src/enforcers/IdEnforcer.sol";
 import { LimitedCallsEnforcer } from "../src/enforcers/LimitedCallsEnforcer.sol";
 import { LogicalOrWrapperEnforcer } from "../src/enforcers/LogicalOrWrapperEnforcer.sol";
 import { MetaSwapBatchCalldataEnforcer } from "../src/enforcers/MetaSwapBatchCalldataEnforcer.sol";
+import { MetaSwapOneShotLimitOrderEnforcer } from "../src/enforcers/MetaSwapOneShotLimitOrderEnforcer.sol";
 import { MultiTokenPeriodEnforcer } from "../src/enforcers/MultiTokenPeriodEnforcer.sol";
 import { NativeBalanceChangeEnforcer } from "../src/enforcers/NativeBalanceChangeEnforcer.sol";
 import { NativeTokenPaymentEnforcer } from "../src/enforcers/NativeTokenPaymentEnforcer.sol";
@@ -136,6 +137,9 @@ contract DeployCaveatEnforcers is Script {
 
         deployedAddress = address(new MetaSwapBatchCalldataEnforcer{ salt: salt }());
         console2.log("MetaSwapBatchCalldataEnforcer: %s", deployedAddress);
+
+        deployedAddress = address(new MetaSwapOneShotLimitOrderEnforcer{ salt: salt }());
+        console2.log("MetaSwapOneShotLimitOrderEnforcer: %s", deployedAddress);
 
         deployedAddress = address(new MultiTokenPeriodEnforcer{ salt: salt }());
         console2.log("MultiTokenPeriodEnforcer: %s", deployedAddress);
