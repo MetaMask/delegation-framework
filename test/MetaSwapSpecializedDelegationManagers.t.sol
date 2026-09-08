@@ -10,6 +10,7 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 
 import { MetaSwapDelegationManagerBase } from "../src/MetaSwapDelegationManagerBase.sol";
+import { MetaSwapFlexibleSettlementManagerBase } from "../src/MetaSwapFlexibleSettlementManagerBase.sol";
 import { MetaSwapExecutionBuilderDelegationManager } from "../src/MetaSwapExecutionBuilderDelegationManager.sol";
 import { MetaSwapHooklessDelegationManager } from "../src/MetaSwapHooklessDelegationManager.sol";
 import { DelegationManager } from "../src/DelegationManager.sol";
@@ -394,10 +395,14 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
         vm.expectRevert(MetaSwapDelegationManagerBase.InvalidCaveat.selector);
         hooklessManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
 
+        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidTerms.selector);
+        hooklessManager.getTermsInfo(new bytes(144));
+
+        // Mutating signed terms changes the hash, so signature validation fails before terms decoding.
         delegation_.caveats[0].enforcer = address(hooklessManager);
         delegation_.caveats[0].terms = new bytes(144);
         (permissionContexts_, modes_, executionContexts_) = _redemptionInputs(delegation_, executionContext_);
-        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidTerms.selector);
+        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidEOASignature.selector);
         hooklessManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
     }
 
@@ -538,7 +543,7 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
 
     function _terms(
         address tokenIn_,
-        MetaSwapDelegationManagerBase.ApprovalMode approvalMode_,
+        MetaSwapFlexibleSettlementManagerBase.ApprovalMode approvalMode_,
         address tokenOut_,
         address recipient_
     )
@@ -594,19 +599,19 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
             });
     }
 
-    function _noneMode() private pure returns (MetaSwapDelegationManagerBase.ApprovalMode) {
-        return MetaSwapDelegationManagerBase.ApprovalMode.None;
+    function _noneMode() private pure returns (MetaSwapFlexibleSettlementManagerBase.ApprovalMode) {
+        return MetaSwapFlexibleSettlementManagerBase.ApprovalMode.None;
     }
 
-    function _skipApprovalMode() private pure returns (MetaSwapDelegationManagerBase.ApprovalMode) {
-        return MetaSwapDelegationManagerBase.ApprovalMode.SkipApproval;
+    function _skipApprovalMode() private pure returns (MetaSwapFlexibleSettlementManagerBase.ApprovalMode) {
+        return MetaSwapFlexibleSettlementManagerBase.ApprovalMode.SkipApproval;
     }
 
-    function _approveMode() private pure returns (MetaSwapDelegationManagerBase.ApprovalMode) {
-        return MetaSwapDelegationManagerBase.ApprovalMode.Approve;
+    function _approveMode() private pure returns (MetaSwapFlexibleSettlementManagerBase.ApprovalMode) {
+        return MetaSwapFlexibleSettlementManagerBase.ApprovalMode.Approve;
     }
 
-    function _resetApproveMode() private pure returns (MetaSwapDelegationManagerBase.ApprovalMode) {
-        return MetaSwapDelegationManagerBase.ApprovalMode.ResetApprove;
+    function _resetApproveMode() private pure returns (MetaSwapFlexibleSettlementManagerBase.ApprovalMode) {
+        return MetaSwapFlexibleSettlementManagerBase.ApprovalMode.ResetApprove;
     }
 }

@@ -5,7 +5,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 
-import { MetaSwapDelegationManagerBase } from "./MetaSwapDelegationManagerBase.sol";
+import { MetaSwapFlexibleSettlementManagerBase } from "./MetaSwapFlexibleSettlementManagerBase.sol";
 import { IMetaSwap } from "./helpers/interfaces/IMetaSwap.sol";
 import { IDeleGatorCore } from "./interfaces/IDeleGatorCore.sol";
 import { Execution } from "./utils/Types.sol";
@@ -15,12 +15,12 @@ import { Execution } from "./utils/Types.sol";
  * @notice Constructs and executes one signed MetaSwap settlement from redeemer-supplied route data.
  * @dev Approval and swap targets, amounts, ordering, selectors, and values are created by this manager.
  */
-contract MetaSwapExecutionBuilderDelegationManager is MetaSwapDelegationManagerBase {
+contract MetaSwapExecutionBuilderDelegationManager is MetaSwapFlexibleSettlementManagerBase {
     using ExecutionLib for Execution[];
 
     string public constant NAME = "MetaSwapExecutionBuilderDelegationManager";
 
-    constructor(SignatureMode signatureMode_) MetaSwapDelegationManagerBase(NAME, signatureMode_) { }
+    constructor(SignatureMode signatureMode_) MetaSwapFlexibleSettlementManagerBase(NAME, signatureMode_) { }
 
     function _executeSettlement(address delegator_, bytes calldata executionContext_, Terms memory termsInfo_) internal override {
         (string memory aggregatorId_, bytes memory routeData_) = abi.decode(executionContext_, (string, bytes));

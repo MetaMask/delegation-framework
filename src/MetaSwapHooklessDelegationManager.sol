@@ -5,7 +5,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 
-import { MetaSwapDelegationManagerBase } from "./MetaSwapDelegationManagerBase.sol";
+import { MetaSwapFlexibleSettlementManagerBase } from "./MetaSwapFlexibleSettlementManagerBase.sol";
 import { IMetaSwap } from "./helpers/interfaces/IMetaSwap.sol";
 import { IDeleGatorCore } from "./interfaces/IDeleGatorCore.sol";
 import { Execution } from "./utils/Types.sol";
@@ -15,7 +15,7 @@ import { Execution } from "./utils/Types.sol";
  * @notice Executes one signed MetaSwap settlement without invoking external caveat hooks.
  * @dev The redeemer supplies a complete batch, which is validated directly by this manager.
  */
-contract MetaSwapHooklessDelegationManager is MetaSwapDelegationManagerBase {
+contract MetaSwapHooklessDelegationManager is MetaSwapFlexibleSettlementManagerBase {
     using ExecutionLib for bytes;
 
     string public constant NAME = "MetaSwapHooklessDelegationManager";
@@ -28,7 +28,7 @@ contract MetaSwapHooklessDelegationManager is MetaSwapDelegationManagerBase {
     error InvalidBatchLength();
     error InvalidSwap();
 
-    constructor(SignatureMode signatureMode_) MetaSwapDelegationManagerBase(NAME, signatureMode_) { }
+    constructor(SignatureMode signatureMode_) MetaSwapFlexibleSettlementManagerBase(NAME, signatureMode_) { }
 
     function _executeSettlement(address delegator_, bytes calldata executionContext_, Terms memory termsInfo_) internal override {
         Execution[] calldata executions_ = executionContext_.decodeBatch();

@@ -15,8 +15,9 @@ import { Caveat, Delegation, ModeCode } from "./utils/Types.sol";
 
 /**
  * @title MetaSwapDelegationManagerBase
- * @notice Shared validation and settlement logic for specialized MetaSwap delegation managers.
- * @dev Supports exactly one root delegation containing one manager-enforced settlement caveat.
+ * @notice Cheap one-shot redeem shell for purpose-specific MetaSwap managers.
+ * @dev Supports exactly one root delegation containing one manager-enforced caveat.
+ *      Settlement-specific decoding and min-output checks live in subclasses.
  */
 abstract contract MetaSwapDelegationManagerBase is EIP712 {
     enum SignatureMode {
@@ -24,28 +25,9 @@ abstract contract MetaSwapDelegationManagerBase is EIP712 {
         ERC1271
     }
 
-    enum ApprovalMode {
-        None,
-        SkipApproval,
-        Approve,
-        ResetApprove
-    }
-
-    struct Terms {
-        address metaSwap;
-        address tokenIn;
-        uint256 tokenInAmount;
-        ApprovalMode approvalMode;
-        address tokenOut;
-        address recipient;
-        uint256 tokenOutMin;
-    }
-
     string public constant DOMAIN_VERSION = "1";
     bytes32 public constant ROOT_AUTHORITY = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
     address public constant ANY_DELEGATE = address(0xa11);
-
-    uint256 internal constant TERMS_LENGTH = 145;
 
     SignatureMode public immutable signatureMode;
 
@@ -92,10 +74,10 @@ abstract contract MetaSwapDelegationManagerBase is EIP712 {
     }
 
     /**
-     * @notice Redeems one specialized MetaSwap settlement delegation.
+     * @notice Redeems one specialized MetaSwap delegation.
      * @param permissionContexts_ Must contain one ABI-encoded one-element `Delegation[]`.
      * @param modes_ Must contain the canonical batch/default mode.
-     * @param executionContexts_ Manager-specific execution or route context.
+     * @param executionContexts_ Manager-specific execution context.
      */
     function redeemDelegations(
         bytes[] calldata permissionContexts_,
@@ -120,18 +102,10 @@ abstract contract MetaSwapDelegationManagerBase is EIP712 {
         bytes32 delegationHash_ = _getSingleCaveatDelegationHash(delegation_);
         if (disabledDelegations[delegationHash_]) revert CannotUseADisabledDelegation();
 
-        Terms memory termsInfo_ = getTermsInfo(delegation_.caveats[0].terms);
         _validateSignature(delegation_, delegationHash_);
 
         disabledDelegations[delegationHash_] = true;
-        uint256 balanceBefore_ = _balanceOf(termsInfo_.tokenOut, termsInfo_.recipient);
-
-        _executeSettlement(delegation_.delegator, executionContexts_[0], termsInfo_);
-
-        uint256 balanceAfter_ = _balanceOf(termsInfo_.tokenOut, termsInfo_.recipient);
-        if (balanceAfter_ < balanceBefore_ || balanceAfter_ - balanceBefore_ < termsInfo_.tokenOutMin) {
-            revert InsufficientOutput();
-        }
+        _executeIntent(delegation_.delegator, delegation_.caveats[0].terms, executionContexts_[0]);
 
         emit RedeemedDelegation(delegation_.delegator, msg.sender, delegation_);
     }
@@ -152,35 +126,12 @@ abstract contract MetaSwapDelegationManagerBase is EIP712 {
     }
 
     /**
-     * @notice Decodes and validates packed settlement terms.
-     * @param terms_ Packed settlement terms.
+     * @notice Executes the signed intent after the one-shot lock is recorded.
+     * @param delegator_ Root delegator account that will execute.
+     * @param terms_ Signed caveat terms.
+     * @param executionContext_ Redeemer-supplied execution context.
      */
-    function getTermsInfo(bytes memory terms_) public pure returns (Terms memory termsInfo_) {
-        if (terms_.length != TERMS_LENGTH) revert InvalidTerms();
-
-        // Terms are tightly packed. Loading their fixed offsets directly avoids allocating seven temporary byte arrays.
-        assembly ("memory-safe") {
-            let termsData_ := add(terms_, 0x20)
-            mstore(termsInfo_, shr(96, mload(termsData_)))
-            mstore(add(termsInfo_, 0x20), shr(96, mload(add(termsData_, 20))))
-            mstore(add(termsInfo_, 0x40), mload(add(termsData_, 40)))
-            mstore(add(termsInfo_, 0x80), shr(96, mload(add(termsData_, 73))))
-            mstore(add(termsInfo_, 0xa0), shr(96, mload(add(termsData_, 93))))
-            mstore(add(termsInfo_, 0xc0), mload(add(termsData_, 113)))
-        }
-        uint8 approvalMode_ = uint8(terms_[72]);
-
-        if (
-            termsInfo_.metaSwap == address(0) || termsInfo_.tokenInAmount == 0 || termsInfo_.recipient == address(0)
-                || termsInfo_.tokenOutMin == 0 || termsInfo_.tokenIn == termsInfo_.tokenOut
-        ) {
-            revert InvalidTerms();
-        }
-        if (approvalMode_ > uint8(ApprovalMode.ResetApprove)) revert InvalidApprovalMode();
-        termsInfo_.approvalMode = ApprovalMode(approvalMode_);
-    }
-
-    function _executeSettlement(address delegator_, bytes calldata executionContext_, Terms memory termsInfo_) internal virtual;
+    function _executeIntent(address delegator_, bytes memory terms_, bytes calldata executionContext_) internal virtual;
 
     function _validateSignature(Delegation memory delegation_, bytes32 delegationHash_) private view {
         bytes32 typedDataHash_ = MessageHashUtils.toTypedDataHash(_domainSeparatorV4(), delegationHash_);
@@ -195,7 +146,7 @@ abstract contract MetaSwapDelegationManagerBase is EIP712 {
         }
     }
 
-    function _getSingleCaveatDelegationHash(Delegation memory delegation_) private pure returns (bytes32) {
+    function _getSingleCaveatDelegationHash(Delegation memory delegation_) internal pure returns (bytes32) {
         Caveat memory caveat_ = delegation_.caveats[0];
         bytes32 caveatHash_ = keccak256(abi.encode(CAVEAT_TYPEHASH, caveat_.enforcer, keccak256(caveat_.terms)));
         bytes32 caveatsHash_ = keccak256(abi.encodePacked(caveatHash_));
@@ -212,7 +163,7 @@ abstract contract MetaSwapDelegationManagerBase is EIP712 {
         );
     }
 
-    function _balanceOf(address token_, address recipient_) private view returns (uint256) {
+    function _balanceOf(address token_, address recipient_) internal view returns (uint256) {
         return token_ == address(0) ? recipient_.balance : IERC20(token_).balanceOf(recipient_);
     }
 }
