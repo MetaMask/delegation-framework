@@ -579,3 +579,8 @@ Always verify feed addresses via the [Chainlink price feed addresses page](https
 #### L2 considerations
 
 On L2s (Base, Arbitrum, etc.), consider also using a [sequencer uptime feed](https://docs.chain.link/data-feeds/l2-sequencer-feeds) to avoid reading stale prices during sequencer downtime. This enforcer only checks `maxStaleSeconds`; it does not integrate a sequencer feed directly.
+
+#### Integration guides
+
+- [Wallet integration guide](../ChainlinkPriceRuleEnforcer-Wallet-Integration.md) — EIP-7715 grant flow, terms encoding, LiFi stacking
+- [App integration guide](../ChainlinkPriceRuleEnforcer-App-Integration.md) — reference round selection, redemption, buy-the-dip / take-profit examples
