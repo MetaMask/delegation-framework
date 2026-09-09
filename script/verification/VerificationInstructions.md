@@ -62,6 +62,17 @@ Verifies an array of enforcer contracts.
 ./verify-enforcer-contracts.sh
 ```
 
+#### `verify-metaswap-intent-delegation-manager.sh`
+
+Experimental. Verifies `MetaSwapIntentDelegationManager`.
+Requires `META_SWAP_INTENT_DELEGATION_MANAGER_ADDRESS` and `SIGNATURE_MODE` (`0` DirectECDSA, `1` ERC1271).
+
+**Usage:**
+
+```bash
+./verify-metaswap-intent-delegation-manager.sh
+```
+
 ## Notes
 
 - Ensure the `.env` file is correctly configured and contains all necessary API keys.
