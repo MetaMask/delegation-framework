@@ -3,12 +3,11 @@ pragma solidity 0.8.23;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 
 import { MetaSwapFlexibleSettlementManagerBase } from "./MetaSwapFlexibleSettlementManagerBase.sol";
-import { IMetaSwap } from "./helpers/interfaces/IMetaSwap.sol";
-import { IDeleGatorCore } from "./interfaces/IDeleGatorCore.sol";
-import { Execution } from "./utils/Types.sol";
+import { IMetaSwap } from "../helpers/interfaces/IMetaSwap.sol";
+import { IDeleGatorCore } from "../interfaces/IDeleGatorCore.sol";
+import { Execution } from "../utils/Types.sol";
 
 /**
  * @title MetaSwapExecutionBuilderDelegationManager
@@ -20,13 +19,13 @@ contract MetaSwapExecutionBuilderDelegationManager is MetaSwapFlexibleSettlement
 
     string public constant NAME = "MetaSwapExecutionBuilderDelegationManager";
 
-    constructor(SignatureMode signatureMode_) MetaSwapFlexibleSettlementManagerBase(NAME, signatureMode_) { }
+    constructor() MetaSwapFlexibleSettlementManagerBase(NAME) { }
 
     function _executeSettlement(address delegator_, bytes calldata executionContext_, Terms memory termsInfo_) internal override {
         (string memory aggregatorId_, bytes memory routeData_) = abi.decode(executionContext_, (string, bytes));
         Execution[] memory executions_ = _buildExecutions(termsInfo_, aggregatorId_, routeData_);
 
-        IDeleGatorCore(delegator_).executeFromExecutor(ModeLib.encodeSimpleBatch(), executions_.encodeBatch());
+        IDeleGatorCore(delegator_).executeFromExecutor(SIMPLE_BATCH_MODE, executions_.encodeBatch());
     }
 
     function _buildExecutions(

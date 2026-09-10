@@ -50,10 +50,7 @@ Flexible-only. Redeemer supplies a complete ABI-encoded `Execution[]`. Validates
 
 Flexible-only. Redeemer supplies `abi.encode(aggregatorId, routeData)`. Manager constructs approvals and swap.
 
-## Signature modes
-
-- `DirectECDSA` recovers the EIP-712 signer directly and requires it to equal the EIP-7702 delegator address.
-- `ERC1271` calls the delegator's signature policy.
+Signatures try ECDSA first (EOA and EIP-7702 ETH keys). If that misses, empty accounts revert; accounts with code fall back to ERC-1271.
 
 `disabledDelegations` is both cancel and one-shot consumption. Failed execution or insufficient output reverts atomically.
 
@@ -61,19 +58,18 @@ Flexible-only. Redeemer supplies `abi.encode(aggregatorId, routeData)`. Manager 
 
 Measured around `redeemDelegations` in `test/MetaSwapIntentDelegationManager.t.sol` and the specialized suite:
 
-| Path | Gas | vs generic flexible |
-|------|-----|---------------------|
-| Generic DM + ExactBatch + LimitedCalls(1) | `230,987` | — |
-| Generic DM + FlexibleSettlementEnforcer | `200,783` | baseline flexible |
-| Hookless flexible (DirectECDSA) | `166,508` | −17.1% |
-| Intent ExactCalldata | `158,997` | −31.2% vs exact generic |
-| Intent FlexibleSettlement | `166,725` | −17.0% |
+| Path                                      | Gas       | vs generic flexible     |
+| ----------------------------------------- | --------- | ----------------------- |
+| Generic DM + ExactBatch + LimitedCalls(1) | `230,987` | —                       |
+| Generic DM + FlexibleSettlementEnforcer   | `200,783` | baseline flexible       |
+| Hookless flexible                         | `166,508` | −17.1%                  |
+| Intent ExactCalldata                      | `158,997` | −31.2% vs exact generic |
+| Intent FlexibleSettlement                 | `166,725` | −17.0%                  |
 
 Takeaways:
 
 - Flattened exact intent is the cheapest path: no second enforcer, no LimitedCalls nested mapping, no self-`execute` wrap.
 - Intent flexible matches hookless (~same gas); the unified manager does not pay a meaningful premium for dispatch.
-- DirectECDSA vs ERC-1271 on hookless saved ~2k gas in earlier benches.
 
 ## Limitations
 

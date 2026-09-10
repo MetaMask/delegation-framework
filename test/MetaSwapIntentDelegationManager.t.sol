@@ -10,9 +10,9 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 
 import { MetaSwapDelegationManagerBase } from "../src/MetaSwapDelegationManagerBase.sol";
-import { MetaSwapFlexibleSettlementManagerBase } from "../src/MetaSwapFlexibleSettlementManagerBase.sol";
-import { MetaSwapHooklessDelegationManager } from "../src/MetaSwapHooklessDelegationManager.sol";
 import { MetaSwapIntentDelegationManager } from "../src/MetaSwapIntentDelegationManager.sol";
+import { MetaSwapFlexibleSettlementManagerBase } from "../src/experiments/MetaSwapFlexibleSettlementManagerBase.sol";
+import { MetaSwapHooklessDelegationManager } from "../src/experiments/MetaSwapHooklessDelegationManager.sol";
 import { DelegationManager } from "../src/DelegationManager.sol";
 import { EIP7702StatelessDeleGator } from "../src/EIP7702/EIP7702StatelessDeleGator.sol";
 import { ExactExecutionBatchEnforcer } from "../src/enforcers/ExactExecutionBatchEnforcer.sol";
@@ -22,6 +22,30 @@ import { IMetaSwap } from "../src/helpers/interfaces/IMetaSwap.sol";
 import { IDelegationManager } from "../src/interfaces/IDelegationManager.sol";
 import { BasicERC20 } from "./utils/BasicERC20.t.sol";
 import { Caveat, Delegation, Execution, ModeCode } from "../src/utils/Types.sol";
+import { ERC1271Lib } from "../src/libraries/ERC1271Lib.sol";
+
+contract IntentManager1271Account {
+    using ExecutionLib for bytes;
+
+    function isValidSignature(bytes32 hash_, bytes memory signature_) external pure returns (bytes4) {
+        if (signature_.length == 32 && bytes32(signature_) == hash_) return ERC1271Lib.EIP1271_MAGIC_VALUE;
+        return ERC1271Lib.SIG_VALIDATION_FAILED;
+    }
+
+    function executeFromExecutor(ModeCode, bytes calldata executionCallData_)
+        external
+        payable
+        returns (bytes[] memory returnData_)
+    {
+        Execution[] calldata executions_ = executionCallData_.decodeBatch();
+        returnData_ = new bytes[](executions_.length);
+        for (uint256 i; i < executions_.length; ++i) {
+            (bool ok_, bytes memory ret_) = executions_[i].target.call{ value: executions_[i].value }(executions_[i].callData);
+            require(ok_, "exec-failed");
+            returnData_[i] = ret_;
+        }
+    }
+}
 
 contract IntentManagerMetaSwapMock is IMetaSwap {
     using SafeERC20 for IERC20;
@@ -96,8 +120,8 @@ contract MetaSwapIntentDelegationManagerTest is Test {
         exactBatchEnforcer = new ExactExecutionBatchEnforcer();
         limitedCallsEnforcer = new LimitedCallsEnforcer();
         flexibleEnforcer = new MetaSwapFlexibleSettlementEnforcer();
-        hooklessManager = new MetaSwapHooklessDelegationManager(MetaSwapDelegationManagerBase.SignatureMode.DirectECDSA);
-        intentManager = new MetaSwapIntentDelegationManager(MetaSwapDelegationManagerBase.SignatureMode.DirectECDSA);
+        hooklessManager = new MetaSwapHooklessDelegationManager();
+        intentManager = new MetaSwapIntentDelegationManager();
 
         genericAccount = vm.addr(GENERIC_KEY);
         hooklessAccount = vm.addr(HOOKLESS_KEY);
@@ -124,6 +148,13 @@ contract MetaSwapIntentDelegationManagerTest is Test {
         bytes memory encoded_ = ExecutionLib.encodeBatch(executions_);
         Delegation memory delegation_ = _signIntent(_exactTerms(keccak256(encoded_)), 1);
 
+        vm.expectEmit(true, true, true, true, address(intentManager));
+        emit MetaSwapDelegationManagerBase.RedeemedDelegation(
+            intentAccount,
+            relayer,
+            intentManager.getDelegationHash(delegation_),
+            uint8(MetaSwapIntentDelegationManager.Intent.ExactCalldata)
+        );
         _redeemIntent(delegation_, encoded_);
 
         assertEq(tokenIn.balanceOf(intentAccount), 900 ether);
@@ -205,7 +236,61 @@ contract MetaSwapIntentDelegationManagerTest is Test {
         bytes memory encoded_ = ExecutionLib.encodeBatch(executions_);
         Delegation memory delegation_ = _signIntentWithKey(HOOKLESS_KEY, _exactTerms(keccak256(encoded_)), 8);
 
+        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidERC1271Signature.selector);
+        _redeemIntent(delegation_, encoded_);
+    }
+
+    function test_exactRejectsWrongSignerOnCodelessEOA() public {
+        address eoa_ = vm.addr(0xE0A);
+        bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT));
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] = Caveat({ enforcer: address(intentManager), terms: _exactTerms(keccak256(encoded_)), args: hex"" });
+        Delegation memory delegation_ = _signManager(intentManager, HOOKLESS_KEY, eoa_, caveats_, 40);
+
         vm.expectRevert(MetaSwapDelegationManagerBase.InvalidEOASignature.selector);
+        _redeemIntent(delegation_, encoded_);
+    }
+
+    function test_exactRedeemsWithERC1271Fallback() public {
+        IntentManager1271Account account_ = new IntentManager1271Account();
+        tokenIn.mint(address(account_), 1_000 ether);
+
+        bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT));
+        bytes memory terms_ = _exactTerms(keccak256(encoded_));
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] = Caveat({ enforcer: address(intentManager), terms: terms_, args: hex"" });
+        Delegation memory delegation_ = Delegation({
+            delegate: address(0xa11),
+            delegator: address(account_),
+            authority: intentManager.ROOT_AUTHORITY(),
+            caveats: caveats_,
+            salt: 41,
+            signature: hex""
+        });
+        bytes32 typedDataHash_ =
+            MessageHashUtils.toTypedDataHash(intentManager.getDomainHash(), intentManager.getDelegationHash(delegation_));
+        delegation_.signature = abi.encodePacked(typedDataHash_);
+
+        _redeemIntent(delegation_, encoded_);
+
+        assertEq(tokenOut.balanceOf(address(account_)), TOKEN_OUT_AMOUNT);
+    }
+
+    function test_exactRejectsInvalidERC1271Signature() public {
+        IntentManager1271Account account_ = new IntentManager1271Account();
+        bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT));
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] = Caveat({ enforcer: address(intentManager), terms: _exactTerms(keccak256(encoded_)), args: hex"" });
+        Delegation memory delegation_ = Delegation({
+            delegate: address(0xa11),
+            delegator: address(account_),
+            authority: intentManager.ROOT_AUTHORITY(),
+            caveats: caveats_,
+            salt: 42,
+            signature: abi.encodePacked(bytes32(uint256(1)))
+        });
+
+        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidERC1271Signature.selector);
         _redeemIntent(delegation_, encoded_);
     }
 
@@ -216,6 +301,13 @@ contract MetaSwapIntentDelegationManagerTest is Test {
         Delegation memory delegation_ = _signIntent(terms_, 10);
         bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT));
 
+        vm.expectEmit(true, true, true, true, address(intentManager));
+        emit MetaSwapDelegationManagerBase.RedeemedDelegation(
+            intentAccount,
+            relayer,
+            intentManager.getDelegationHash(delegation_),
+            uint8(MetaSwapIntentDelegationManager.Intent.FlexibleSettlement)
+        );
         _redeemIntent(delegation_, encoded_);
 
         assertEq(tokenIn.balanceOf(intentAccount), 900 ether);
@@ -289,7 +381,7 @@ contract MetaSwapIntentDelegationManagerTest is Test {
         bytes memory terms_ = _flexibleTerms(address(0), _approveMode(), address(tokenOut), intentAccount);
         Delegation memory delegation_ = _signIntent(terms_, 17);
 
-        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidApprovalMode.selector);
+        vm.expectRevert(MetaSwapIntentDelegationManager.InvalidApprovalMode.selector);
         _redeemIntent(delegation_, ExecutionLib.encodeBatch(_nativeExecutions(TOKEN_OUT_AMOUNT)));
     }
 

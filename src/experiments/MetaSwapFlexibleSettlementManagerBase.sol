@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { MetaSwapDelegationManagerBase } from "./MetaSwapDelegationManagerBase.sol";
+import { MetaSwapDelegationManagerBase } from "../MetaSwapDelegationManagerBase.sol";
 
 /**
  * @title MetaSwapFlexibleSettlementManagerBase
@@ -28,7 +28,9 @@ abstract contract MetaSwapFlexibleSettlementManagerBase is MetaSwapDelegationMan
 
     uint256 internal constant TERMS_LENGTH = 145;
 
-    constructor(string memory name_, SignatureMode signatureMode_) MetaSwapDelegationManagerBase(name_, signatureMode_) { }
+    error InvalidApprovalMode();
+
+    constructor(string memory name_) MetaSwapDelegationManagerBase(name_) { }
 
     /**
      * @notice Decodes and validates packed settlement terms.

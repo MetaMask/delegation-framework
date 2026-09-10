@@ -10,9 +10,9 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 
 import { MetaSwapDelegationManagerBase } from "../src/MetaSwapDelegationManagerBase.sol";
-import { MetaSwapFlexibleSettlementManagerBase } from "../src/MetaSwapFlexibleSettlementManagerBase.sol";
-import { MetaSwapExecutionBuilderDelegationManager } from "../src/MetaSwapExecutionBuilderDelegationManager.sol";
-import { MetaSwapHooklessDelegationManager } from "../src/MetaSwapHooklessDelegationManager.sol";
+import { MetaSwapFlexibleSettlementManagerBase } from "../src/experiments/MetaSwapFlexibleSettlementManagerBase.sol";
+import { MetaSwapExecutionBuilderDelegationManager } from "../src/experiments/MetaSwapExecutionBuilderDelegationManager.sol";
+import { MetaSwapHooklessDelegationManager } from "../src/experiments/MetaSwapHooklessDelegationManager.sol";
 import { DelegationManager } from "../src/DelegationManager.sol";
 import { EIP7702StatelessDeleGator } from "../src/EIP7702/EIP7702StatelessDeleGator.sol";
 import { MetaSwapFlexibleSettlementEnforcer } from "../src/enforcers/MetaSwapFlexibleSettlementEnforcer.sol";
@@ -63,7 +63,6 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
     uint256 private constant TOKEN_OUT_AMOUNT = 200 ether;
     uint256 private constant STANDARD_KEY = 0x5151;
     uint256 private constant HOOKLESS_KEY = 0xA11CE;
-    uint256 private constant HOOKLESS_1271_KEY = 0x1271;
     uint256 private constant BUILDER_KEY = 0xB0B;
 
     EntryPoint private entryPoint;
@@ -73,11 +72,9 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
     DelegationManager private standardManager;
     MetaSwapFlexibleSettlementEnforcer private standardEnforcer;
     MetaSwapHooklessDelegationManager private hooklessManager;
-    MetaSwapHooklessDelegationManager private hookless1271Manager;
     MetaSwapExecutionBuilderDelegationManager private builderManager;
     address private standardAccount;
     address private hooklessAccount;
-    address private hookless1271Account;
     address private builderAccount;
     address private relayer;
 
@@ -90,27 +87,22 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
 
         standardManager = new DelegationManager(address(this));
         standardEnforcer = new MetaSwapFlexibleSettlementEnforcer();
-        hooklessManager = new MetaSwapHooklessDelegationManager(MetaSwapDelegationManagerBase.SignatureMode.DirectECDSA);
-        hookless1271Manager = new MetaSwapHooklessDelegationManager(MetaSwapDelegationManagerBase.SignatureMode.ERC1271);
-        builderManager = new MetaSwapExecutionBuilderDelegationManager(MetaSwapDelegationManagerBase.SignatureMode.DirectECDSA);
+        hooklessManager = new MetaSwapHooklessDelegationManager();
+        builderManager = new MetaSwapExecutionBuilderDelegationManager();
 
         standardAccount = vm.addr(STANDARD_KEY);
         hooklessAccount = vm.addr(HOOKLESS_KEY);
-        hookless1271Account = vm.addr(HOOKLESS_1271_KEY);
         builderAccount = vm.addr(BUILDER_KEY);
         _installDeleGator(standardAccount, address(standardManager));
         _installDeleGator(hooklessAccount, address(hooklessManager));
-        _installDeleGator(hookless1271Account, address(hookless1271Manager));
         _installDeleGator(builderAccount, address(builderManager));
 
         tokenIn.mint(standardAccount, 1_000 ether);
         tokenIn.mint(hooklessAccount, 1_000 ether);
-        tokenIn.mint(hookless1271Account, 1_000 ether);
         tokenIn.mint(builderAccount, 1_000 ether);
         tokenOut.mint(address(metaSwap), 10_000 ether);
         vm.deal(standardAccount, 1_000 ether);
         vm.deal(hooklessAccount, 1_000 ether);
-        vm.deal(hookless1271Account, 1_000 ether);
         vm.deal(builderAccount, 1_000 ether);
         vm.deal(address(metaSwap), 10_000 ether);
     }
@@ -161,14 +153,6 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
         assertEq(tokenOut.balanceOf(hooklessAccount), TOKEN_OUT_AMOUNT);
     }
 
-    function test_hooklessManagerSupportsERC1271SignatureOption() public {
-        bytes memory terms_ = _terms(address(tokenIn), _approveMode(), address(tokenOut), hookless1271Account);
-        Delegation memory delegation_ = _sign(hookless1271Manager, HOOKLESS_1271_KEY, hookless1271Account, terms_, 2);
-        _redeemHookless(hookless1271Manager, delegation_, _erc20Executions(1, address(tokenIn), TOKEN_IN_AMOUNT, TOKEN_OUT_AMOUNT));
-
-        assertEq(tokenOut.balanceOf(hookless1271Account), TOKEN_OUT_AMOUNT);
-    }
-
     function test_gas_standardManagerWithSettlementEnforcer() public {
         bytes memory terms_ = _terms(address(tokenIn), _approveMode(), address(tokenOut), standardAccount);
         Delegation memory delegation_ = _signStandard(STANDARD_KEY, standardAccount, terms_, 100);
@@ -182,20 +166,7 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
         emit log_named_uint("standard manager + enforcer", gasBefore_ - gasleft());
     }
 
-    function test_gas_hooklessManagerWithERC1271() public {
-        bytes memory terms_ = _terms(address(tokenIn), _approveMode(), address(tokenOut), hookless1271Account);
-        Delegation memory delegation_ = _sign(hookless1271Manager, HOOKLESS_1271_KEY, hookless1271Account, terms_, 101);
-        (bytes[] memory permissionContexts_, ModeCode[] memory modes_, bytes[] memory executionContexts_) = _redemptionInputs(
-            delegation_, ExecutionLib.encodeBatch(_erc20Executions(1, address(tokenIn), TOKEN_IN_AMOUNT, TOKEN_OUT_AMOUNT))
-        );
-
-        uint256 gasBefore_ = gasleft();
-        vm.prank(relayer);
-        hookless1271Manager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
-        emit log_named_uint("hookless manager + ERC1271", gasBefore_ - gasleft());
-    }
-
-    function test_gas_hooklessManagerWithDirectECDSA() public {
+    function test_gas_hooklessManager() public {
         bytes memory terms_ = _terms(address(tokenIn), _approveMode(), address(tokenOut), hooklessAccount);
         Delegation memory delegation_ = _sign(hooklessManager, HOOKLESS_KEY, hooklessAccount, terms_, 102);
         (bytes[] memory permissionContexts_, ModeCode[] memory modes_, bytes[] memory executionContexts_) = _redemptionInputs(
@@ -205,10 +176,10 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
         uint256 gasBefore_ = gasleft();
         vm.prank(relayer);
         hooklessManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
-        emit log_named_uint("hookless manager + direct ECDSA", gasBefore_ - gasleft());
+        emit log_named_uint("hookless manager", gasBefore_ - gasleft());
     }
 
-    function test_gas_executionBuilderManagerWithDirectECDSA() public {
+    function test_gas_executionBuilderManager() public {
         bytes memory terms_ = _terms(address(tokenIn), _approveMode(), address(tokenOut), builderAccount);
         Delegation memory delegation_ = _sign(builderManager, BUILDER_KEY, builderAccount, terms_, 103);
         (bytes[] memory permissionContexts_, ModeCode[] memory modes_, bytes[] memory executionContexts_) =
@@ -217,7 +188,7 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
         uint256 gasBefore_ = gasleft();
         vm.prank(relayer);
         builderManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
-        emit log_named_uint("execution builder + direct ECDSA", gasBefore_ - gasleft());
+        emit log_named_uint("execution builder", gasBefore_ - gasleft());
     }
 
     function test_hooklessManagerRejectsInvalidExecutionWithoutCallingHooks() public {
@@ -282,7 +253,7 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
         bytes memory terms_ = _terms(address(0), _approveMode(), address(tokenOut), builderAccount);
         Delegation memory delegation_ = _sign(builderManager, BUILDER_KEY, builderAccount, terms_, 15);
 
-        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidApprovalMode.selector);
+        vm.expectRevert(MetaSwapFlexibleSettlementManagerBase.InvalidApprovalMode.selector);
         _redeemBuilder(delegation_, TOKEN_OUT_AMOUNT);
     }
 
@@ -290,7 +261,7 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
         bytes memory terms_ = _terms(address(tokenIn), _noneMode(), address(tokenOut), builderAccount);
         Delegation memory delegation_ = _sign(builderManager, BUILDER_KEY, builderAccount, terms_, 16);
 
-        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidApprovalMode.selector);
+        vm.expectRevert(MetaSwapFlexibleSettlementManagerBase.InvalidApprovalMode.selector);
         _redeemBuilder(delegation_, TOKEN_OUT_AMOUNT);
     }
 
@@ -332,7 +303,7 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
         bytes memory terms_ = _terms(address(tokenIn), _approveMode(), address(tokenOut), builderAccount);
         Delegation memory delegation_ = _sign(builderManager, HOOKLESS_KEY, builderAccount, terms_, 11);
 
-        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidEOASignature.selector);
+        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidERC1271Signature.selector);
         _redeemBuilder(delegation_, TOKEN_OUT_AMOUNT);
     }
 
@@ -402,7 +373,7 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
         delegation_.caveats[0].enforcer = address(hooklessManager);
         delegation_.caveats[0].terms = new bytes(144);
         (permissionContexts_, modes_, executionContexts_) = _redemptionInputs(delegation_, executionContext_);
-        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidEOASignature.selector);
+        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidERC1271Signature.selector);
         hooklessManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
     }
 

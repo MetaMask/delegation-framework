@@ -3,7 +3,6 @@ pragma solidity 0.8.23;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 
 import { MetaSwapDelegationManagerBase } from "./MetaSwapDelegationManagerBase.sol";
 import { IMetaSwap } from "./helpers/interfaces/IMetaSwap.sol";
@@ -53,12 +52,13 @@ contract MetaSwapIntentDelegationManager is MetaSwapDelegationManagerBase {
 
     error ApprovalShapeNotAllowed();
     error InvalidApproval();
+    error InvalidApprovalMode();
     error InvalidBatchLength();
     error InvalidExecutionHash();
     error InvalidIntent();
     error InvalidSwap();
 
-    constructor(SignatureMode signatureMode_) MetaSwapDelegationManagerBase(NAME, signatureMode_) { }
+    constructor() MetaSwapDelegationManagerBase(NAME) { }
 
     /**
      * @notice Decodes exact-calldata terms.
@@ -120,7 +120,7 @@ contract MetaSwapIntentDelegationManager is MetaSwapDelegationManagerBase {
         bytes32 expectedHash_ = getExactTermsInfo(terms_);
         if (keccak256(executionContext_) != expectedHash_) revert InvalidExecutionHash();
 
-        IDeleGatorCore(delegator_).executeFromExecutor(ModeLib.encodeSimpleBatch(), executionContext_);
+        IDeleGatorCore(delegator_).executeFromExecutor(SIMPLE_BATCH_MODE, executionContext_);
     }
 
     function _executeFlexible(address delegator_, bytes memory terms_, bytes calldata executionContext_) private {
@@ -129,7 +129,7 @@ contract MetaSwapIntentDelegationManager is MetaSwapDelegationManagerBase {
         _validateExecutions(executions_, termsInfo_);
 
         uint256 balanceBefore_ = _balanceOf(termsInfo_.tokenOut, termsInfo_.recipient);
-        IDeleGatorCore(delegator_).executeFromExecutor(ModeLib.encodeSimpleBatch(), executionContext_);
+        IDeleGatorCore(delegator_).executeFromExecutor(SIMPLE_BATCH_MODE, executionContext_);
         uint256 balanceAfter_ = _balanceOf(termsInfo_.tokenOut, termsInfo_.recipient);
 
         if (balanceAfter_ < balanceBefore_ || balanceAfter_ - balanceBefore_ < termsInfo_.tokenOutMin) {
