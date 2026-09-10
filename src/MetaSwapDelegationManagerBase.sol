@@ -3,10 +3,9 @@ pragma solidity 0.8.23;
 
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
-import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 
 import { EncoderLib } from "./libraries/EncoderLib.sol";
 import { ERC1271Lib } from "./libraries/ERC1271Lib.sol";
@@ -17,19 +16,16 @@ import { Caveat, Delegation, ModeCode } from "./utils/Types.sol";
  * @title MetaSwapDelegationManagerBase
  * @notice Cheap one-shot redeem shell for purpose-specific MetaSwap managers.
  * @dev Supports exactly one root delegation containing one manager-enforced caveat.
+ *      No redelegation chains: `delegate` is the intended redeemer (or `ANY_DELEGATE`) and
+ *      `authority` is `ROOT_AUTHORITY`. Redemption is `SIMPLE_BATCH_MODE` only.
  *      Settlement-specific decoding and min-output checks live in subclasses.
  */
 abstract contract MetaSwapDelegationManagerBase is EIP712 {
-    enum SignatureMode {
-        DirectECDSA,
-        ERC1271
-    }
-
     string public constant DOMAIN_VERSION = "1";
     bytes32 public constant ROOT_AUTHORITY = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
     address public constant ANY_DELEGATE = address(0xa11);
-
-    SignatureMode public immutable signatureMode;
+    /// @dev Equivalent to `ModeLib.encodeSimpleBatch()` (batch calltype, default exec).
+    ModeCode public constant SIMPLE_BATCH_MODE = ModeCode.wrap(0x0100000000000000000000000000000000000000000000000000000000000000);
 
     /// @notice Records delegations that were cancelled or successfully consumed.
     mapping(bytes32 delegationHash => bool isUnavailable) public disabledDelegations;
@@ -37,13 +33,13 @@ abstract contract MetaSwapDelegationManagerBase is EIP712 {
     event DisabledDelegation(
         bytes32 indexed delegationHash, address indexed delegator, address indexed delegate, Delegation delegation
     );
-    event RedeemedDelegation(address indexed rootDelegator, address indexed redeemer, Delegation delegation);
+    /// @dev `intent` is the first terms byte (`Intent` on MetaSwapIntentDelegationManager).
+    event RedeemedDelegation(address indexed rootDelegator, address indexed redeemer, bytes32 indexed delegationHash, uint8 intent);
 
     error AlreadyDisabled();
     error BatchDataLengthMismatch();
     error CannotUseADisabledDelegation();
     error InsufficientOutput();
-    error InvalidApprovalMode();
     error InvalidAuthority();
     error InvalidCaveat();
     error InvalidDelegate();
@@ -54,9 +50,7 @@ abstract contract MetaSwapDelegationManagerBase is EIP712 {
     error InvalidPermissionContext();
     error InvalidTerms();
 
-    constructor(string memory name_, SignatureMode signatureMode_) EIP712(name_, DOMAIN_VERSION) {
-        signatureMode = signatureMode_;
-    }
+    constructor(string memory name_) EIP712(name_, DOMAIN_VERSION) { }
 
     /**
      * @notice Cancels a settlement delegation.
@@ -75,6 +69,9 @@ abstract contract MetaSwapDelegationManagerBase is EIP712 {
 
     /**
      * @notice Redeems one specialized MetaSwap delegation.
+     * @dev These intents are leaf delegations: `delegate` is a specific redeemer (or `ANY_DELEGATE`),
+     *      `authority` is always `ROOT_AUTHORITY` so there is no redelegation chain, and `modes_[0]`
+     *      must be `SIMPLE_BATCH_MODE`.
      * @param permissionContexts_ Must contain one ABI-encoded one-element `Delegation[]`.
      * @param modes_ Must contain the canonical batch/default mode.
      * @param executionContexts_ Manager-specific execution context.
@@ -89,7 +86,7 @@ abstract contract MetaSwapDelegationManagerBase is EIP712 {
         if (permissionContexts_.length != 1 || modes_.length != 1 || executionContexts_.length != 1) {
             revert BatchDataLengthMismatch();
         }
-        if (ModeCode.unwrap(modes_[0]) != ModeCode.unwrap(ModeLib.encodeSimpleBatch())) revert InvalidMode();
+        if (ModeCode.unwrap(modes_[0]) != ModeCode.unwrap(SIMPLE_BATCH_MODE)) revert InvalidMode();
 
         Delegation[] memory delegations_ = abi.decode(permissionContexts_[0], (Delegation[]));
         if (delegations_.length != 1) revert InvalidPermissionContext();
@@ -105,9 +102,10 @@ abstract contract MetaSwapDelegationManagerBase is EIP712 {
         _validateSignature(delegation_, delegationHash_);
 
         disabledDelegations[delegationHash_] = true;
-        _executeIntent(delegation_.delegator, delegation_.caveats[0].terms, executionContexts_[0]);
+        bytes memory terms_ = delegation_.caveats[0].terms;
+        _executeIntent(delegation_.delegator, terms_, executionContexts_[0]);
 
-        emit RedeemedDelegation(delegation_.delegator, msg.sender, delegation_);
+        emit RedeemedDelegation(delegation_.delegator, msg.sender, delegationHash_, uint8(terms_[0]));
     }
 
     /**
@@ -135,14 +133,17 @@ abstract contract MetaSwapDelegationManagerBase is EIP712 {
 
     function _validateSignature(Delegation memory delegation_, bytes32 delegationHash_) private view {
         bytes32 typedDataHash_ = MessageHashUtils.toTypedDataHash(_domainSeparatorV4(), delegationHash_);
+        (address recovered_, ECDSA.RecoverError error_,) = ECDSA.tryRecover(typedDataHash_, delegation_.signature);
+        if (error_ == ECDSA.RecoverError.NoError && recovered_ == delegation_.delegator) return;
 
-        if (signatureMode == SignatureMode.DirectECDSA) {
-            if (ECDSA.recover(typedDataHash_, delegation_.signature) != delegation_.delegator) {
-                revert InvalidEOASignature();
-            }
-        } else {
-            bytes4 result_ = IERC1271(delegation_.delegator).isValidSignature(typedDataHash_, delegation_.signature);
-            if (result_ != ERC1271Lib.EIP1271_MAGIC_VALUE) revert InvalidERC1271Signature();
+        // Codeless delegators are EOAs: a non-matching recovery cannot succeed via ERC-1271.
+        if (delegation_.delegator.code.length == 0) revert InvalidEOASignature();
+
+        if (
+            IERC1271(delegation_.delegator).isValidSignature(typedDataHash_, delegation_.signature)
+                != ERC1271Lib.EIP1271_MAGIC_VALUE
+        ) {
+            revert InvalidERC1271Signature();
         }
     }
 
