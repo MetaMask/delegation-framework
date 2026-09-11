@@ -39,17 +39,22 @@ contract ExactExecutionBatchEnforcer is CaveatEnforcer {
         onlyBatchCallTypeMode(_mode)
         onlyDefaultExecutionMode(_mode)
     {
+        _validateBatch(_terms, _executionCallData);
+    }
+
+    /**
+     * @notice Validates that the batch execution matches the expected batch exactly.
+     * @dev `_terms` and `_executionCallData` are both `ExecutionLib.encodeBatch(Execution[])` (= `abi.encode(Execution[])`), so
+     *      byte equality is exactly batch equality. Decode only to surface the dedicated batch-size error; compare content via a
+     *      single keccak over the raw calldata (avoids re-encoding both arrays into memory). Isolated into its own function to
+     *      keep the 7-arg `beforeHook` stack shallow.
+     */
+    function _validateBatch(bytes calldata _terms, bytes calldata _executionCallData) private pure {
         Execution[] calldata executions_ = _executionCallData.decodeBatch();
-        Execution[] memory termsExecutions_ = getTermsInfo(_terms);
+        Execution[] calldata termsExecutions_ = _terms.decodeBatch();
 
-        // Validate that the number of executions matches
         require(executions_.length == termsExecutions_.length, "ExactExecutionBatchEnforcer:invalid-batch-size");
-
-        // Encode both sets of executions and compare the hashes
-        require(
-            keccak256(abi.encode(executions_)) == keccak256(abi.encode(termsExecutions_)),
-            "ExactExecutionBatchEnforcer:invalid-execution"
-        );
+        require(keccak256(_executionCallData) == keccak256(_terms), "ExactExecutionBatchEnforcer:invalid-execution");
     }
 
     /**
