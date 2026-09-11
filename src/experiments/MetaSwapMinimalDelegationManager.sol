@@ -9,13 +9,13 @@ import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/Mes
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 
-import { IDelegationManager } from "./interfaces/IDelegationManager.sol";
-import { IDeleGatorCore } from "./interfaces/IDeleGatorCore.sol";
-import { IMetaSwap } from "./helpers/interfaces/IMetaSwap.sol";
-import { EncoderLib } from "./libraries/EncoderLib.sol";
-import { ERC1271Lib } from "./libraries/ERC1271Lib.sol";
-import { CallType, Caveat, Delegation, Execution, ExecType, ModeCode } from "./utils/Types.sol";
-import { CALLTYPE_BATCH, CALLTYPE_SINGLE, EXECTYPE_DEFAULT } from "./utils/Constants.sol";
+import { IDelegationManager } from "../interfaces/IDelegationManager.sol";
+import { IDeleGatorCore } from "../interfaces/IDeleGatorCore.sol";
+import { IMetaSwap } from "../helpers/interfaces/IMetaSwap.sol";
+import { EncoderLib } from "../libraries/EncoderLib.sol";
+import { ERC1271Lib } from "../libraries/ERC1271Lib.sol";
+import { CallType, Caveat, Delegation, Execution, ExecType, ModeCode } from "../utils/Types.sol";
+import { CALLTYPE_BATCH, CALLTYPE_SINGLE, EXECTYPE_DEFAULT } from "../utils/Constants.sol";
 
 /**
  * @title MetaSwapMinimalDelegationManager

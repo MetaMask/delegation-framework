@@ -6,12 +6,12 @@ import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
-import { ICaveatEnforcer } from "./interfaces/ICaveatEnforcer.sol";
-import { IDelegationManager } from "./interfaces/IDelegationManager.sol";
-import { IDeleGatorCore } from "./interfaces/IDeleGatorCore.sol";
-import { EncoderLib } from "./libraries/EncoderLib.sol";
-import { ERC1271Lib } from "./libraries/ERC1271Lib.sol";
-import { Caveat, Delegation, ModeCode } from "./utils/Types.sol";
+import { ICaveatEnforcer } from "../interfaces/ICaveatEnforcer.sol";
+import { IDelegationManager } from "../interfaces/IDelegationManager.sol";
+import { IDeleGatorCore } from "../interfaces/IDeleGatorCore.sol";
+import { EncoderLib } from "../libraries/EncoderLib.sol";
+import { ERC1271Lib } from "../libraries/ERC1271Lib.sol";
+import { Caveat, Delegation, ModeCode } from "../utils/Types.sol";
 
 /**
  * @title GaslessSwapDelegationManager
