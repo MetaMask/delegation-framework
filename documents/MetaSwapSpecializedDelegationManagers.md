@@ -6,7 +6,7 @@ itself because settlement enforcement is internal and no caveat hooks are called
 
 `executeFromExecutor` remains on the EIP-7702 account. Managers only call it.
 
-## MetaSwapIntentDelegationManager
+## MetaSwapOrderDelegationManager
 
 One manager for both product intents. Terms start with a one-byte `Intent`.
 
@@ -56,7 +56,7 @@ Signatures try ECDSA first (EOA and EIP-7702 ETH keys). If that misses, empty ac
 
 ## Gas comparison (`approve(amount) + swap`, EIP-7702)
 
-Measured around `redeemDelegations` in `test/MetaSwapIntentDelegationManager.t.sol` and the specialized suite:
+Measured around `redeemDelegations` in `test/MetaSwapOrderDelegationManager.t.sol` and the specialized suite:
 
 | Path                                      | Gas       | vs generic flexible     |
 | ----------------------------------------- | --------- | ----------------------- |

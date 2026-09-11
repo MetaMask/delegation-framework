@@ -10,7 +10,7 @@ import { IDeleGatorCore } from "./interfaces/IDeleGatorCore.sol";
 import { Execution } from "./utils/Types.sol";
 
 /**
- * @title MetaSwapIntentDelegationManager
+ * @title MetaSwapOrderDelegationManager
  * @notice One purpose-specific manager for exact gasless swaps and flexible MetaSwap limit orders.
  * @dev No external caveat hooks. Both intents redeem through a direct batch/default `executeFromExecutor`.
  *
@@ -18,7 +18,7 @@ import { Execution } from "./utils/Types.sol";
  * Flexible terms: `intent(1) | metaSwap(20) | tokenIn(20) | tokenInAmount(32) | approvalMode(1) |
  * tokenOut(20) | recipient(20) | tokenOutMin(32)`.
  */
-contract MetaSwapIntentDelegationManager is MetaSwapDelegationManagerBase {
+contract MetaSwapOrderDelegationManager is MetaSwapDelegationManagerBase {
     using ExecutionLib for bytes;
 
     enum Intent {
@@ -43,7 +43,7 @@ contract MetaSwapIntentDelegationManager is MetaSwapDelegationManagerBase {
         uint256 tokenOutMin;
     }
 
-    string public constant NAME = "MetaSwapIntentDelegationManager";
+    string public constant NAME = "MetaSwapOrderDelegationManager";
 
     uint256 private constant EXACT_TERMS_LENGTH = 33;
     uint256 private constant FLEXIBLE_TERMS_LENGTH = 146;

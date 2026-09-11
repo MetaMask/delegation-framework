@@ -62,15 +62,15 @@ Verifies an array of enforcer contracts.
 ./verify-enforcer-contracts.sh
 ```
 
-#### `verify-metaswap-intent-delegation-manager.sh`
+#### `verify-metaswap-order-delegation-manager.sh`
 
-Experimental. Verifies `MetaSwapIntentDelegationManager`.
-Requires `META_SWAP_INTENT_DELEGATION_MANAGER_ADDRESS`.
+Experimental. Verifies `MetaSwapOrderDelegationManager`.
+Requires `META_SWAP_ORDER_DELEGATION_MANAGER_ADDRESS`.
 
 **Usage:**
 
 ```bash
-./verify-metaswap-intent-delegation-manager.sh
+./verify-metaswap-order-delegation-manager.sh
 ```
 
 ## Notes

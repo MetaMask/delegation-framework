@@ -4,19 +4,19 @@ pragma solidity 0.8.23;
 import "forge-std/Script.sol";
 import { console2 } from "forge-std/console2.sol";
 
-import { MetaSwapIntentDelegationManager } from "../src/MetaSwapIntentDelegationManager.sol";
+import { MetaSwapOrderDelegationManager } from "../src/MetaSwapOrderDelegationManager.sol";
 
 /**
- * @title DeployMetaSwapIntentDelegationManager
- * @notice Deploys the experimental MetaSwap intent delegation manager.
+ * @title DeployMetaSwapOrderDelegationManager
+ * @notice Deploys the experimental MetaSwap order delegation manager.
  * @dev Experimental. EIP-7702 accounts must be wired to this manager address.
  *
- * forge script script/DeployMetaSwapIntentDelegationManager.s.sol --rpc-url <rpc> --private-key $PRIVATE_KEY --broadcast
+ * forge script script/DeployMetaSwapOrderDelegationManager.s.sol --rpc-url <rpc> --private-key $PRIVATE_KEY --broadcast
  *
  * Env:
  * - SALT
  */
-contract DeployMetaSwapIntentDelegationManager is Script {
+contract DeployMetaSwapOrderDelegationManager is Script {
     bytes32 salt;
 
     function setUp() public {
@@ -31,8 +31,8 @@ contract DeployMetaSwapIntentDelegationManager is Script {
         console2.log("~~~");
         vm.startBroadcast();
 
-        address deployedAddress = address(new MetaSwapIntentDelegationManager{ salt: salt }());
-        console2.log("MetaSwapIntentDelegationManager: %s", deployedAddress);
+        address deployedAddress = address(new MetaSwapOrderDelegationManager{ salt: salt }());
+        console2.log("MetaSwapOrderDelegationManager: %s", deployedAddress);
 
         vm.stopBroadcast();
     }

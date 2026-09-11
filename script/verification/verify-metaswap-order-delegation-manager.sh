@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# verify-metaswap-intent-delegation-manager.sh
+# verify-metaswap-order-delegation-manager.sh
 #
 # Usage:
-#   ./verify-metaswap-intent-delegation-manager.sh
+#   ./verify-metaswap-order-delegation-manager.sh
 #
-# Experimental. Verifies MetaSwapIntentDelegationManager across configured chains.
+# Experimental. Verifies MetaSwapOrderDelegationManager across configured chains.
 # Requires in .env:
-#   META_SWAP_INTENT_DELEGATION_MANAGER_ADDRESS
+#   META_SWAP_ORDER_DELEGATION_MANAGER_ADDRESS
 
 set -e
 
@@ -28,9 +28,9 @@ add_contract() {
 }
 
 add_contract \
-    "MetaSwapIntentDelegationManager" \
-    "src/MetaSwapIntentDelegationManager.sol" \
-    "${META_SWAP_INTENT_DELEGATION_MANAGER_ADDRESS}" \
+    "MetaSwapOrderDelegationManager" \
+    "src/MetaSwapOrderDelegationManager.sol" \
+    "${META_SWAP_ORDER_DELEGATION_MANAGER_ADDRESS}" \
     "" \
     ""
 

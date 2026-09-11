@@ -33,7 +33,7 @@ abstract contract MetaSwapDelegationManagerBase is EIP712 {
     event DisabledDelegation(
         bytes32 indexed delegationHash, address indexed delegator, address indexed delegate, Delegation delegation
     );
-    /// @dev `intent` is the first terms byte (`Intent` on MetaSwapIntentDelegationManager).
+    /// @dev `intent` is the first terms byte (`Intent` on MetaSwapOrderDelegationManager).
     event RedeemedDelegation(address indexed rootDelegator, address indexed redeemer, bytes32 indexed delegationHash, uint8 intent);
 
     error AlreadyDisabled();

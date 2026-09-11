@@ -10,7 +10,7 @@ import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 import { ModeLib } from "@erc7579/lib/ModeLib.sol";
 
 import { MetaSwapDelegationManagerBase } from "../src/MetaSwapDelegationManagerBase.sol";
-import { MetaSwapIntentDelegationManager } from "../src/MetaSwapIntentDelegationManager.sol";
+import { MetaSwapOrderDelegationManager } from "../src/MetaSwapOrderDelegationManager.sol";
 import { MetaSwapFlexibleSettlementManagerBase } from "../src/experiments/MetaSwapFlexibleSettlementManagerBase.sol";
 import { MetaSwapHooklessDelegationManager } from "../src/experiments/MetaSwapHooklessDelegationManager.sol";
 import { DelegationManager } from "../src/DelegationManager.sol";
@@ -24,7 +24,7 @@ import { BasicERC20 } from "./utils/BasicERC20.t.sol";
 import { Caveat, Delegation, Execution, ModeCode } from "../src/utils/Types.sol";
 import { ERC1271Lib } from "../src/libraries/ERC1271Lib.sol";
 
-contract IntentManager1271Account {
+contract OrderManager1271Account {
     using ExecutionLib for bytes;
 
     function isValidSignature(bytes32 hash_, bytes memory signature_) external pure returns (bytes4) {
@@ -47,7 +47,7 @@ contract IntentManager1271Account {
     }
 }
 
-contract IntentManagerMetaSwapMock is IMetaSwap {
+contract OrderManagerMetaSwapMock is IMetaSwap {
     using SafeERC20 for IERC20;
 
     mapping(string aggregatorId => Adapter adapter) private adapters_;
@@ -83,17 +83,17 @@ contract IntentManagerMetaSwapMock is IMetaSwap {
     receive() external payable { }
 }
 
-contract MetaSwapIntentDelegationManagerTest is Test {
+contract MetaSwapOrderDelegationManagerTest is Test {
     uint256 private constant TOKEN_IN_AMOUNT = 100 ether;
     uint256 private constant TOKEN_OUT_MIN = 190 ether;
     uint256 private constant TOKEN_OUT_AMOUNT = 200 ether;
 
     uint256 private constant GENERIC_KEY = 0x1111;
     uint256 private constant HOOKLESS_KEY = 0x2222;
-    uint256 private constant INTENT_KEY = 0x3333;
+    uint256 private constant ORDER_KEY = 0x3333;
 
     EntryPoint private entryPoint;
-    IntentManagerMetaSwapMock private metaSwap;
+    OrderManagerMetaSwapMock private metaSwap;
     BasicERC20 private tokenIn;
     BasicERC20 private tokenOut;
 
@@ -102,16 +102,16 @@ contract MetaSwapIntentDelegationManagerTest is Test {
     LimitedCallsEnforcer private limitedCallsEnforcer;
     MetaSwapFlexibleSettlementEnforcer private flexibleEnforcer;
     MetaSwapHooklessDelegationManager private hooklessManager;
-    MetaSwapIntentDelegationManager private intentManager;
+    MetaSwapOrderDelegationManager private orderManager;
 
     address private genericAccount;
     address private hooklessAccount;
-    address private intentAccount;
+    address private orderAccount;
     address private relayer;
 
     function setUp() public {
         entryPoint = new EntryPoint();
-        metaSwap = new IntentManagerMetaSwapMock();
+        metaSwap = new OrderManagerMetaSwapMock();
         tokenIn = new BasicERC20(address(this), "Token In", "TIN", 0);
         tokenOut = new BasicERC20(address(this), "Token Out", "TOUT", 0);
         relayer = makeAddr("Relayer");
@@ -121,23 +121,23 @@ contract MetaSwapIntentDelegationManagerTest is Test {
         limitedCallsEnforcer = new LimitedCallsEnforcer();
         flexibleEnforcer = new MetaSwapFlexibleSettlementEnforcer();
         hooklessManager = new MetaSwapHooklessDelegationManager();
-        intentManager = new MetaSwapIntentDelegationManager();
+        orderManager = new MetaSwapOrderDelegationManager();
 
         genericAccount = vm.addr(GENERIC_KEY);
         hooklessAccount = vm.addr(HOOKLESS_KEY);
-        intentAccount = vm.addr(INTENT_KEY);
+        orderAccount = vm.addr(ORDER_KEY);
 
         _installDeleGator(genericAccount, address(genericManager));
         _installDeleGator(hooklessAccount, address(hooklessManager));
-        _installDeleGator(intentAccount, address(intentManager));
+        _installDeleGator(orderAccount, address(orderManager));
 
         tokenIn.mint(genericAccount, 1_000 ether);
         tokenIn.mint(hooklessAccount, 1_000 ether);
-        tokenIn.mint(intentAccount, 1_000 ether);
+        tokenIn.mint(orderAccount, 1_000 ether);
         tokenOut.mint(address(metaSwap), 10_000 ether);
         vm.deal(genericAccount, 1_000 ether);
         vm.deal(hooklessAccount, 1_000 ether);
-        vm.deal(intentAccount, 1_000 ether);
+        vm.deal(orderAccount, 1_000 ether);
         vm.deal(address(metaSwap), 10_000 ether);
     }
 
@@ -148,22 +148,22 @@ contract MetaSwapIntentDelegationManagerTest is Test {
         bytes memory encoded_ = ExecutionLib.encodeBatch(executions_);
         Delegation memory delegation_ = _signIntent(_exactTerms(keccak256(encoded_)), 1);
 
-        vm.expectEmit(true, true, true, true, address(intentManager));
+        vm.expectEmit(true, true, true, true, address(orderManager));
         emit MetaSwapDelegationManagerBase.RedeemedDelegation(
-            intentAccount,
+            orderAccount,
             relayer,
-            intentManager.getDelegationHash(delegation_),
-            uint8(MetaSwapIntentDelegationManager.Intent.ExactCalldata)
+            orderManager.getDelegationHash(delegation_),
+            uint8(MetaSwapOrderDelegationManager.Intent.ExactCalldata)
         );
         _redeemIntent(delegation_, encoded_);
 
-        assertEq(tokenIn.balanceOf(intentAccount), 900 ether);
-        assertEq(tokenOut.balanceOf(intentAccount), TOKEN_OUT_AMOUNT);
-        assertTrue(intentManager.disabledDelegations(intentManager.getDelegationHash(delegation_)));
+        assertEq(tokenIn.balanceOf(orderAccount), 900 ether);
+        assertEq(tokenOut.balanceOf(orderAccount), TOKEN_OUT_AMOUNT);
+        assertTrue(orderManager.disabledDelegations(orderManager.getDelegationHash(delegation_)));
     }
 
     function test_exactRedeemsSkipApprovalSwap() public {
-        vm.prank(intentAccount);
+        vm.prank(orderAccount);
         tokenIn.approve(address(metaSwap), TOKEN_IN_AMOUNT);
 
         Execution[] memory executions_ = _erc20Executions(0, TOKEN_OUT_AMOUNT);
@@ -171,11 +171,11 @@ contract MetaSwapIntentDelegationManagerTest is Test {
         Delegation memory delegation_ = _signIntent(_exactTerms(keccak256(encoded_)), 2);
 
         _redeemIntent(delegation_, encoded_);
-        assertEq(tokenOut.balanceOf(intentAccount), TOKEN_OUT_AMOUNT);
+        assertEq(tokenOut.balanceOf(orderAccount), TOKEN_OUT_AMOUNT);
     }
 
     function test_exactRedeemsResetApproveAndSwap() public {
-        vm.prank(intentAccount);
+        vm.prank(orderAccount);
         tokenIn.approve(address(metaSwap), 1);
 
         Execution[] memory executions_ = _erc20Executions(2, TOKEN_OUT_AMOUNT);
@@ -183,19 +183,19 @@ contract MetaSwapIntentDelegationManagerTest is Test {
         Delegation memory delegation_ = _signIntent(_exactTerms(keccak256(encoded_)), 3);
 
         _redeemIntent(delegation_, encoded_);
-        assertEq(tokenOut.balanceOf(intentAccount), TOKEN_OUT_AMOUNT);
+        assertEq(tokenOut.balanceOf(orderAccount), TOKEN_OUT_AMOUNT);
     }
 
     function test_exactRedeemsNativeSwap() public {
         Execution[] memory executions_ = _nativeExecutions(TOKEN_OUT_AMOUNT);
         bytes memory encoded_ = ExecutionLib.encodeBatch(executions_);
         Delegation memory delegation_ = _signIntent(_exactTerms(keccak256(encoded_)), 4);
-        uint256 nativeBefore_ = intentAccount.balance;
+        uint256 nativeBefore_ = orderAccount.balance;
 
         _redeemIntent(delegation_, encoded_);
 
-        assertEq(intentAccount.balance, nativeBefore_ - TOKEN_IN_AMOUNT);
-        assertEq(tokenOut.balanceOf(intentAccount), TOKEN_OUT_AMOUNT);
+        assertEq(orderAccount.balance, nativeBefore_ - TOKEN_IN_AMOUNT);
+        assertEq(tokenOut.balanceOf(orderAccount), TOKEN_OUT_AMOUNT);
     }
 
     function test_exactRevertsForHashMismatch() public {
@@ -204,7 +204,7 @@ contract MetaSwapIntentDelegationManagerTest is Test {
         Delegation memory delegation_ = _signIntent(_exactTerms(keccak256(encoded_)), 5);
 
         executions_[1].value = 1;
-        vm.expectRevert(MetaSwapIntentDelegationManager.InvalidExecutionHash.selector);
+        vm.expectRevert(MetaSwapOrderDelegationManager.InvalidExecutionHash.selector);
         _redeemIntent(delegation_, ExecutionLib.encodeBatch(executions_));
     }
 
@@ -224,8 +224,8 @@ contract MetaSwapIntentDelegationManagerTest is Test {
         bytes memory encoded_ = ExecutionLib.encodeBatch(executions_);
         Delegation memory delegation_ = _signIntent(_exactTerms(keccak256(encoded_)), 7);
 
-        vm.prank(intentAccount);
-        intentManager.disableDelegation(delegation_);
+        vm.prank(orderAccount);
+        orderManager.disableDelegation(delegation_);
 
         vm.expectRevert(MetaSwapDelegationManagerBase.CannotUseADisabledDelegation.selector);
         _redeemIntent(delegation_, encoded_);
@@ -244,31 +244,31 @@ contract MetaSwapIntentDelegationManagerTest is Test {
         address eoa_ = vm.addr(0xE0A);
         bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT));
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ enforcer: address(intentManager), terms: _exactTerms(keccak256(encoded_)), args: hex"" });
-        Delegation memory delegation_ = _signManager(intentManager, HOOKLESS_KEY, eoa_, caveats_, 40);
+        caveats_[0] = Caveat({ enforcer: address(orderManager), terms: _exactTerms(keccak256(encoded_)), args: hex"" });
+        Delegation memory delegation_ = _signManager(orderManager, HOOKLESS_KEY, eoa_, caveats_, 40);
 
         vm.expectRevert(MetaSwapDelegationManagerBase.InvalidEOASignature.selector);
         _redeemIntent(delegation_, encoded_);
     }
 
     function test_exactRedeemsWithERC1271Fallback() public {
-        IntentManager1271Account account_ = new IntentManager1271Account();
+        OrderManager1271Account account_ = new OrderManager1271Account();
         tokenIn.mint(address(account_), 1_000 ether);
 
         bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT));
         bytes memory terms_ = _exactTerms(keccak256(encoded_));
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ enforcer: address(intentManager), terms: terms_, args: hex"" });
+        caveats_[0] = Caveat({ enforcer: address(orderManager), terms: terms_, args: hex"" });
         Delegation memory delegation_ = Delegation({
             delegate: address(0xa11),
             delegator: address(account_),
-            authority: intentManager.ROOT_AUTHORITY(),
+            authority: orderManager.ROOT_AUTHORITY(),
             caveats: caveats_,
             salt: 41,
             signature: hex""
         });
         bytes32 typedDataHash_ =
-            MessageHashUtils.toTypedDataHash(intentManager.getDomainHash(), intentManager.getDelegationHash(delegation_));
+            MessageHashUtils.toTypedDataHash(orderManager.getDomainHash(), orderManager.getDelegationHash(delegation_));
         delegation_.signature = abi.encodePacked(typedDataHash_);
 
         _redeemIntent(delegation_, encoded_);
@@ -277,14 +277,14 @@ contract MetaSwapIntentDelegationManagerTest is Test {
     }
 
     function test_exactRejectsInvalidERC1271Signature() public {
-        IntentManager1271Account account_ = new IntentManager1271Account();
+        OrderManager1271Account account_ = new OrderManager1271Account();
         bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT));
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ enforcer: address(intentManager), terms: _exactTerms(keccak256(encoded_)), args: hex"" });
+        caveats_[0] = Caveat({ enforcer: address(orderManager), terms: _exactTerms(keccak256(encoded_)), args: hex"" });
         Delegation memory delegation_ = Delegation({
             delegate: address(0xa11),
             delegator: address(account_),
-            authority: intentManager.ROOT_AUTHORITY(),
+            authority: orderManager.ROOT_AUTHORITY(),
             caveats: caveats_,
             salt: 42,
             signature: abi.encodePacked(bytes32(uint256(1)))
@@ -297,58 +297,58 @@ contract MetaSwapIntentDelegationManagerTest is Test {
     // -------- Flexible intent --------
 
     function test_flexibleRedeemsApproveAndSwap() public {
-        bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), intentAccount);
+        bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount);
         Delegation memory delegation_ = _signIntent(terms_, 10);
         bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT));
 
-        vm.expectEmit(true, true, true, true, address(intentManager));
+        vm.expectEmit(true, true, true, true, address(orderManager));
         emit MetaSwapDelegationManagerBase.RedeemedDelegation(
-            intentAccount,
+            orderAccount,
             relayer,
-            intentManager.getDelegationHash(delegation_),
-            uint8(MetaSwapIntentDelegationManager.Intent.FlexibleSettlement)
+            orderManager.getDelegationHash(delegation_),
+            uint8(MetaSwapOrderDelegationManager.Intent.FlexibleSettlement)
         );
         _redeemIntent(delegation_, encoded_);
 
-        assertEq(tokenIn.balanceOf(intentAccount), 900 ether);
-        assertEq(tokenOut.balanceOf(intentAccount), TOKEN_OUT_AMOUNT);
+        assertEq(tokenIn.balanceOf(orderAccount), 900 ether);
+        assertEq(tokenOut.balanceOf(orderAccount), TOKEN_OUT_AMOUNT);
     }
 
     function test_flexibleRedeemsSkipApproval() public {
-        vm.prank(intentAccount);
+        vm.prank(orderAccount);
         tokenIn.approve(address(metaSwap), TOKEN_IN_AMOUNT);
 
-        bytes memory terms_ = _flexibleTerms(address(tokenIn), _skipApprovalMode(), address(tokenOut), intentAccount);
+        bytes memory terms_ = _flexibleTerms(address(tokenIn), _skipApprovalMode(), address(tokenOut), orderAccount);
         Delegation memory delegation_ = _signIntent(terms_, 11);
 
         _redeemIntent(delegation_, ExecutionLib.encodeBatch(_erc20Executions(0, TOKEN_OUT_AMOUNT)));
-        assertEq(tokenOut.balanceOf(intentAccount), TOKEN_OUT_AMOUNT);
+        assertEq(tokenOut.balanceOf(orderAccount), TOKEN_OUT_AMOUNT);
     }
 
     function test_flexibleRedeemsResetApprove() public {
-        vm.prank(intentAccount);
+        vm.prank(orderAccount);
         tokenIn.approve(address(metaSwap), 1);
 
-        bytes memory terms_ = _flexibleTerms(address(tokenIn), _resetApproveMode(), address(tokenOut), intentAccount);
+        bytes memory terms_ = _flexibleTerms(address(tokenIn), _resetApproveMode(), address(tokenOut), orderAccount);
         Delegation memory delegation_ = _signIntent(terms_, 12);
 
         _redeemIntent(delegation_, ExecutionLib.encodeBatch(_erc20Executions(2, TOKEN_OUT_AMOUNT)));
-        assertEq(tokenOut.balanceOf(intentAccount), TOKEN_OUT_AMOUNT);
+        assertEq(tokenOut.balanceOf(orderAccount), TOKEN_OUT_AMOUNT);
     }
 
     function test_flexibleRedeemsNativeInput() public {
-        bytes memory terms_ = _flexibleTerms(address(0), _noneMode(), address(tokenOut), intentAccount);
+        bytes memory terms_ = _flexibleTerms(address(0), _noneMode(), address(tokenOut), orderAccount);
         Delegation memory delegation_ = _signIntent(terms_, 13);
-        uint256 nativeBefore_ = intentAccount.balance;
+        uint256 nativeBefore_ = orderAccount.balance;
 
         _redeemIntent(delegation_, ExecutionLib.encodeBatch(_nativeExecutions(TOKEN_OUT_AMOUNT)));
 
-        assertEq(intentAccount.balance, nativeBefore_ - TOKEN_IN_AMOUNT);
-        assertEq(tokenOut.balanceOf(intentAccount), TOKEN_OUT_AMOUNT);
+        assertEq(orderAccount.balance, nativeBefore_ - TOKEN_IN_AMOUNT);
+        assertEq(tokenOut.balanceOf(orderAccount), TOKEN_OUT_AMOUNT);
     }
 
     function test_flexibleAllowsDifferentRouteData() public {
-        bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), intentAccount);
+        bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount);
 
         Execution[] memory first_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
         first_[1].callData = abi.encodeCall(
@@ -362,26 +362,26 @@ contract MetaSwapIntentDelegationManagerTest is Test {
         );
         _redeemIntent(_signIntent(terms_, 15), ExecutionLib.encodeBatch(second_));
 
-        assertEq(tokenOut.balanceOf(intentAccount), TOKEN_OUT_AMOUNT * 2);
+        assertEq(tokenOut.balanceOf(orderAccount), TOKEN_OUT_AMOUNT * 2);
     }
 
     function test_flexibleRevertsAtomicallyForInsufficientOutput() public {
-        bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), intentAccount);
+        bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount);
         Delegation memory delegation_ = _signIntent(terms_, 16);
-        bytes32 hash_ = intentManager.getDelegationHash(delegation_);
+        bytes32 hash_ = orderManager.getDelegationHash(delegation_);
 
         vm.expectRevert(MetaSwapDelegationManagerBase.InsufficientOutput.selector);
         _redeemIntent(delegation_, ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_MIN - 1)));
 
-        assertFalse(intentManager.disabledDelegations(hash_));
-        assertEq(tokenIn.balanceOf(intentAccount), 1_000 ether);
+        assertFalse(orderManager.disabledDelegations(hash_));
+        assertEq(tokenIn.balanceOf(orderAccount), 1_000 ether);
     }
 
     function test_flexibleRejectsInvalidApprovalMode() public {
-        bytes memory terms_ = _flexibleTerms(address(0), _approveMode(), address(tokenOut), intentAccount);
+        bytes memory terms_ = _flexibleTerms(address(0), _approveMode(), address(tokenOut), orderAccount);
         Delegation memory delegation_ = _signIntent(terms_, 17);
 
-        vm.expectRevert(MetaSwapIntentDelegationManager.InvalidApprovalMode.selector);
+        vm.expectRevert(MetaSwapOrderDelegationManager.InvalidApprovalMode.selector);
         _redeemIntent(delegation_, ExecutionLib.encodeBatch(_nativeExecutions(TOKEN_OUT_AMOUNT)));
     }
 
@@ -389,7 +389,7 @@ contract MetaSwapIntentDelegationManagerTest is Test {
         bytes memory terms_ = abi.encodePacked(uint8(2), bytes32(0));
         Delegation memory delegation_ = _signIntent(terms_, 18);
 
-        vm.expectRevert(MetaSwapIntentDelegationManager.InvalidIntent.selector);
+        vm.expectRevert(MetaSwapOrderDelegationManager.InvalidIntent.selector);
         _redeemIntent(delegation_, ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT)));
     }
 
@@ -470,12 +470,12 @@ contract MetaSwapIntentDelegationManagerTest is Test {
 
         uint256 gasBefore_ = gasleft();
         vm.prank(relayer);
-        intentManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
+        orderManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
         emit log_named_uint("intent ExactCalldata", gasBefore_ - gasleft());
     }
 
     function test_gas_intentFlexible() public {
-        bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), intentAccount);
+        bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount);
         Delegation memory delegation_ = _signIntent(terms_, 104);
         bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT));
 
@@ -484,7 +484,7 @@ contract MetaSwapIntentDelegationManagerTest is Test {
 
         uint256 gasBefore_ = gasleft();
         vm.prank(relayer);
-        intentManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
+        orderManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
         emit log_named_uint("intent FlexibleSettlement", gasBefore_ - gasleft());
     }
 
@@ -496,12 +496,12 @@ contract MetaSwapIntentDelegationManagerTest is Test {
     }
 
     function _exactTerms(bytes32 executionHash_) private pure returns (bytes memory) {
-        return abi.encodePacked(uint8(MetaSwapIntentDelegationManager.Intent.ExactCalldata), executionHash_);
+        return abi.encodePacked(uint8(MetaSwapOrderDelegationManager.Intent.ExactCalldata), executionHash_);
     }
 
     function _flexibleTerms(
         address tokenIn_,
-        MetaSwapIntentDelegationManager.ApprovalMode approvalMode_,
+        MetaSwapOrderDelegationManager.ApprovalMode approvalMode_,
         address tokenOut_,
         address recipient_
     )
@@ -510,7 +510,7 @@ contract MetaSwapIntentDelegationManagerTest is Test {
         returns (bytes memory)
     {
         return abi.encodePacked(
-            uint8(MetaSwapIntentDelegationManager.Intent.FlexibleSettlement),
+            uint8(MetaSwapOrderDelegationManager.Intent.FlexibleSettlement),
             address(metaSwap),
             tokenIn_,
             TOKEN_IN_AMOUNT,
@@ -522,7 +522,7 @@ contract MetaSwapIntentDelegationManagerTest is Test {
     }
 
     function _signIntent(bytes memory terms_, uint256 salt_) private view returns (Delegation memory) {
-        return _signIntentWithKey(INTENT_KEY, terms_, salt_);
+        return _signIntentWithKey(ORDER_KEY, terms_, salt_);
     }
 
     function _signIntentWithKey(
@@ -535,8 +535,8 @@ contract MetaSwapIntentDelegationManagerTest is Test {
         returns (Delegation memory delegation_)
     {
         Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ enforcer: address(intentManager), terms: terms_, args: hex"" });
-        return _signManager(intentManager, signerKey_, intentAccount, caveats_, salt_);
+        caveats_[0] = Caveat({ enforcer: address(orderManager), terms: terms_, args: hex"" });
+        return _signManager(orderManager, signerKey_, orderAccount, caveats_, salt_);
     }
 
     function _signGeneric(Caveat[] memory caveats_, uint256 salt_) private view returns (Delegation memory) {
@@ -605,7 +605,7 @@ contract MetaSwapIntentDelegationManagerTest is Test {
         (bytes[] memory permissionContexts_, ModeCode[] memory modes_, bytes[] memory executionContexts_) =
             _redemptionInputs(delegation_, executionContext_);
         vm.prank(relayer);
-        intentManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
+        orderManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
     }
 
     function _redemptionInputs(
@@ -627,7 +627,7 @@ contract MetaSwapIntentDelegationManagerTest is Test {
     }
 
     function _erc20Executions(uint8 approvalCount_, uint256 outputAmount_) private view returns (Execution[] memory) {
-        return _erc20ExecutionsFor(intentAccount, approvalCount_, outputAmount_);
+        return _erc20ExecutionsFor(orderAccount, approvalCount_, outputAmount_);
     }
 
     function _erc20ExecutionsFor(
@@ -672,19 +672,19 @@ contract MetaSwapIntentDelegationManagerTest is Test {
             });
     }
 
-    function _noneMode() private pure returns (MetaSwapIntentDelegationManager.ApprovalMode) {
-        return MetaSwapIntentDelegationManager.ApprovalMode.None;
+    function _noneMode() private pure returns (MetaSwapOrderDelegationManager.ApprovalMode) {
+        return MetaSwapOrderDelegationManager.ApprovalMode.None;
     }
 
-    function _skipApprovalMode() private pure returns (MetaSwapIntentDelegationManager.ApprovalMode) {
-        return MetaSwapIntentDelegationManager.ApprovalMode.SkipApproval;
+    function _skipApprovalMode() private pure returns (MetaSwapOrderDelegationManager.ApprovalMode) {
+        return MetaSwapOrderDelegationManager.ApprovalMode.SkipApproval;
     }
 
-    function _approveMode() private pure returns (MetaSwapIntentDelegationManager.ApprovalMode) {
-        return MetaSwapIntentDelegationManager.ApprovalMode.Approve;
+    function _approveMode() private pure returns (MetaSwapOrderDelegationManager.ApprovalMode) {
+        return MetaSwapOrderDelegationManager.ApprovalMode.Approve;
     }
 
-    function _resetApproveMode() private pure returns (MetaSwapIntentDelegationManager.ApprovalMode) {
-        return MetaSwapIntentDelegationManager.ApprovalMode.ResetApprove;
+    function _resetApproveMode() private pure returns (MetaSwapOrderDelegationManager.ApprovalMode) {
+        return MetaSwapOrderDelegationManager.ApprovalMode.ResetApprove;
     }
 }
