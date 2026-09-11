@@ -25,6 +25,76 @@ Enforcers can target specific call type modes: **single** or **batch**, and exec
 
 ---
 
+### MetaSwapFlexibleSettlementEnforcer
+
+Authorizes one successful MetaSwap settlement with a redeemer-selected route. It binds the input, approval behavior,
+output asset, recipient, and minimum output while keeping route discovery flexible. A successful settlement is
+permanently consumed; a reverted fill, including insufficient output, rolls back the consumed state and remains
+retryable.
+
+It accepts one direct `BATCH_DEFAULT_MODE` redemption with:
+
+- Native input: `MetaSwap.swap{ value: tokenInAmount }(...)`
+- ERC-20 skipping approval: `MetaSwap.swap(...)`
+- ERC-20 approval: `approve(metaSwap, tokenInAmount)`, then `MetaSwap.swap(...)`
+- ERC-20 reset approval: `approve(metaSwap, 0)`, `approve(metaSwap, tokenInAmount)`, then `MetaSwap.swap(...)`
+
+Terms are packed as:
+
+```text
+metaSwap(20) | tokenIn(20) | tokenInAmount(32) | approvalMode(1) |
+tokenOut(20) | recipient(20) | tokenOutMin(32)
+```
+
+`address(0)` represents the native token. The one-byte `ApprovalMode` enum selects exactly one execution shape:
+
+- `0`: `None`, required for native input
+- `1`: `SkipApproval`
+- `2`: `Approve`
+- `3`: `ResetApprove`
+
+ERC-20 input requires modes `1` through `3`. The execution count must match the signed mode; caveat args are not used.
+`SkipApproval` does not inspect allowance; the swap must have sufficient allowance to execute successfully.
+
+Example terms for an ERC-20 settlement requiring `approve(amount)`:
+
+```solidity
+bytes memory terms = abi.encodePacked(
+    metaSwap,
+    tokenIn,
+    tokenInAmount,
+    uint8(MetaSwapFlexibleSettlementEnforcer.ApprovalMode.Approve),
+    tokenOut,
+    recipient,
+    tokenOutMin
+);
+```
+
+The enforcer permanently records successful use in a boolean mapping and temporarily caches the recipient's raw
+pre-execution output balance in a separate mapping. Both mappings are keyed by the DelegationManager and delegation hash.
+The balance snapshot is deleted after validation for a storage refund. Any reverted settlement atomically rolls back the
+consumed flag and remains retryable.
+
+Approval spender and swap input token arguments must use canonical 32-byte ABI address words, including zeroed upper
+bytes. Swap calldata must be at least 196 bytes: the selector, four-word static head, and two dynamic length words required
+by `swap(string,address,uint256,bytes)`.
+
+#### Trust Assumptions
+
+MetaSwap's `aggregatorId` and route `data` remain unrestricted. The delegator trusts the delegate to provide safe route
+data and trusts the configured MetaSwap contract and its adapters. The enforcer fixes the input token, input amount,
+approval spender, approval amounts, output token, output recipient, and minimum net balance increase, but it cannot
+prevent arbitrary route side effects or protect unrelated assets already approved to MetaSwap or its adapters.
+
+The minimum output may be satisfied by any balance increase during the execution, including unrelated transfers or token
+rebases. A malicious or non-standard output token may report misleading balances. A residual input allowance may remain
+if MetaSwap spends less than the approved amount.
+
+Deployment uses `script/DeployCaveatEnforcers.s.sol`. After recording deployed addresses, verification uses the shared
+`script/verification/verify-enforcer-contracts.sh` flow.
+
+---
+
 ## Enforcer Details
 
 ### NativeTokenPaymentEnforcer
