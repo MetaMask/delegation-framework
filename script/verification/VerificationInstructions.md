@@ -62,6 +62,17 @@ Verifies an array of enforcer contracts.
 ./verify-enforcer-contracts.sh
 ```
 
+#### `verify-metaswap-order-delegation-manager.sh`
+
+Experimental. Verifies `MetaSwapOrderDelegationManager`.
+Requires `META_SWAP_ORDER_DELEGATION_MANAGER_ADDRESS`.
+
+**Usage:**
+
+```bash
+./verify-metaswap-order-delegation-manager.sh
+```
+
 ## Notes
 
 - Ensure the `.env` file is correctly configured and contains all necessary API keys.

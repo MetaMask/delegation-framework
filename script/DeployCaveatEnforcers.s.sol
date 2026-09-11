@@ -26,6 +26,7 @@ import { ExactExecutionEnforcer } from "../src/enforcers/ExactExecutionEnforcer.
 import { IdEnforcer } from "../src/enforcers/IdEnforcer.sol";
 import { LimitedCallsEnforcer } from "../src/enforcers/LimitedCallsEnforcer.sol";
 import { LogicalOrWrapperEnforcer } from "../src/enforcers/LogicalOrWrapperEnforcer.sol";
+import { MetaSwapFlexibleSettlementEnforcer } from "../src/enforcers/MetaSwapFlexibleSettlementEnforcer.sol";
 import { MultiTokenPeriodEnforcer } from "../src/enforcers/MultiTokenPeriodEnforcer.sol";
 import { NativeBalanceChangeEnforcer } from "../src/enforcers/NativeBalanceChangeEnforcer.sol";
 import { NativeTokenPaymentEnforcer } from "../src/enforcers/NativeTokenPaymentEnforcer.sol";
@@ -132,6 +133,9 @@ contract DeployCaveatEnforcers is Script {
 
         deployedAddress = address(new LogicalOrWrapperEnforcer{ salt: salt }(delegationManager));
         console2.log("LogicalOrWrapperEnforcer: %s", deployedAddress);
+
+        deployedAddress = address(new MetaSwapFlexibleSettlementEnforcer{ salt: salt }());
+        console2.log("MetaSwapFlexibleSettlementEnforcer: %s", deployedAddress);
 
         deployedAddress = address(new MultiTokenPeriodEnforcer{ salt: salt }());
         console2.log("MultiTokenPeriodEnforcer: %s", deployedAddress);
