@@ -471,7 +471,7 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         uint256 gasBefore_ = gasleft();
         vm.prank(relayer);
         orderManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
-        emit log_named_uint("intent ExactCalldata", gasBefore_ - gasleft());
+        emit log_named_uint("order ExactCalldata", gasBefore_ - gasleft());
     }
 
     function test_gas_intentFlexible() public {
@@ -485,7 +485,7 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         uint256 gasBefore_ = gasleft();
         vm.prank(relayer);
         orderManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
-        emit log_named_uint("intent FlexibleSettlement", gasBefore_ - gasleft());
+        emit log_named_uint("order FlexibleSettlement", gasBefore_ - gasleft());
     }
 
     // -------- Helpers --------

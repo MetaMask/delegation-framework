@@ -58,18 +58,18 @@ Signatures try ECDSA first (EOA and EIP-7702 ETH keys). If that misses, empty ac
 
 Measured around `redeemDelegations` in `test/MetaSwapOrderDelegationManager.t.sol` and the specialized suite:
 
-| Path                                      | Gas       | vs generic flexible     |
+| Path                                      | Gas       | vs generic              |
 | ----------------------------------------- | --------- | ----------------------- |
-| Generic DM + ExactBatch + LimitedCalls(1) | `230,987` | —                       |
+| Generic DM + ExactBatch + LimitedCalls(1) | `230,987` | baseline exact          |
 | Generic DM + FlexibleSettlementEnforcer   | `200,783` | baseline flexible       |
-| Hookless flexible                         | `166,508` | −17.1%                  |
-| Intent ExactCalldata                      | `158,997` | −31.2% vs exact generic |
-| Intent FlexibleSettlement                 | `166,725` | −17.0%                  |
+| Hookless flexible                         | `158,770` | −20.9% vs flexible      |
+| Order ExactCalldata                       | `152,242` | −34.1% vs exact generic |
+| Order FlexibleSettlement                  | `158,990` | −20.8% vs flexible      |
 
 Takeaways:
 
-- Flattened exact intent is the cheapest path: no second enforcer, no LimitedCalls nested mapping, no self-`execute` wrap.
-- Intent flexible matches hookless (~same gas); the unified manager does not pay a meaningful premium for dispatch.
+- Flattened exact order is the cheapest path: no second enforcer, no LimitedCalls nested mapping, no self-`execute` wrap.
+- Order flexible matches hookless (~same gas); the unified manager does not pay a meaningful premium for dispatch.
 
 ## Limitations
 
