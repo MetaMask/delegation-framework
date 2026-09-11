@@ -5,11 +5,12 @@ Staged CLI for **LiFiSwapEnforcer** delegations on Base mainnet: create a signed
 ## Prerequisites
 
 - Node.js 20+ with `npm install`
-- Copy [`.env.example`](./.env.example) to `.env` in this directory and set `PRIVATE_KEY`, `BASE_RPC_URL`, and `LIFI_*` variables
+- Copy [`.env.example`](./.env.example) to `.env` in this directory and set `PRIVATE_KEY` and `BASE_RPC_URL` (RPC must match the `--input-chain` you use on create)
 - Base ETH for gas (via relayer fee token) and input ERC-20 balance (e.g. USDC)
 - Deployed contracts on Base:
   - `DelegationManager`: `0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3`
-  - `LiFiSwapEnforcer`: `0x47472E8AA7012D1c23336aa28514AE94389318f5`
+  - `LiFiSwapEnforcer`: `0xD0e70cd777a527fB798e5EcA8800c5E3588041d4`
+  - `ChainlinkPriceRuleEnforcer`: `0x4dAEbF9C5813EFF2606acD41BA25e57841e7cb75`
 
 ## Setup
 
@@ -20,19 +21,106 @@ cp .env.example .env
 # edit .env — set PRIVATE_KEY and BASE_RPC_URL (full URL with provider key)
 ```
 
+## LiFi API discovery
+
+Read-only helpers for exploring the [Li.FI Quote API](https://docs.li.fi/). No `PRIVATE_KEY` required. Optionally set `LIFI_API_KEY` in `.env` for higher rate limits.
+
+```bash
+# Supported chains
+npm run lifi -- chains
+npm run lifi -- chains --chain-types EVM,SVM,UTXO --json
+
+# Tokens on a chain (resolves chain by name, key, or id)
+npm run lifi -- tokens --chain Base
+npm run lifi -- tokens --chain Base --symbol USDC
+npm run lifi -- tokens --chain Base --tags stablecoin
+
+# Bridges and exchanges
+npm run lifi -- tools
+npm run lifi -- tools --chains base,eth
+
+# Possible routes between chains
+npm run lifi -- connections --from-chain Base --to-chain Bitcoin --from-token USDC
+
+# Quote with human-readable chain/token names (amount in token atoms)
+npm run lifi -- quote \
+  --input-chain Base \
+  --input-token USDC \
+  --input-address 0x4a0C5B7c1262d5D76B26235F7D96E86C24de3532 \
+  --output-chain Bitcoin \
+  --output-token BTC \
+  --output-address bc1q9vpk73hpnvrv6mdsxrsc0as03ycywjr0qkja7h \
+  --amount 10000000 \
+  --allow-bridges near,layerswap \
+  --calldata
+
+npm run lifi -- quote \
+  --input-chain Base \
+  --input-token USDC \
+  --input-address 0x9fEad8B19C044C2f404dac38B925Ea16ADaa2954 \
+  --output-chain Ethereum \
+  --output-token Eth \
+  --output-address 0x9fEad8B19C044C2f404dac38B925Ea16ADaa2954 \
+  --amount 10000000 
+
+npm run lifi -- quote \
+  --input-chain Base \
+  --input-token USDC \
+  --input-address 0x4a0C5B7c1262d5D76B26235F7D96E86C24de3532 \
+  --output-chain Solana \
+  --output-token Sol \
+  --output-address HoJQwEF9VZVQREpwACNjMiQEkvZDwWYPHGuAdAHkX6dw \
+  --amount 10000000
+```
+
+Add `--json` to any command for raw API output. Quote also supports `--slippage`, `--order FASTEST|CHEAPEST`, `--allow-bridges`, `--deny-bridges` (comma-separated bridge keys from `lifi tools`), `--calldata` (print full transaction hex), and `--verbose`.
+
+When no route is available, quote errors print a concise summary (route, filters, top filtered/failed reasons) instead of raw LiFi JSON. Use `--raw-errors` to dump the full API error payload for debugging.
+
 ## Staged workflow
 
 ### Stage 1 — Create and save a delegation
 
+Route flags use the same chain/token names as `npm run lifi -- quote` (no contract addresses in `.env`):
+
 ```bash
+# Same-chain Base USDC → WETH
 npm run delegation -- create \
-  --id usdc-weth-daily \
+  --id usdc-weth-2min \
+  --input-chain Base \
+  --input-token USDC \
+  --output-chain Base \
+  --output-token ETH \
   --period-amount 1000000 \
-  --period-duration 1200
+  --period-duration 120
+
+# Cross-chain Base USDC → Ethereum ETH
+npm run delegation -- create \
+  --id usdc-eth-bridge-2min \
+  --input-chain Base \
+  --input-token USDC \
+  --output-chain Ethereum \
+  --output-token Eth \
+  --output-address 0x9fEad8B19C044C2f404dac38B925Ea16ADaa2954 \
+  --period-amount 1000000 \
+  --period-duration 120
+
+npm run delegation -- create \
+  --id usdc-btc-bridge-2min \
+  --input-chain Base \
+  --input-token USDC \
+  --output-chain Bitcoin \
+  --output-token btc \
+  --output-address bc1q9vpk73hpnvrv6mdsxrsc0as03ycywjr0qkja7h \
+  --period-amount 10000000 \
+  --period-duration 120
 
 npm run delegation -- list
 npm run delegation -- show usdc-weth-daily
+npm run delegation -- delete usdc-weth-daily   # or: delete --all
 ```
+
+Legacy: omit route flags and set `LIFI_FROM_TOKEN`, `LIFI_TO_TOKEN`, `LIFI_TO_CHAIN` in `.env`.
 
 Saved files live in `delegations/` (gitignored).
 
@@ -66,9 +154,41 @@ Dry-run (quote + relayer estimate, no send):
 npm run execute -- usdc-weth-daily --amount 5000000 --dry-run
 ```
 
+Before relayer submission, `execute` prints the **LiFi quote request** (API parameters) and a **high-level quote summary** (route, amounts, tool, steps) — same style as `lifi quote` — immediately after fetch, even if later validation (slippage, diamond, etc.) fails. Use `--verbose` for transaction-request details (`to`, value, calldata length).
+
+Optional `--allow-bridges` / `--deny-bridges` (comma-separated bridge keys from `lifi tools`) limit which LiFi bridges are used at **execute time only** — not stored in delegation terms; no recreate needed when changing filters.
+
+### Enforcer negative testing (spoof flags)
+
+Optional flags override **only** the LiFi quote API parameters (`toChain`, `toToken`, `toAddress`). Signed quote metadata still comes from saved delegation **terms**, so calldata from the spoofed quote should fail `LiFiSwapEnforcer` on-chain verification. The CLI warns and still reaches the relayer (no local abort).
+
+| Flag | Effect |
+|------|--------|
+| `--spoof-output-chain <name\|id>` | Wrong destination chain in LiFi quote fetch |
+| `--spoof-output-address <addr>` | Wrong recipient in LiFi quote fetch |
+| `--spoof-output-token <symbol\|addr>` | Wrong output token (required when chain spoof changes token address unless `metadata.outputSymbol` is saved) |
+
+**Wrong recipient (same-chain delegation):**
+
+```bash
+npm run execute -- usdc-weth-2min --dry-run \
+  --spoof-output-address 0x0000000000000000000000000000000000000001
+```
+
+Expected enforcer error: `LiFiSwapEnforcer:calldata-recipient-mismatch`
+
+**Wrong destination chain:**
+
+```bash
+npm run execute -- usdc-weth-2min --dry-run \
+  --spoof-output-chain Ethereum --spoof-output-token Eth
+```
+
+Expected: `LiFiSwapEnforcer:route-dest-chain-mismatch` and/or `LiFiSwapEnforcer:calldata-dest-chain-mismatch`
+
 ## How it works
 
-1. **`delegation create`** calls `relayer_getCapabilities` to fetch the relayer **`targetAddress`** for Base (not an env var). It probes the [Li.FI API](https://docs.li.fi/) to pin `lifiDiamond`, builds 284-byte enforcer terms, signs delegations to that `targetAddress`, and saves `relayerTargetAddress` in the local file.
+1. **`delegation create`** resolves `--input-chain` / `--output-chain` / tokens via the Li.FI chains and tokens API (no live quote), pins `lifiDiamond` from the source chain's `diamondAddress` (or `--lifi-diamond` / `LIFI_DIAMOND`), calls `relayer_getCapabilities` on the source chain, builds 284-byte enforcer terms, signs delegations to the relayer **`targetAddress`**, and saves `chainId` + `relayerTargetAddress` in the local file.
 2. **`approve` / `execute`** re-fetch capabilities and **fail fast** if `targetAddress` changed since create (recreate with `--force`). They use **`relayer_estimate7710Transaction`** (with `authorizationList` when needed) and **`relayer_getFeeData`** for the fee floor before send.
 3. **`execute`** loads the saved delegation, fetches a fresh LiFi quote, signs an EIP-191 quote with the same `PRIVATE_KEY` (`terms.quoteSigner`), patches caveat args, and submits via `relayer_send7710Transaction` with the estimate `context` price lock.
 4. **Periodic budget** is tracked on-chain per `delegationHash`; reuse the same saved file across executions.
@@ -87,34 +207,178 @@ npm run delegation -- create --id usdc-weth-daily --force
 
 `approve` and `execute` use estimate-first submission: mock fee ≥ `minFee` from `relayer_getFeeData`, simulate via `relayer_estimate7710Transaction`, adjust fee from `requiredPaymentAmount` if needed, then send with signed `context`. Use `--dry-run` to see `gasUsed` and `requiredPaymentAmount` without submitting.
 
-## Cross-chain (Solana, Bitcoin)
+## Chainlink price-gated swaps
 
-See commented recipe blocks in [`.env.example`](./.env.example) for Base → Solana and Base → Bitcoin swaps.
+Stack [`ChainlinkPriceRuleEnforcer`](../../src/enforcers/ChainlinkPriceRuleEnforcer.sol) with LiFi for buy-the-dip, take-profit, and absolute price triggers. Use a **separate create command** — plain `delegation create` stays LiFi-only.
 
-1. Comment out same-chain `LIFI_TO_TOKEN` / `LIFI_TO_CHAIN` defaults and uncomment the cross-chain block.
-2. Set **`LIFI_OUTPUT_RECIPIENT`** to the destination address (Solana pubkey or BTC address). Same-chain Base swaps default to the delegator EOA.
-3. Run `delegation create` — it probes LiFi with `toAddress`, encodes non-EVM `bytes32` terms, and prints `outputAssetId` / `outputRecipient` for verification.
+Deployed on Base mainnet: `0x4dAEbF9C5813EFF2606acD41BA25e57841e7cb75`
 
-Optional overrides if auto-encoding differs from LiFi quote tooling:
+### Env (feed + staleness only)
 
-- `LIFI_OUTPUT_ASSET_ID=0x...`
-- `LIFI_OUTPUT_RECIPIENT_BYTES32=0x...`
+Set in `.env` (see [`.env.example`](./.env.example)):
 
-`LIFI_TO_TOKEN` is a plain string (LiFi API token id): EVM address for same-chain, Solana mint/base58 id, or `bitcoin` for BTC.
+- `CHAINLINK_PRICE_FEED` — default Base ETH/USD
+- `CHAINLINK_MAX_STALE_SECONDS` — default 120
+- `CHAINLINK_MIN_GAP_SECONDS` — default 300
 
-**Note:** Source-chain `afterHook` does not verify delivery on non-EVM destination chains — monitor bridge status via LiFi tooling. Verify chain IDs via `GET https://li.quest/v1/chains?chainTypes=SVM,UTXO`.
+Rule kind, window, threshold, and trigger price are **CLI flags**, not env vars.
 
-Example (after editing `.env`):
+### Create price-gated delegation
 
 ```bash
-npm run delegation -- create \
-  --id usdc-solana \
-  --output-recipient YOUR_SOLANA_PUBKEY \
+# DIP — buy the dip (10% drop vs 24h high)
+npm run delegation -- create-chainlink \
+  --id dip-usdc-weth \
+  --rule-kind dip \
+  --window-seconds 86400 \
+  --threshold-bps 1000 \
+  --trigger-price 0 \
   --period-amount 1000000 \
   --period-duration 86400
 
-npm run execute -- usdc-solana --amount 500000 --dry-run
+# RISE — take profit (10% rise vs 12h low)
+npm run delegation -- create-chainlink \
+  --id rise-weth-usdc-1000bps-12h \
+  --rule-kind rise \
+  --window-seconds 12400 \
+  --threshold-bps 1000 \
+  --trigger-price 0 \
+  --period-amount 1000000
+
+# ABSOLUTE_GTE — sell when ETH/USD >= $4000 (8-decimal feed: 4000e8)
+npm run delegation -- create-chainlink \
+  --id tp-gte \
+  --rule-kind absolute_gte \
+  --window-seconds 0 \
+  --threshold-bps 0 \
+  --trigger-price 400000000000
+
+# ABSOLUTE_LTE — buy when ETH/USD <= $3000
+npm run delegation -- create-chainlink \
+  --id buy-lte \
+  --rule-kind absolute_lte \
+  --window-seconds 0 \
+  --threshold-bps 0 \
+  --trigger-price 300000000000
 ```
+
+### Check price gate (no swap)
+
+```bash
+npm run chainlink -- check dip-usdc-weth
+npm run chainlink -- check dip-usdc-weth --reference-round-id 12345
+```
+
+Output includes round ids: **Current** (latest feed round), **Window newest/oldest** (relative rules — bounds of the valid reference time window), and **Reference** (auto-picked dip/rise round encoded in args).
+
+### Execute
+
+Same as LiFi-only execute; Chainlink args are resolved and patched automatically. **By default, execute always reaches the relayer** — failed Chainlink pre-checks warn locally but still submit so on-chain enforcers are the source of truth.
+
+```bash
+npm run approve -- dip-usdc-weth
+npm run execute -- dip-usdc-weth --amount 500000 --dry-run
+npm run execute -- dip-usdc-weth --amount 500000
+```
+
+Execute flags for Chainlink delegations:
+
+- `--reference-round-id <id>` — override reference round (relative rules)
+- `--require-chainlink` — abort locally if Chainlink pre-check fails (strict mode)
+- `--skip-chainlink` — skip Chainlink resolve/patch (args stay empty; enforcer will revert)
+
+### CLI design principle
+
+This CLI validates **on-chain enforcer behavior** via the relayer. Do not add client-side aborts in `execute` that duplicate enforcer checks (Chainlink, LiFi budget, etc.) — warn and proceed. Use optional `--require-*` flags for strict local gates. `chainlink check` is informational only.
+
+### Testing tips
+
+- Loosen `--threshold-bps` or widen `--window-seconds` for smoke tests
+- Use `chainlink check` before first execute to see current vs reference price
+- For absolute rules, set `--trigger-price` relative to current feed price at create time
+
+See also: [ChainlinkPriceRuleEnforcer-Wallet-Integration.md](../../ChainlinkPriceRuleEnforcer-Wallet-Integration.md), [ChainlinkPriceRuleEnforcer-App-Integration.md](../../ChainlinkPriceRuleEnforcer-App-Integration.md)
+
+## Cross-chain
+
+### EVM → EVM (e.g. Base USDC → Ethereum ETH)
+
+Use a normal `0x` `--output-address` on the destination chain. Terms encode the recipient as a **padded EVM address** (`bytes32`), matching the enforcer’s `EvmBridge` path.
+
+```bash
+npm run delegation -- create \
+  --id usdc-eth-bridge-2min \
+  --input-chain Base \
+  --input-token USDC \
+  --output-chain Ethereum \
+  --output-token Eth \
+  --output-address 0x9fEad8B19C044C2f404dac38B925Ea16ADaa2954 \
+  --period-amount 1000000 \
+  --period-duration 120
+
+npm run approve -- usdc-eth-bridge-2min
+npm run execute -- usdc-eth-bridge-2min --amount 1000000 --dry-run
+```
+
+If you created an EVM bridge delegation before this encoding fix, **recreate with `--force`** so `terms.outputRecipient` is padded (not the non-EVM string hash).
+
+### Non-EVM (Solana, Bitcoin)
+
+Use route flags plus `--output-address` for the destination recipient (bech32, Solana pubkey, etc.).
+
+**Bitcoin (bc1q P2WPKH):** bech32 addresses are encoded to LiFi’s binary `bytes32` (witness program as 5-bit words), **not** keccak256 of the ASCII string. If you created a BTC bridge delegation before this fix, **recreate with `--force`** (e.g. `usdc-btc-bridge-2min`).
+
+```bash
+npm run delegation -- create \
+  --id usdc-btc-bridge-2min \
+  --input-chain Base --input-token USDC \
+  --output-chain Bitcoin --output-token BTC \
+  --output-address bc1q9vpk73hpnvrv6mdsxrsc0as03ycywjr0qkja7h \
+  --period-amount 10000000 --period-duration 120 --force
+```
+
+Expected in saved JSON: `terms.outputRecipient` = `0x050c01161e111701130c030c1a1b0d10060310180f1d100f110418040e12030f` for that bc1q address.
+
+Example create + execute:
+
+```bash
+npm run delegation -- create \
+  --id usdc-btc \
+  --input-chain Base \
+  --input-token USDC \
+  --output-chain Bitcoin \
+  --output-token BTC \
+  --output-address bc1q... \
+  --period-amount 1000000 \
+  --period-duration 86400
+
+npm run execute -- usdc-btc --amount 500000 --dry-run
+
+# Limit to enforcer-supported BTC bridges (Near + LayerSwap; excludes Relay)
+npm run execute -- usdc-btc --amount 10000000 \
+  --allow-bridges near,layerswap --dry-run
+
+# Test one bridge at a time
+npm run execute -- usdc-btc --amount 10000000 --allow-bridges layerswap --dry-run
+```
+
+Optional overrides if auto-encoding differs from LiFi quote tooling: `LIFI_OUTPUT_ASSET_ID`, `LIFI_OUTPUT_RECIPIENT_BYTES32` in `.env`.
+
+**Note:** Source-chain `afterHook` does not verify delivery on non-EVM destination chains — monitor bridge status via LiFi tooling.
+
+## Native ETH support
+
+The LiFiSwapEnforcer treats `address(0)` / `bytes32(0)` as a native ETH sentinel. Use token symbols `Eth` / native on the relevant chain via route flags:
+
+```bash
+# USDC → native ETH (same-chain Base)
+npm run delegation -- create \
+  --input-chain Base --input-token USDC \
+  --output-chain Base --output-token Eth \
+  --period-amount 1000000 --period-duration 1200
+```
+
+Native ETH input skips the approve delegation (no ERC-20 approval). Execution must carry `value == inputAmount` when input is native.
 
 ## References
 

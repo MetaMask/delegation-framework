@@ -3,7 +3,7 @@ import { encodeSingleExecution } from "@metamask/smart-accounts-kit/utils";
 import { bytesToHex } from "viem/utils";
 import type { Hex } from "viem";
 
-import { LIFI_SWAP_ENFORCER } from "./constants.js";
+import { CHAINLINK_PRICE_RULE_ENFORCER, LIFI_SWAP_ENFORCER } from "./constants.js";
 
 export { encodeSingleExecution };
 
@@ -22,25 +22,38 @@ export function toRelayerJson(value: unknown): unknown {
   return value;
 }
 
-export function patchSwapDelegationArgs(
+export function patchCaveatArgs(
   delegation: Delegation,
+  enforcerAddress: string,
   args: Hex,
 ): Delegation {
+  const normalized = enforcerAddress.toLowerCase();
   const caveats = delegation.caveats.map((caveat) => {
-    if (caveat.enforcer.toLowerCase() !== LIFI_SWAP_ENFORCER.toLowerCase()) {
+    if (caveat.enforcer.toLowerCase() !== normalized) {
       return caveat;
     }
     return { ...caveat, args };
   });
 
-  const hasLifiCaveat = caveats.some(
-    (c) => c.enforcer.toLowerCase() === LIFI_SWAP_ENFORCER.toLowerCase(),
+  const hasCaveat = caveats.some(
+    (c) => c.enforcer.toLowerCase() === normalized,
   );
-  if (!hasLifiCaveat) {
-    throw new Error("Saved delegation is missing LiFiSwapEnforcer caveat");
+  if (!hasCaveat) {
+    throw new Error(`Saved delegation is missing enforcer caveat: ${enforcerAddress}`);
   }
 
   return { ...delegation, caveats };
+}
+
+export function patchChainlinkArgs(delegation: Delegation, args: Hex): Delegation {
+  return patchCaveatArgs(delegation, CHAINLINK_PRICE_RULE_ENFORCER, args);
+}
+
+export function patchSwapDelegationArgs(
+  delegation: Delegation,
+  args: Hex,
+): Delegation {
+  return patchCaveatArgs(delegation, LIFI_SWAP_ENFORCER, args);
 }
 
 export function relayerExecution(target: Hex, value: bigint, data: Hex) {

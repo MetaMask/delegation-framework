@@ -15,6 +15,12 @@ export async function runListCommand(): Promise<void> {
     console.log(`  delegationHash:  ${entry.delegationHash}`);
     console.log(`  periodAmount:    ${entry.periodAmount}`);
     console.log(`  periodDuration:  ${entry.periodDuration}s`);
+    if (entry.delegationType) {
+      console.log(`  type:            ${entry.delegationType}`);
+    }
+    if (entry.chainlinkRuleKind) {
+      console.log(`  chainlinkRule:   ${entry.chainlinkRuleKind}`);
+    }
     console.log("");
   }
 }

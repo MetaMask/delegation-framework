@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -72,6 +73,8 @@ export function saveDelegation(
     delegationHash: saved.delegationHash,
     periodAmount: saved.terms.periodAmount,
     periodDuration: saved.terms.periodDuration,
+    chainlinkRuleKind: saved.chainlinkTerms?.ruleKind,
+    delegationType: saved.delegationType,
   };
 
   const index = manifest.delegations.findIndex((d) => d.id === saved.id);
@@ -88,4 +91,30 @@ export function saveDelegation(
 
 export function delegationExists(id: string): boolean {
   return existsSync(delegationPath(id));
+}
+
+export function deleteDelegation(id: string): void {
+  const path = delegationPath(id);
+  if (!existsSync(path)) {
+    throw new Error(`Delegation not found: ${id}`);
+  }
+  unlinkSync(path);
+
+  const manifest = readManifest();
+  manifest.delegations = manifest.delegations.filter((d) => d.id !== id);
+  writeManifest(manifest);
+}
+
+export function deleteAllDelegations(): number {
+  const manifest = readManifest();
+  let removed = 0;
+  for (const entry of manifest.delegations) {
+    const path = delegationPath(entry.id);
+    if (existsSync(path)) {
+      unlinkSync(path);
+      removed++;
+    }
+  }
+  writeManifest({ delegations: [] });
+  return removed;
 }

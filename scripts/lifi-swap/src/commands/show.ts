@@ -14,8 +14,11 @@ export async function runShowCommand(argv: string[]): Promise<void> {
   }
 
   const saved = loadDelegation(id);
-  const config = (await import("../config.js")).loadSwapConfig();
-  const ctx = await createSmartAccountContext(config.privateKey, config.rpcUrl);
+  const { loadCliConfig } = await import("../config.js");
+  const { savedExecutionChainId } = await import("../executionChain.js");
+  const cli = loadCliConfig();
+  const executionChainId = savedExecutionChainId(saved);
+  const ctx = await createSmartAccountContext(cli.privateKey, cli.rpcUrl, executionChainId);
 
   if (ctx.account.address.toLowerCase() !== saved.terms.quoteSigner.toLowerCase()) {
     throw new Error("PRIVATE_KEY does not match saved quoteSigner");
@@ -25,6 +28,21 @@ export async function runShowCommand(argv: string[]): Promise<void> {
   const budget = await readAvailableBudget(ctx, saved.delegationHash, termsBytes);
 
   console.log(JSON.stringify(saved, null, 2));
+
+  if (saved.chainlinkTerms) {
+    const { termsRecordToEncoded } = await import("../chainlinkTerms.js");
+    console.log("\nChainlink terms:");
+    console.log(`  ruleKind:         ${saved.chainlinkTerms.ruleKind}`);
+    console.log(`  priceFeed:        ${saved.chainlinkTerms.priceFeed}`);
+    console.log(`  windowSeconds:    ${saved.chainlinkTerms.windowSeconds}`);
+    console.log(`  thresholdBps:     ${saved.chainlinkTerms.thresholdBps}`);
+    console.log(`  triggerPrice:     ${saved.chainlinkTerms.triggerPrice}`);
+    console.log(`  maxStaleSeconds:  ${saved.chainlinkTerms.maxStaleSeconds}`);
+    console.log(`  minGapSeconds:    ${saved.chainlinkTerms.minGapSeconds}`);
+    console.log(`  expectedDecimals: ${saved.chainlinkTerms.expectedDecimals}`);
+    console.log(`  termsBytes:       ${termsRecordToEncoded(saved.chainlinkTerms)}`);
+  }
+
   console.log("\nOn-chain budget:");
   console.log(`  availableAmount:  ${budget.available.toString()}`);
   console.log(`  isNewPeriod:      ${budget.isNewPeriod}`);

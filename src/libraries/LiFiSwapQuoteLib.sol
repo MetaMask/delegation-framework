@@ -13,6 +13,22 @@ library LiFiSwapQuoteLib {
     uint256 internal constant BPS_DENOMINATOR = 10_000;
     uint256 internal constant TERMS_LENGTH = 284;
 
+    /// @notice Sentinel address LiFi places in `BridgeData.receiver` for non-EVM destinations.
+    /// @dev Mirrors `LiFiData.NON_EVM_ADDRESS` from the lifinance/contracts repo without importing it,
+    ///      so the enforcer stays standalone and chain-agnostic. The value fits in 160 bits, so
+    ///      `isCleanEvmAddress` returns true for it — callers must reject it explicitly for EVM routes.
+    address internal constant NON_EVM_ADDRESS = 0x11f111f111f111F111f111f111F111f111f111F1;
+
+    /// @notice Selects the calldata decode path in `LiFiSwapEnforcer.beforeHook`.
+    /// @dev Provided in `_args` (not signed by the quote signer); cross-checked against the calldata
+    ///      selector and `terms` shape before its decode path runs, so a lying enum reverts.
+    enum RouteKind {
+        SameChain, // GenericSwap facet, same-chain EVM swap (no BridgeData)
+        EvmBridge, // EVM-to-EVM bridge using ILiFi.BridgeData layout
+        NearBtc, // EVM-to-BTC via NEAR Intents (nonEVMReceiver is 1st struct field)
+        LayerSwapBtc // EVM-to-BTC via LayerSwap (nonEVMReceiver is 4th struct field @ +0x60)
+    }
+
     struct Terms {
         address lifiDiamond;
         address inputToken;
@@ -113,6 +129,11 @@ library LiFiSwapQuoteLib {
         return address(uint160(uint256(_value)));
     }
 
+    /// @notice Returns true if `outputAssetId` is the native ETH sentinel (bytes32(0)).
+    function isNativeAsset(bytes32 _outputAssetId) internal pure returns (bool) {
+        return _outputAssetId == bytes32(0);
+    }
+
     function shouldVerifyOutputOnChain(
         uint256 _destinationChainId,
         bytes32 _outputRecipient,
@@ -123,6 +144,6 @@ library LiFiSwapQuoteLib {
         returns (bool)
     {
         return _destinationChainId == block.chainid && isCleanEvmAddress(_outputRecipient)
-            && isCleanEvmAddress(_outputAssetId);
+            && (_outputAssetId == bytes32(0) || isCleanEvmAddress(_outputAssetId));
     }
 }

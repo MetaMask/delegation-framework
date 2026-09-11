@@ -49,7 +49,7 @@ Reference deployments (v1.3.0, same address on most supported chains): see [`doc
 |---|---|
 | `DelegationManager` | Validates delegations; calls enforcer hooks; triggers `executeFromExecutor` on the user's DeleGator |
 | User `DeleGator` (Hybrid / MultiSig / EIP-7702) | Smart account that holds assets and executes LiFi calls |
-| `LiFiSwapEnforcer` | `0x47472E8AA7012D1c23336aa28514AE94389318f5` (CREATE2; same address on all deployed chains) |
+| `LiFiSwapEnforcer` | `0x64a9B2277dcDD134e78d30bEe11c3056e8E56ffE` (CREATE2; same address on all deployed chains) |
 | `AllowedTargetsEnforcer` + `AllowedMethodsEnforcer` | Recommended for the separate **approve onboarding** delegation |
 | LiFi Diamond (source chain) | Swap/bridge entrypoint — address pinned in terms |
 
@@ -114,8 +114,8 @@ Pack with `abi.encodePacked` in this exact order (same as [`LiFiSwapQuoteLib.enc
 | Offset | Field | Size | Type | Notes |
 | --- | --- | --- | --- | --- |
 | 0 | `lifiDiamond` | 20 | `address` | LiFi Diamond on **source** chain |
-| 20 | `inputToken` | 20 | `address` | Source-chain ERC-20 (e.g. USDC) |
-| 40 | `outputAssetId` | 32 | `bytes32` | Desired output asset (LiFi/API encoding) |
+| 20 | `inputToken` | 20 | `address` | Source-chain ERC-20 (e.g. USDC), or `address(0)` for native ETH |
+| 40 | `outputAssetId` | 32 | `bytes32` | Desired output asset (LiFi/API encoding), or `bytes32(0)` for native ETH |
 | 72 | `outputRecipient` | 32 | `bytes32` | EVM or non-EVM recipient |
 | 104 | `destinationChainId` | 32 | `uint256` | EVM `chainId` or LiFi non-EVM id |
 | 136 | `quoteSigner` | 20 | `address` | Backend that signs per-execution quotes |
@@ -149,11 +149,12 @@ The enforcer checks **equality** only; it does not validate address format.
 | Destination | Encoding |
 |---|---|
 | EVM address | `bytes32(uint256(uint160(evmAddress)))` |
+| Native ETH | `bytes32(0)` — the enforcer verifies output via `recipient.balance` in `afterHook` |
 | Solana / Bitcoin / other non-EVM | Use LiFi API `bytes32` representation — must match what the quote signer uses |
 
 For same-chain DCA with on-chain output verification, set:
 
-- `outputAssetId = bytes32(uint256(uint160(outputTokenAddress)))`
+- `outputAssetId = bytes32(uint256(uint160(outputTokenAddress)))` (or `bytes32(0)` for native ETH)
 - `outputRecipient = bytes32(uint256(uint160(recipientAddress)))`
 - `destinationChainId = block.chainid`
 
@@ -241,7 +242,7 @@ When the dapp redeems, the enforcer requires:
 
 - **Mode:** single call + default execution (`ModeLib.encodeSimpleSingle()`)
 - **Target:** `terms.lifiDiamond`
-- **Value:** `0` (no native-fee bridges in v1)
+- **Value:** `0` for ERC20 input, or `inputAmount` when `inputToken == address(0)` (native ETH input)
 - **Calldata:** `keccak256(callData) == quote.calldataHash` (signed by quote signer)
 - **Period budget:** `quote.inputAmount` consumed from `(delegationManager, delegationHash)` allowance
 - **Slippage:** `quote.minAmountOut >= quote.expectedAmountOut * (10000 - slippageBps) / 10000`

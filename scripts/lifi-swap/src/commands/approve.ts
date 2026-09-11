@@ -1,7 +1,7 @@
 import { maxUint256 } from "viem";
 
-import { flagBool, loadSwapConfig, parseArgs } from "../config.js";
-import { BASE_CHAIN_ID } from "../constants.js";
+import { flagBool, loadCliConfig, parseArgs } from "../config.js";
+import { savedExecutionChainId } from "../executionChain.js";
 import {
   createFeeDelegation,
   createSmartAccountContext,
@@ -32,9 +32,10 @@ export async function runApproveCommand(argv: string[]): Promise<void> {
   }
 
   const dryRun = flagBool(flags, "dry-run");
-  const config = loadSwapConfig();
+  const cli = loadCliConfig();
   const saved = loadDelegation(id);
-  const ctx = await createSmartAccountContext(config.privateKey, config.rpcUrl);
+  const executionChainId = savedExecutionChainId(saved);
+  const ctx = await createSmartAccountContext(cli.privateKey, cli.rpcUrl, executionChainId);
 
   const allowance = await readErc20Allowance(ctx, saved.terms.inputToken, saved.terms.lifiDiamond);
   if (allowance >= maxUint256 / 2n) {
@@ -42,7 +43,7 @@ export async function runApproveCommand(argv: string[]): Promise<void> {
     return;
   }
 
-  const chainCaps = await getChainCapabilities(BASE_CHAIN_ID, config.relayerUrl);
+  const chainCaps = await getChainCapabilities(executionChainId, cli.relayerUrl);
   assertSavedRelayerTarget(saved, chainCaps.targetAddress);
 
   const approveDelegation = saved.approveDelegation;
@@ -56,9 +57,9 @@ export async function runApproveCommand(argv: string[]): Promise<void> {
 
   const prepared = await estimateAndPrepareSend({
     ctx,
-    chainId: BASE_CHAIN_ID,
+    chainId: executionChainId,
     paymentToken: paymentToken.address,
-    relayerUrl: config.relayerUrl,
+    relayerUrl: cli.relayerUrl,
     buildSendParams: async (feeAmount) => {
       const feeDelegation = await createFeeDelegation(
         ctx,
@@ -67,7 +68,7 @@ export async function runApproveCommand(argv: string[]): Promise<void> {
         feeAmount,
       );
       return {
-        chainId: String(BASE_CHAIN_ID),
+        chainId: String(executionChainId),
         transactions: [
           {
             permissionContext: serializeDelegations([feeDelegation]),
@@ -100,11 +101,11 @@ export async function runApproveCommand(argv: string[]): Promise<void> {
     return;
   }
 
-  const taskId = await sendPreparedTransaction(prepared, config.relayerUrl);
+  const taskId = await sendPreparedTransaction(prepared, cli.relayerUrl);
   console.log(`Approve submitted. taskId=${taskId}`);
   logEstimateResult(prepared.estimate);
 
-  const result = await pollUntilTerminal(taskId, config.relayerUrl);
+  const result = await pollUntilTerminal(taskId, cli.relayerUrl);
   if (!result.ok) {
     throw new Error(`Approve failed: ${result.reason ?? "unknown"}`);
   }

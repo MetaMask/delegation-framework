@@ -26,12 +26,18 @@ import {
   type PrivateKeyAccount,
 } from "viem";
 import { toMetaMaskSmartAccount } from "@metamask/smart-accounts-kit";
-import { base } from "viem/chains";
 import { bytesToHex } from "viem/utils";
 
-import { BASE_CHAIN_ID, LIFI_SWAP_ENFORCER, ROOT_AUTHORITY } from "./constants.js";
+import { viemChainFromId } from "./chains.js";
+import {
+  CHAINLINK_PRICE_RULE_ENFORCER,
+  LIFI_SWAP_ENFORCER,
+  ROOT_AUTHORITY,
+} from "./constants.js";
+import { readFeedDecimals } from "./chainlink.js";
+import { encodeChainlinkTerms } from "./chainlinkTerms.js";
 import { addressToBytes32, encodeLiFiTerms } from "./terms.js";
-import type { LiFiTermsRecord } from "./types.js";
+import type { ChainlinkTermsRecord, LiFiTermsRecord } from "./types.js";
 
 export type SmartAccountContext = {
   account: PrivateKeyAccount;
@@ -39,16 +45,19 @@ export type SmartAccountContext = {
   publicClient: any;
   environment: SmartAccountsEnvironment;
   delegator: Address;
+  chainId: number;
 };
 
 export async function createSmartAccountContext(
   privateKey: Hex,
   rpcUrl: string,
+  chainId: number,
 ): Promise<SmartAccountContext> {
   const { privateKeyToAccount } = await import("viem/accounts");
   const account = privateKeyToAccount(privateKey);
-  const publicClient = createPublicClient({ chain: base, transport: http(rpcUrl) });
-  const environment = getSmartAccountsEnvironment(BASE_CHAIN_ID);
+  const chain = viemChainFromId(chainId, rpcUrl);
+  const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
+  const environment = getSmartAccountsEnvironment(chainId);
 
   const smartAccount = await toMetaMaskSmartAccount({
     client: publicClient as Parameters<typeof toMetaMaskSmartAccount>[0]["client"],
@@ -63,6 +72,7 @@ export async function createSmartAccountContext(
     publicClient,
     environment,
     delegator: smartAccount.address,
+    chainId,
   };
 }
 
@@ -88,7 +98,7 @@ export async function buildAuthorizationList(ctx: SmartAccountContext) {
   });
 
   const auth = await ctx.account.signAuthorization({
-    chainId: BASE_CHAIN_ID,
+    chainId: ctx.chainId,
     contractAddress: getAddress(ctx.environment.implementations.EIP7702StatelessDeleGatorImpl),
     nonce,
   });
@@ -117,6 +127,31 @@ export function buildSwapCaveats(
     .addCaveat("valueLte", { maxValue: 0n })
     .addCaveat(
       createCaveat(getAddress(LIFI_SWAP_ENFORCER), termsBytes, "0x"),
+    );
+
+  return builder.build();
+}
+
+export function buildPriceGatedSwapCaveats(
+  environment: SmartAccountsEnvironment,
+  lifiDiamond: Address,
+  chainlinkTermsBytes: Hex,
+  lifiTermsBytes: Hex,
+) {
+  const builder = createCaveatBuilder(environment, {
+    allowInsecureUnrestrictedDelegation: true,
+  })
+    .addCaveat("allowedTargets", { targets: [lifiDiamond] })
+    .addCaveat("valueLte", { maxValue: 0n })
+    .addCaveat(
+      createCaveat(
+        getAddress(CHAINLINK_PRICE_RULE_ENFORCER),
+        chainlinkTermsBytes,
+        "0x",
+      ),
+    )
+    .addCaveat(
+      createCaveat(getAddress(LIFI_SWAP_ENFORCER), lifiTermsBytes, "0x"),
     );
 
   return builder.build();
@@ -164,6 +199,71 @@ async function signDelegationToRelayer(
 
   const signature = await ctx.smartAccount.signDelegation({ delegation });
   return { ...delegation, signature };
+}
+
+export async function createPriceGatedSwapDelegation(
+  ctx: SmartAccountContext,
+  targetAddress: Address,
+  chainlinkTerms: ChainlinkTermsRecord,
+  lifiTerms: LiFiTermsRecord,
+): Promise<{
+  delegation: Delegation;
+  delegationHash: Hex;
+  chainlinkTerms: ChainlinkTermsRecord;
+  chainlinkTermsBytes: Hex;
+  lifiTermsBytes: Hex;
+}> {
+  const expectedDecimals = await readFeedDecimals(
+    ctx.publicClient,
+    chainlinkTerms.priceFeed,
+  );
+  const resolvedChainlinkTerms = { ...chainlinkTerms, expectedDecimals };
+
+  const chainlinkTermsBytes = encodeChainlinkTerms({
+    priceFeed: resolvedChainlinkTerms.priceFeed,
+    ruleKind: resolvedChainlinkTerms.ruleKind,
+    expectedDecimals: resolvedChainlinkTerms.expectedDecimals,
+    windowSeconds: Number(resolvedChainlinkTerms.windowSeconds),
+    thresholdBps: resolvedChainlinkTerms.thresholdBps,
+    maxStaleSeconds: Number(resolvedChainlinkTerms.maxStaleSeconds),
+    minGapSeconds: Number(resolvedChainlinkTerms.minGapSeconds),
+    triggerPrice: BigInt(resolvedChainlinkTerms.triggerPrice),
+  });
+
+  const lifiTermsBytes = encodeLiFiTerms({
+    lifiDiamond: lifiTerms.lifiDiamond,
+    inputToken: lifiTerms.inputToken,
+    outputAssetId: lifiTerms.outputAssetId,
+    outputRecipient: lifiTerms.outputRecipient,
+    destinationChainId: BigInt(lifiTerms.destinationChainId),
+    quoteSigner: lifiTerms.quoteSigner,
+    periodAmount: BigInt(lifiTerms.periodAmount),
+    periodDuration: BigInt(lifiTerms.periodDuration),
+    startDate: BigInt(lifiTerms.startDate),
+    slippageBps: BigInt(lifiTerms.slippageBps),
+  });
+
+  const caveats = buildPriceGatedSwapCaveats(
+    ctx.environment,
+    lifiTerms.lifiDiamond,
+    chainlinkTermsBytes,
+    lifiTermsBytes,
+  );
+  const salt = randomSalt();
+  const delegation = await signDelegationToRelayer(ctx, targetAddress, caveats, salt);
+  const delegationForHash: Delegation = {
+    ...delegation,
+    caveats: delegation.caveats.map((c: Delegation["caveats"][number]) => ({ ...c, args: "0x" })),
+  };
+  const delegationHash = hashDelegation(delegationForHash);
+
+  return {
+    delegation: delegationForHash,
+    delegationHash,
+    chainlinkTerms: resolvedChainlinkTerms,
+    chainlinkTermsBytes,
+    lifiTermsBytes,
+  };
 }
 
 export async function createSwapDelegation(

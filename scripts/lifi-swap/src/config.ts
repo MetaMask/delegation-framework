@@ -4,8 +4,13 @@ import { fileURLToPath } from "node:url";
 import type { Address, Hex } from "viem";
 import { getAddress, isHex } from "viem";
 
-import { BASE_CHAIN_ID, DEFAULT_RELAYER_URL } from "./constants.js";
-import type { SwapConfig } from "./types.js";
+import {
+  BASE_CHAIN_ID,
+  DEFAULT_CHAINLINK_PRICE_FEED,
+  DEFAULT_RELAYER_URL,
+} from "./constants.js";
+import { isRelativeRuleKind, parseRuleKind } from "./chainlinkTerms.js";
+import type { ChainlinkCreateParams, ChainlinkEnvConfig, CliConfig, SwapConfig } from "./types.js";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const packageRoot = join(scriptDir, "..");
@@ -57,11 +62,6 @@ function parseBigIntEnv(name: string, fallback?: bigint): bigint {
   return BigInt(raw);
 }
 
-function parseAddressEnv(name: string): Address {
-  const raw = requireEnv(name);
-  return getAddress(raw);
-}
-
 function parsePrivateKey(): Hex {
   const raw = requireEnv("PRIVATE_KEY");
   const normalized = raw.startsWith("0x") ? raw : `0x${raw}`;
@@ -81,21 +81,27 @@ function parseOptionalHexEnv(name: string): Hex | undefined {
   return normalized;
 }
 
-export function loadSwapConfig(overrides: Partial<SwapConfig> = {}): SwapConfig {
-  const rpcUrl =
-    overrides.rpcUrl ??
+function parseOptionalAddressEnv(name: string): Address | undefined {
+  const raw = optionalEnv(name);
+  if (!raw) return undefined;
+  return getAddress(raw);
+}
+
+function resolveRpcUrl(override?: string): string {
+  return (
+    override ??
     optionalEnv("BASE_RPC_URL") ??
     (() => {
       throw new Error("Missing BASE_RPC_URL in scripts/lifi-swap/.env");
-    })();
+    })()
+  );
+}
 
+export function loadCliConfig(overrides: Partial<CliConfig> = {}): CliConfig {
   return {
     privateKey: overrides.privateKey ?? parsePrivateKey(),
-    rpcUrl,
-    fromToken: overrides.fromToken ?? parseAddressEnv("LIFI_FROM_TOKEN"),
-    toToken: overrides.toToken ?? requireEnv("LIFI_TO_TOKEN"),
-    fromAmount: overrides.fromAmount ?? parseBigIntEnv("LIFI_FROM_AMOUNT"),
-    toChain: overrides.toChain ?? Number(optionalEnv("LIFI_TO_CHAIN") ?? BASE_CHAIN_ID),
+    rpcUrl: resolveRpcUrl(overrides.rpcUrl),
+    fromAmount: overrides.fromAmount ?? parseBigIntEnv("LIFI_FROM_AMOUNT", 1_000_000n),
     slippage: overrides.slippage ?? Number(optionalEnv("LIFI_SLIPPAGE") ?? "0.005"),
     periodAmount:
       overrides.periodAmount ?? parseBigIntEnv("LIFI_PERIOD_AMOUNT", 10_000_000n),
@@ -110,6 +116,35 @@ export function loadSwapConfig(overrides: Partial<SwapConfig> = {}): SwapConfig 
     outputRecipientBytes32Override:
       overrides.outputRecipientBytes32Override ??
       parseOptionalHexEnv("LIFI_OUTPUT_RECIPIENT_BYTES32"),
+    lifiDiamondOverride:
+      overrides.lifiDiamondOverride ?? parseOptionalAddressEnv("LIFI_DIAMOND"),
+  };
+}
+
+/** Legacy helper: full swap pair from env. Prefer resolveCreateRoute() + loadCliConfig() for create. */
+export function loadSwapConfig(overrides: Partial<SwapConfig> = {}): SwapConfig {
+  const cli = loadCliConfig(overrides);
+  const fromTokenRaw = optionalEnv("LIFI_FROM_TOKEN");
+  const toTokenRaw = optionalEnv("LIFI_TO_TOKEN");
+
+  if (!overrides.fromToken && !fromTokenRaw) {
+    throw new Error(
+      "Missing LIFI_FROM_TOKEN — use route flags on create or set LIFI_FROM_TOKEN in .env",
+    );
+  }
+  if (!overrides.toToken && !toTokenRaw) {
+    throw new Error(
+      "Missing LIFI_TO_TOKEN — use route flags on create or set LIFI_TO_TOKEN in .env",
+    );
+  }
+
+  return {
+    ...cli,
+    fromToken:
+      overrides.fromToken ??
+      getAddress(fromTokenRaw!),
+    toToken: overrides.toToken ?? toTokenRaw!,
+    toChain: overrides.toChain ?? Number(optionalEnv("LIFI_TO_CHAIN") ?? BASE_CHAIN_ID),
   };
 }
 
@@ -171,4 +206,75 @@ export function flagString(
 
 export function flagBool(flags: Record<string, string | boolean>, key: string): boolean {
   return flags[key] === true;
+}
+
+export function parseCommaList(raw: string | undefined): string[] | undefined {
+  if (!raw) return undefined;
+  const items = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return items.length > 0 ? items : undefined;
+}
+
+export function loadChainlinkEnvConfig(): ChainlinkEnvConfig {
+  const priceFeedRaw = optionalEnv("CHAINLINK_PRICE_FEED") ?? DEFAULT_CHAINLINK_PRICE_FEED;
+  return {
+    priceFeed: getAddress(priceFeedRaw),
+    maxStaleSeconds: Number(optionalEnv("CHAINLINK_MAX_STALE_SECONDS") ?? "120"),
+    minGapSeconds: Number(optionalEnv("CHAINLINK_MIN_GAP_SECONDS") ?? "300"),
+  };
+}
+
+export function parseChainlinkCreateFlags(
+  flags: Record<string, string | boolean>,
+): ChainlinkCreateParams {
+  const ruleKindRaw = flagString(flags, "rule-kind");
+  if (!ruleKindRaw) {
+    throw new Error("create-chainlink requires --rule-kind (dip|rise|absolute_gte|absolute_lte)");
+  }
+
+  const windowRaw = flagString(flags, "window-seconds");
+  if (windowRaw === undefined) {
+    throw new Error("create-chainlink requires --window-seconds");
+  }
+
+  const thresholdRaw = flagString(flags, "threshold-bps");
+  if (thresholdRaw === undefined) {
+    throw new Error("create-chainlink requires --threshold-bps");
+  }
+
+  const triggerRaw = flagString(flags, "trigger-price");
+  if (triggerRaw === undefined) {
+    throw new Error("create-chainlink requires --trigger-price");
+  }
+
+  const ruleKind = parseRuleKind(ruleKindRaw);
+  const windowSeconds = Number(windowRaw);
+  const thresholdBps = Number(thresholdRaw);
+  const triggerPrice = BigInt(triggerRaw);
+
+  if (isRelativeRuleKind(ruleKind)) {
+    if (windowSeconds <= 0) {
+      throw new Error(`${ruleKind} requires --window-seconds > 0`);
+    }
+    if (thresholdBps <= 0 || thresholdBps >= 10_000) {
+      throw new Error(`${ruleKind} requires 0 < --threshold-bps < 10000`);
+    }
+    if (triggerPrice !== 0n) {
+      throw new Error(`${ruleKind} requires --trigger-price 0`);
+    }
+  } else {
+    if (triggerPrice <= 0n) {
+      throw new Error(`${ruleKind} requires --trigger-price > 0`);
+    }
+    if (windowSeconds !== 0) {
+      throw new Error(`${ruleKind} requires --window-seconds 0`);
+    }
+    if (thresholdBps !== 0) {
+      throw new Error(`${ruleKind} requires --threshold-bps 0`);
+    }
+  }
+
+  return { ruleKind, windowSeconds, thresholdBps, triggerPrice };
 }

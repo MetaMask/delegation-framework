@@ -5,13 +5,15 @@ import {
   flagBool,
   flagNumber,
   flagString,
+  loadChainlinkEnvConfig,
   loadCliConfig,
   parseArgs,
+  parseChainlinkCreateFlags,
 } from "../config.js";
 import {
   createApproveDelegation,
+  createPriceGatedSwapDelegation,
   createSmartAccountContext,
-  createSwapDelegation,
 } from "../delegations.js";
 import { resolveTermsEncodings } from "../lifi.js";
 import { getChainCapabilities } from "../relayer.js";
@@ -24,15 +26,17 @@ import {
   type ResolvedRoute,
 } from "../routeConfig.js";
 import { delegationExists, saveDelegation } from "../store.js";
-import { encodeLiFiTerms } from "../terms.js";
-import type { CliConfig, LiFiTermsRecord, SavedDelegation } from "../types.js";
+import type { ChainlinkTermsRecord, CliConfig, LiFiTermsRecord, SavedDelegation } from "../types.js";
 
-function defaultId(route: ResolvedRoute, cli: CliConfig): string {
-  return `${route.inputChain.key}-${route.inputToken.symbol}-${route.outputToken.symbol}-${cli.periodAmount}-${cli.periodDuration}s`;
+function defaultId(route: ResolvedRoute, cli: CliConfig, ruleKind: string): string {
+  return `chainlink-${ruleKind}-${route.inputChain.key}-${route.inputToken.symbol}-${route.outputToken.symbol}-${cli.periodAmount}-${cli.periodDuration}s`;
 }
 
-export async function runCreateCommand(argv: string[]): Promise<void> {
+export async function runCreateChainlinkCommand(argv: string[]): Promise<void> {
   const { flags } = parseArgs(argv);
+  const chainlinkParams = parseChainlinkCreateFlags(flags);
+  const chainlinkEnv = loadChainlinkEnvConfig();
+
   const lifiDiamondFlag = flagString(flags, "lifi-diamond");
   const cli = loadCliConfig({
     fromAmount: flagBigInt(flags, "amount") ?? undefined,
@@ -44,7 +48,8 @@ export async function runCreateCommand(argv: string[]): Promise<void> {
   });
 
   const route = await resolveCreateRoute(flags);
-  const id = flagString(flags, "id") ?? defaultId(route, cli);
+  const id =
+    flagString(flags, "id") ?? defaultId(route, cli, chainlinkParams.ruleKind);
   const name = flagString(flags, "name") ?? id;
   const force = flagBool(flags, "force");
   const inputToken = inputTokenAsAddress(route.inputToken);
@@ -81,7 +86,18 @@ export async function runCreateCommand(argv: string[]): Promise<void> {
     outputRecipientBytes32Override: cli.outputRecipientBytes32Override,
   });
 
-  const terms: LiFiTermsRecord = {
+  const chainlinkTerms: ChainlinkTermsRecord = {
+    priceFeed: chainlinkEnv.priceFeed,
+    ruleKind: chainlinkParams.ruleKind,
+    expectedDecimals: 0,
+    windowSeconds: String(chainlinkParams.windowSeconds),
+    thresholdBps: chainlinkParams.thresholdBps,
+    maxStaleSeconds: String(chainlinkEnv.maxStaleSeconds),
+    minGapSeconds: String(chainlinkEnv.minGapSeconds),
+    triggerPrice: chainlinkParams.triggerPrice.toString(),
+  };
+
+  const lifiTerms: LiFiTermsRecord = {
     lifiDiamond,
     inputToken,
     outputAssetId,
@@ -94,10 +110,17 @@ export async function runCreateCommand(argv: string[]): Promise<void> {
     slippageBps: cli.slippageBps,
   };
 
-  const { delegation: swapDelegation, delegationHash } = await createSwapDelegation(
+  const {
+    delegation: swapDelegation,
+    delegationHash,
+    chainlinkTerms: resolvedChainlinkTerms,
+    chainlinkTermsBytes,
+    lifiTermsBytes,
+  } = await createPriceGatedSwapDelegation(
     ctx,
     chainCaps.targetAddress,
-    terms,
+    chainlinkTerms,
+    lifiTerms,
   );
 
   let approveDelegation;
@@ -120,9 +143,11 @@ export async function runCreateCommand(argv: string[]): Promise<void> {
     toToken: route.toToken,
     relayerTargetAddress: chainCaps.targetAddress,
     relayerUrl: cli.relayerUrl,
-    terms,
+    terms: lifiTerms,
     swapDelegation,
     approveDelegation,
+    chainlinkTerms: resolvedChainlinkTerms,
+    delegationType: "chainlink-lifi",
     metadata: {
       inputChain: route.inputChain.name,
       outputChain: route.outputChain.name,
@@ -134,34 +159,30 @@ export async function runCreateCommand(argv: string[]): Promise<void> {
   };
 
   const path = saveDelegation(saved, { force });
-  const termsBytes = encodeLiFiTerms({
-    lifiDiamond: terms.lifiDiamond,
-    inputToken: terms.inputToken,
-    outputAssetId: terms.outputAssetId,
-    outputRecipient: terms.outputRecipient,
-    destinationChainId: BigInt(terms.destinationChainId),
-    quoteSigner: terms.quoteSigner,
-    periodAmount: BigInt(terms.periodAmount),
-    periodDuration: BigInt(terms.periodDuration),
-    startDate: BigInt(terms.startDate),
-    slippageBps: BigInt(terms.slippageBps),
-  });
 
-  console.log("Saved delegation:");
+  console.log("Saved price-gated delegation:");
   console.log(`  id:              ${id}`);
   console.log(`  path:            ${path}`);
   console.log(`  executionChain:  ${route.fromChainId} (${route.inputChain.name})`);
   console.log(`  delegator:       ${ctx.delegator}`);
   console.log(`  delegationHash:  ${delegationHash}`);
+  console.log(`  ruleKind:        ${resolvedChainlinkTerms.ruleKind}`);
+  console.log(`  priceFeed:       ${resolvedChainlinkTerms.priceFeed}`);
+  console.log(`  windowSeconds:   ${resolvedChainlinkTerms.windowSeconds}`);
+  console.log(`  thresholdBps:    ${resolvedChainlinkTerms.thresholdBps}`);
+  console.log(`  triggerPrice:    ${resolvedChainlinkTerms.triggerPrice}`);
+  console.log(`  maxStaleSeconds: ${resolvedChainlinkTerms.maxStaleSeconds}`);
+  console.log(`  minGapSeconds:   ${resolvedChainlinkTerms.minGapSeconds}`);
+  console.log(`  expectedDecimals:${resolvedChainlinkTerms.expectedDecimals}`);
+  console.log(`  chainlinkTerms:  ${chainlinkTermsBytes}`);
   console.log(`  lifiDiamond:     ${lifiDiamond}`);
   console.log(`  toChain:         ${route.toChainId}`);
   console.log(`  toToken:         ${route.toToken}`);
   console.log(`  liFiToAddress:   ${outputRecipient}`);
-  console.log(`  outputAssetId:   ${terms.outputAssetId}`);
-  console.log(`  outputRecipient: ${terms.outputRecipient}`);
-  console.log(`  periodAmount:    ${terms.periodAmount}`);
-  console.log(`  periodDuration:  ${terms.periodDuration}s`);
-  console.log(`  startDate:       ${terms.startDate}`);
-  console.log(`  termsBytes:      ${termsBytes}`);
+  console.log(`  periodAmount:    ${lifiTerms.periodAmount}`);
+  console.log(`  periodDuration:  ${lifiTerms.periodDuration}s`);
+  console.log(`  lifiTermsBytes:  ${lifiTermsBytes}`);
   console.log(`  relayerTarget:   ${saved.relayerTargetAddress}`);
+  console.log("");
+  console.log(`Next: npm run chainlink -- check ${id}`);
 }

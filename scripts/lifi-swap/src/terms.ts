@@ -1,5 +1,6 @@
 import { encodePacked, keccak256, padHex, stringToBytes, toHex, type Address, type Hex } from "viem";
 
+import { encodeLiFiBitcoinBytes32, isBitcoinAddress } from "./bitcoinEncoding.js";
 import { TERMS_LENGTH } from "./constants.js";
 import type { LiFiTermsRecord } from "./types.js";
 
@@ -7,8 +8,11 @@ export function addressToBytes32(address: Address): Hex {
   return padHex(address, { size: 32 });
 }
 
-/** LiFi-compatible bytes32 for non-EVM token ids and recipients (≤32 UTF-8 bytes left-padded, else keccak256). */
+/** LiFi-compatible bytes32 for non-EVM token ids and recipients. */
 export function encodeLiFiNonEvmBytes32(value: string): Hex {
+  if (isBitcoinAddress(value)) {
+    return encodeLiFiBitcoinBytes32(value);
+  }
   const bytes = stringToBytes(value);
   if (bytes.length > 32) {
     return keccak256(bytes);

@@ -5,11 +5,15 @@
   "type": "module",
   "scripts": {
     "delegation": "tsx src/index.ts delegation",
+    "chainlink": "tsx src/index.ts chainlink",
     "approve": "tsx src/index.ts approve",
-    "execute": "tsx src/index.ts execute"
+    "execute": "tsx src/index.ts execute",
+    "lifi": "tsx src/index.ts lifi",
+    "test": "tsx --test src/termsEncoding.test.ts src/bitcoinEncoding.test.ts"
   },
   "dependencies": {
     "@metamask/smart-accounts-kit": "^1.3.0",
+    "bech32": "^2.0.0",
     "viem": "^2.21.0"
   },
   "devDependencies": {

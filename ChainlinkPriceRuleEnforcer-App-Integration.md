@@ -417,7 +417,7 @@ Flip LiFi terms: `inputToken = WETH`, output = USDC. Ensure WETH approve delegat
 |---|---|
 | `ChainlinkPriceRuleEnforcer` | `0x4dAEbF9C5813EFF2606acD41BA25e57841e7cb75` |
 | `DelegationManager` | `0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3` |
-| `LiFiSwapEnforcer` | `0x47472E8AA7012D1c23336aa28514AE94389318f5` |
+| `LiFiSwapEnforcer` | `0x64a9B2277dcDD134e78d30bEe11c3056e8E56ffE` |
 | ETH/USD feed | `0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70` |
 | USDC/USD feed | `0x7e860098F58bBFC8648a4311b374B1D669a2bc6B` |
 
