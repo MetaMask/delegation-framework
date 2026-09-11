@@ -353,12 +353,7 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         Execution[] memory executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
         executions_[1].callData = abi.encodeCall(
             IMetaSwap.swap,
-            (
-                "redeemer-route",
-                IERC20(address(tokenIn)),
-                TOKEN_IN_AMOUNT,
-                abi.encode(IERC20(address(0)), TOKEN_OUT_AMOUNT)
-            )
+            ("redeemer-route", IERC20(address(tokenIn)), TOKEN_IN_AMOUNT, abi.encode(IERC20(address(0)), TOKEN_OUT_AMOUNT))
         );
         uint256 nativeBefore_ = orderAccount.balance;
 
@@ -412,6 +407,217 @@ contract MetaSwapOrderDelegationManagerTest is Test {
 
         vm.expectRevert(MetaSwapOrderDelegationManager.InvalidIntent.selector);
         _redeemIntent(delegation_, ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT)));
+    }
+
+    // -------- Flexible validation (ported from MetaSwapFlexibleSettlementEnforcer) --------
+
+    function test_flexibleRejectsInvalidTermsLength() public {
+        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidTerms.selector);
+        orderManager.getFlexibleTermsInfo(new bytes(145));
+
+        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidTerms.selector);
+        orderManager.getFlexibleTermsInfo(new bytes(147));
+    }
+
+    function test_flexibleRejectsInvalidRequiredTerms() public {
+        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidTerms.selector);
+        orderManager.getFlexibleTermsInfo(
+            _rawFlexibleTerms(address(0), address(tokenIn), TOKEN_IN_AMOUNT, uint8(_approveMode()), address(tokenOut), orderAccount)
+        );
+
+        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidTerms.selector);
+        orderManager.getFlexibleTermsInfo(
+            _rawFlexibleTerms(address(metaSwap), address(tokenIn), 0, uint8(_approveMode()), address(tokenOut), orderAccount)
+        );
+
+        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidTerms.selector);
+        orderManager.getFlexibleTermsInfo(
+            _rawFlexibleTerms(
+                address(metaSwap), address(tokenIn), TOKEN_IN_AMOUNT, uint8(_approveMode()), address(tokenOut), address(0)
+            )
+        );
+
+        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidTerms.selector);
+        orderManager.getFlexibleTermsInfo(
+            _rawFlexibleTerms(
+                address(metaSwap), address(tokenIn), TOKEN_IN_AMOUNT, uint8(_approveMode()), address(tokenOut), orderAccount, 0
+            )
+        );
+
+        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidTerms.selector);
+        orderManager.getFlexibleTermsInfo(
+            _rawFlexibleTerms(
+                address(metaSwap), address(tokenIn), TOKEN_IN_AMOUNT, uint8(_approveMode()), address(tokenIn), orderAccount
+            )
+        );
+    }
+
+    function test_flexibleRejectsUndefinedApprovalMode() public {
+        vm.expectRevert(MetaSwapOrderDelegationManager.InvalidApprovalMode.selector);
+        orderManager.getFlexibleTermsInfo(
+            _rawFlexibleTerms(address(metaSwap), address(tokenIn), TOKEN_IN_AMOUNT, 4, address(tokenOut), orderAccount)
+        );
+    }
+
+    function test_flexibleRejectsErc20NoneMode() public {
+        bytes memory terms_ = _flexibleTerms(address(tokenIn), _noneMode(), address(tokenOut), orderAccount);
+        _expectFlexibleRevert(
+            terms_, _erc20Executions(0, TOKEN_OUT_AMOUNT), MetaSwapOrderDelegationManager.InvalidApprovalMode.selector, 50
+        );
+    }
+
+    function test_flexibleRejectsWrongApprovalShape() public {
+        _expectFlexibleRevert(
+            _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount),
+            _erc20Executions(0, TOKEN_OUT_AMOUNT),
+            MetaSwapOrderDelegationManager.ApprovalShapeNotAllowed.selector,
+            51
+        );
+        _expectFlexibleRevert(
+            _flexibleTerms(address(tokenIn), _skipApprovalMode(), address(tokenOut), orderAccount),
+            _erc20Executions(1, TOKEN_OUT_AMOUNT),
+            MetaSwapOrderDelegationManager.ApprovalShapeNotAllowed.selector,
+            52
+        );
+        _expectFlexibleRevert(
+            _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount),
+            _erc20Executions(2, TOKEN_OUT_AMOUNT),
+            MetaSwapOrderDelegationManager.ApprovalShapeNotAllowed.selector,
+            53
+        );
+    }
+
+    function test_flexibleRejectsUnsupportedBatchLengths() public {
+        Execution[] memory empty_ = new Execution[](0);
+        _expectFlexibleRevert(
+            _flexibleTerms(address(tokenIn), _skipApprovalMode(), address(tokenOut), orderAccount),
+            empty_,
+            MetaSwapOrderDelegationManager.ApprovalShapeNotAllowed.selector,
+            54
+        );
+
+        Execution[] memory tooLong_ = new Execution[](4);
+        _expectFlexibleRevert(
+            _flexibleTerms(address(tokenIn), _resetApproveMode(), address(tokenOut), orderAccount),
+            tooLong_,
+            MetaSwapOrderDelegationManager.ApprovalShapeNotAllowed.selector,
+            55
+        );
+
+        Execution[] memory nativeTooLong_ = new Execution[](2);
+        _expectFlexibleRevert(
+            _flexibleTerms(address(0), _noneMode(), address(tokenOut), orderAccount),
+            nativeTooLong_,
+            MetaSwapOrderDelegationManager.InvalidBatchLength.selector,
+            56
+        );
+    }
+
+    function test_flexibleRejectsInvalidApproval() public {
+        Execution[] memory executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
+        executions_[0].target = makeAddr("OtherToken");
+        _expectInvalidApproval(executions_, 57);
+
+        executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
+        executions_[0].value = 1;
+        _expectInvalidApproval(executions_, 58);
+
+        executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
+        executions_[0].callData = abi.encodePacked(IERC20.approve.selector);
+        _expectInvalidApproval(executions_, 59);
+
+        executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
+        executions_[0].callData = abi.encodeCall(IERC20.transfer, (address(metaSwap), TOKEN_IN_AMOUNT));
+        _expectInvalidApproval(executions_, 60);
+
+        executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
+        executions_[0].callData = abi.encodeCall(IERC20.approve, (makeAddr("OtherSpender"), TOKEN_IN_AMOUNT));
+        _expectInvalidApproval(executions_, 61);
+
+        executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
+        executions_[0].callData = abi.encodePacked(
+            IERC20.approve.selector, bytes32(uint256(uint160(address(metaSwap))) | (uint256(1) << 255)), bytes32(TOKEN_IN_AMOUNT)
+        );
+        _expectInvalidApproval(executions_, 62);
+
+        executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
+        executions_[0].callData = abi.encodeCall(IERC20.approve, (address(metaSwap), TOKEN_IN_AMOUNT - 1));
+        _expectInvalidApproval(executions_, 63);
+    }
+
+    function test_flexibleRejectsInvalidResetApproval() public {
+        Execution[] memory executions_ = _erc20Executions(2, TOKEN_OUT_AMOUNT);
+        executions_[0].callData = abi.encodeCall(IERC20.approve, (address(metaSwap), 1));
+        _expectInvalidApproval(executions_, 64);
+    }
+
+    function test_flexibleRejectsInvalidSwap() public {
+        Execution[] memory executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
+        executions_[1].target = makeAddr("OtherSwap");
+        _expectInvalidSwap(executions_, 65);
+
+        executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
+        executions_[1].value = 1;
+        _expectInvalidSwap(executions_, 66);
+
+        executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
+        executions_[1].callData = abi.encodePacked(IMetaSwap.swap.selector);
+        _expectInvalidSwap(executions_, 67);
+
+        executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
+        executions_[1].callData = abi.encodeCall(IERC20.approve, (address(metaSwap), TOKEN_IN_AMOUNT));
+        _expectInvalidSwap(executions_, 68);
+
+        executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
+        executions_[1].callData = _minimumSwapCalldata(bytes32(uint256(uint160(address(tokenIn))) | (uint256(1) << 255)));
+        _expectInvalidSwap(executions_, 69);
+
+        executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
+        executions_[1].callData = abi.encodeCall(
+            IMetaSwap.swap, ("redeemer-route", IERC20(makeAddr("OtherToken")), TOKEN_IN_AMOUNT, abi.encode(tokenOut, TOKEN_OUT_AMOUNT))
+        );
+        _expectInvalidSwap(executions_, 70);
+
+        executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
+        executions_[1].callData = abi.encodeCall(
+            IMetaSwap.swap, ("redeemer-route", IERC20(address(tokenIn)), TOKEN_IN_AMOUNT - 1, abi.encode(tokenOut, TOKEN_OUT_AMOUNT))
+        );
+        _expectInvalidSwap(executions_, 71);
+    }
+
+    function test_flexibleRejectsIncompleteSwapCalldata() public {
+        Execution[] memory executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
+        executions_[1].callData = abi.encodePacked(
+            IMetaSwap.swap.selector,
+            uint256(128),
+            bytes32(uint256(uint160(address(tokenIn)))),
+            TOKEN_IN_AMOUNT,
+            uint256(160),
+            uint256(0),
+            bytes31(0)
+        );
+        assertEq(executions_[1].callData.length, 195);
+        _expectInvalidSwap(executions_, 72);
+    }
+
+    function test_flexibleAcceptsMinimumLengthSwapCalldata() public {
+        Execution[] memory executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
+        executions_[1].callData = _minimumSwapCalldata(bytes32(uint256(uint160(address(tokenIn)))));
+        assertEq(executions_[1].callData.length, 196);
+
+        bytes memory revertData_ = _redeemCatch(
+            _signIntent(_flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount), 73),
+            ExecutionLib.encodeBatch(executions_)
+        );
+        if (revertData_.length >= 4) {
+            assertTrue(bytes4(revertData_) != MetaSwapOrderDelegationManager.InvalidSwap.selector);
+        }
+    }
+
+    function test_flexibleRejectsNativeSwapWithWrongValue() public {
+        Execution[] memory executions_ = _nativeExecutions(TOKEN_OUT_AMOUNT);
+        executions_[0].value = TOKEN_IN_AMOUNT - 1;
+        _expectInvalidSwap(executions_, 74, _flexibleTerms(address(0), _noneMode(), address(tokenOut), orderAccount));
     }
 
     // -------- Gas comparisons --------
@@ -674,6 +880,96 @@ contract MetaSwapOrderDelegationManagerTest is Test {
             recipient_,
             TOKEN_OUT_MIN
         );
+    }
+
+    function _rawFlexibleTerms(
+        address metaSwap_,
+        address tokenIn_,
+        uint256 tokenInAmount_,
+        uint8 approvalMode_,
+        address tokenOut_,
+        address recipient_
+    )
+        private
+        pure
+        returns (bytes memory)
+    {
+        return _rawFlexibleTerms(metaSwap_, tokenIn_, tokenInAmount_, approvalMode_, tokenOut_, recipient_, TOKEN_OUT_MIN);
+    }
+
+    function _rawFlexibleTerms(
+        address metaSwap_,
+        address tokenIn_,
+        uint256 tokenInAmount_,
+        uint8 approvalMode_,
+        address tokenOut_,
+        address recipient_,
+        uint256 tokenOutMin_
+    )
+        private
+        pure
+        returns (bytes memory)
+    {
+        return abi.encodePacked(
+            uint8(MetaSwapOrderDelegationManager.Intent.FlexibleSettlement),
+            metaSwap_,
+            tokenIn_,
+            tokenInAmount_,
+            approvalMode_,
+            tokenOut_,
+            recipient_,
+            tokenOutMin_
+        );
+    }
+
+    function _minimumSwapCalldata(bytes32 tokenInWord_) private pure returns (bytes memory) {
+        return abi.encodePacked(
+            IMetaSwap.swap.selector, uint256(128), tokenInWord_, TOKEN_IN_AMOUNT, uint256(160), uint256(0), uint256(0)
+        );
+    }
+
+    function _expectFlexibleRevert(
+        bytes memory terms_,
+        Execution[] memory executions_,
+        bytes4 selector_,
+        uint256 salt_
+    )
+        private
+    {
+        Delegation memory delegation_ = _signIntent(terms_, salt_);
+        vm.expectRevert(selector_);
+        _redeemIntent(delegation_, ExecutionLib.encodeBatch(executions_));
+    }
+
+    function _expectInvalidApproval(Execution[] memory executions_, uint256 salt_) private {
+        bytes memory terms_ = executions_.length == 3
+            ? _flexibleTerms(address(tokenIn), _resetApproveMode(), address(tokenOut), orderAccount)
+            : _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount);
+        _expectFlexibleRevert(terms_, executions_, MetaSwapOrderDelegationManager.InvalidApproval.selector, salt_);
+    }
+
+    function _expectInvalidSwap(Execution[] memory executions_, uint256 salt_) private {
+        _expectInvalidSwap(executions_, salt_, _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount));
+    }
+
+    function _expectInvalidSwap(Execution[] memory executions_, uint256 salt_, bytes memory terms_) private {
+        _expectFlexibleRevert(terms_, executions_, MetaSwapOrderDelegationManager.InvalidSwap.selector, salt_);
+    }
+
+    function _redeemCatch(
+        Delegation memory delegation_,
+        bytes memory executionContext_
+    )
+        private
+        returns (bytes memory revertData_)
+    {
+        (bytes[] memory permissionContexts_, ModeCode[] memory modes_, bytes[] memory executionContexts_) =
+            _redemptionInputs(delegation_, executionContext_);
+        vm.prank(relayer);
+        try orderManager.redeemDelegations(permissionContexts_, modes_, executionContexts_) { }
+        catch (bytes memory reason_) {
+            return reason_;
+        }
     }
 
     function _signIntent(bytes memory terms_, uint256 salt_) private view returns (Delegation memory) {
