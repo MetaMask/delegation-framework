@@ -413,6 +413,38 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         emit log_named_uint("generic ExactBatch + LimitedCalls(1)", gasBefore_ - gasleft());
     }
 
+    function test_gas_genericExactBatchPlusLimitedCallsResetApproval() public {
+        bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20ExecutionsFor(genericAccount, 2, TOKEN_OUT_AMOUNT));
+        Caveat[] memory caveats_ = new Caveat[](2);
+        caveats_[0] = Caveat({ enforcer: address(exactBatchEnforcer), terms: encoded_, args: hex"" });
+        caveats_[1] = Caveat({ enforcer: address(limitedCallsEnforcer), terms: abi.encode(uint256(1)), args: hex"" });
+        Delegation memory delegation_ = _signGeneric(caveats_, 105);
+
+        (bytes[] memory permissionContexts_, ModeCode[] memory modes_, bytes[] memory executionContexts_) =
+            _redemptionInputs(delegation_, encoded_);
+
+        uint256 gasBefore_ = gasleft();
+        vm.prank(relayer);
+        genericManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
+        emit log_named_uint("generic ExactBatch + LimitedCalls(1), reset approval", gasBefore_ - gasleft());
+    }
+
+    function test_gas_genericExactBatchPlusLimitedCallsNative() public {
+        bytes memory encoded_ = ExecutionLib.encodeBatch(_nativeExecutions(TOKEN_OUT_AMOUNT));
+        Caveat[] memory caveats_ = new Caveat[](2);
+        caveats_[0] = Caveat({ enforcer: address(exactBatchEnforcer), terms: encoded_, args: hex"" });
+        caveats_[1] = Caveat({ enforcer: address(limitedCallsEnforcer), terms: abi.encode(uint256(1)), args: hex"" });
+        Delegation memory delegation_ = _signGeneric(caveats_, 106);
+
+        (bytes[] memory permissionContexts_, ModeCode[] memory modes_, bytes[] memory executionContexts_) =
+            _redemptionInputs(delegation_, encoded_);
+
+        uint256 gasBefore_ = gasleft();
+        vm.prank(relayer);
+        genericManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
+        emit log_named_uint("generic ExactBatch + LimitedCalls(1), native", gasBefore_ - gasleft());
+    }
+
     function test_gas_genericFlexibleSettlementEnforcer() public {
         bytes memory terms_ = abi.encodePacked(
             address(metaSwap),
@@ -435,6 +467,54 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         vm.prank(relayer);
         genericManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
         emit log_named_uint("generic FlexibleSettlementEnforcer", gasBefore_ - gasleft());
+    }
+
+    function test_gas_genericFlexibleSettlementEnforcerResetApproval() public {
+        bytes memory terms_ = abi.encodePacked(
+            address(metaSwap),
+            address(tokenIn),
+            TOKEN_IN_AMOUNT,
+            uint8(MetaSwapFlexibleSettlementEnforcer.ApprovalMode.ResetApprove),
+            address(tokenOut),
+            genericAccount,
+            TOKEN_OUT_MIN
+        );
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] = Caveat({ enforcer: address(flexibleEnforcer), terms: terms_, args: hex"" });
+        Delegation memory delegation_ = _signGeneric(caveats_, 107);
+        bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20ExecutionsFor(genericAccount, 2, TOKEN_OUT_AMOUNT));
+
+        (bytes[] memory permissionContexts_, ModeCode[] memory modes_, bytes[] memory executionContexts_) =
+            _redemptionInputs(delegation_, encoded_);
+
+        uint256 gasBefore_ = gasleft();
+        vm.prank(relayer);
+        genericManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
+        emit log_named_uint("generic FlexibleSettlementEnforcer, reset approval", gasBefore_ - gasleft());
+    }
+
+    function test_gas_genericFlexibleSettlementEnforcerNative() public {
+        bytes memory terms_ = abi.encodePacked(
+            address(metaSwap),
+            address(0),
+            TOKEN_IN_AMOUNT,
+            uint8(MetaSwapFlexibleSettlementEnforcer.ApprovalMode.None),
+            address(tokenOut),
+            genericAccount,
+            TOKEN_OUT_MIN
+        );
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] = Caveat({ enforcer: address(flexibleEnforcer), terms: terms_, args: hex"" });
+        Delegation memory delegation_ = _signGeneric(caveats_, 108);
+        bytes memory encoded_ = ExecutionLib.encodeBatch(_nativeExecutions(TOKEN_OUT_AMOUNT));
+
+        (bytes[] memory permissionContexts_, ModeCode[] memory modes_, bytes[] memory executionContexts_) =
+            _redemptionInputs(delegation_, encoded_);
+
+        uint256 gasBefore_ = gasleft();
+        vm.prank(relayer);
+        genericManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
+        emit log_named_uint("generic FlexibleSettlementEnforcer, native", gasBefore_ - gasleft());
     }
 
     function test_gas_hooklessFlexible() public {
@@ -461,7 +541,7 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         emit log_named_uint("hookless flexible", gasBefore_ - gasleft());
     }
 
-    function test_gas_intentExact() public {
+    function test_gas_orderExact() public {
         bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT));
         Delegation memory delegation_ = _signIntent(_exactTerms(keccak256(encoded_)), 103);
 
@@ -474,7 +554,33 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         emit log_named_uint("order ExactCalldata", gasBefore_ - gasleft());
     }
 
-    function test_gas_intentFlexible() public {
+    function test_gas_orderExactResetApproval() public {
+        bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(2, TOKEN_OUT_AMOUNT));
+        Delegation memory delegation_ = _signIntent(_exactTerms(keccak256(encoded_)), 109);
+
+        (bytes[] memory permissionContexts_, ModeCode[] memory modes_, bytes[] memory executionContexts_) =
+            _redemptionInputs(delegation_, encoded_);
+
+        uint256 gasBefore_ = gasleft();
+        vm.prank(relayer);
+        orderManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
+        emit log_named_uint("order ExactCalldata, reset approval", gasBefore_ - gasleft());
+    }
+
+    function test_gas_orderExactNative() public {
+        bytes memory encoded_ = ExecutionLib.encodeBatch(_nativeExecutions(TOKEN_OUT_AMOUNT));
+        Delegation memory delegation_ = _signIntent(_exactTerms(keccak256(encoded_)), 110);
+
+        (bytes[] memory permissionContexts_, ModeCode[] memory modes_, bytes[] memory executionContexts_) =
+            _redemptionInputs(delegation_, encoded_);
+
+        uint256 gasBefore_ = gasleft();
+        vm.prank(relayer);
+        orderManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
+        emit log_named_uint("order ExactCalldata, native", gasBefore_ - gasleft());
+    }
+
+    function test_gas_orderFlexible() public {
         bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount);
         Delegation memory delegation_ = _signIntent(terms_, 104);
         bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT));
@@ -486,6 +592,34 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         vm.prank(relayer);
         orderManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
         emit log_named_uint("order FlexibleSettlement", gasBefore_ - gasleft());
+    }
+
+    function test_gas_orderFlexibleResetApproval() public {
+        bytes memory terms_ = _flexibleTerms(address(tokenIn), _resetApproveMode(), address(tokenOut), orderAccount);
+        Delegation memory delegation_ = _signIntent(terms_, 111);
+        bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(2, TOKEN_OUT_AMOUNT));
+
+        (bytes[] memory permissionContexts_, ModeCode[] memory modes_, bytes[] memory executionContexts_) =
+            _redemptionInputs(delegation_, encoded_);
+
+        uint256 gasBefore_ = gasleft();
+        vm.prank(relayer);
+        orderManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
+        emit log_named_uint("order FlexibleSettlement, reset approval", gasBefore_ - gasleft());
+    }
+
+    function test_gas_orderFlexibleNative() public {
+        bytes memory terms_ = _flexibleTerms(address(0), _noneMode(), address(tokenOut), orderAccount);
+        Delegation memory delegation_ = _signIntent(terms_, 112);
+        bytes memory encoded_ = ExecutionLib.encodeBatch(_nativeExecutions(TOKEN_OUT_AMOUNT));
+
+        (bytes[] memory permissionContexts_, ModeCode[] memory modes_, bytes[] memory executionContexts_) =
+            _redemptionInputs(delegation_, encoded_);
+
+        uint256 gasBefore_ = gasleft();
+        vm.prank(relayer);
+        orderManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
+        emit log_named_uint("order FlexibleSettlement, native", gasBefore_ - gasleft());
     }
 
     // -------- Helpers --------

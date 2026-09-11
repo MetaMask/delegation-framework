@@ -54,22 +54,30 @@ Signatures try ECDSA first (EOA and EIP-7702 ETH keys). If that misses, empty ac
 
 `disabledDelegations` is both cancel and one-shot consumption. Failed execution or insufficient output reverts atomically.
 
-## Gas comparison (`approve(amount) + swap`, EIP-7702)
+## Redemption gas comparison (EIP-7702)
 
-Measured around `redeemDelegations` in `test/MetaSwapOrderDelegationManager.t.sol` and the specialized suite:
+Measured with `gasleft()` immediately around `redeemDelegations` in
+`test/MetaSwapOrderDelegationManager.t.sol`. Each pair executes the same swap shape from a one-element root delegation,
+using an ECDSA signature and a zero starting output-token balance. Values include the manager call but exclude top-level
+transaction intrinsic calldata gas.
 
-| Path                                      | Gas       | vs generic              |
-| ----------------------------------------- | --------- | ----------------------- |
-| Generic DM + ExactBatch + LimitedCalls(1) | `230,987` | baseline exact          |
-| Generic DM + FlexibleSettlementEnforcer   | `200,783` | baseline flexible       |
-| Hookless flexible                         | `158,770` | −20.9% vs flexible      |
-| Order ExactCalldata                       | `152,242` | −34.1% vs exact generic |
-| Order FlexibleSettlement                  | `158,990` | −20.8% vs flexible      |
+| Purpose                  | Swap shape        | Existing `DelegationManager` path             | Existing gas | Order gas | Saving |
+| ------------------------ | ----------------- | --------------------------------------------- | ------------ | --------- | ------ |
+| Gasless exact swap       | Native swap       | `ExactExecutionBatch` + `LimitedCalls(1)`     | `167,475`    | `96,618`  | 42.3%  |
+| Gasless exact swap       | `approve + swap`  | `ExactExecutionBatch` + `LimitedCalls(1)`     | `230,987`    | `152,242` | 34.1%  |
+| Gasless exact swap       | `reset + approve + swap` | `ExactExecutionBatch` + `LimitedCalls(1)` | `244,355`    | `157,710` | 35.5%  |
+| Flexible limit order     | Native swap       | `MetaSwapFlexibleSettlementEnforcer`          | `143,414`    | `101,730` | 29.1%  |
+| Flexible limit order     | `approve + swap`  | `MetaSwapFlexibleSettlementEnforcer`          | `200,783`    | `158,990` | 20.8%  |
+| Flexible limit order     | `reset + approve + swap` | `MetaSwapFlexibleSettlementEnforcer`    | `207,974`    | `166,072` | 20.1%  |
 
 Takeaways:
 
-- Flattened exact order is the cheapest path: no second enforcer, no LimitedCalls nested mapping, no self-`execute` wrap.
-- Order flexible matches hookless (~same gas); the unified manager does not pay a meaningful premium for dispatch.
+- Exact orders save 34–42% by replacing generic delegation loops, hook calls, full execution terms, and the
+  `LimitedCallsEnforcer` state/event with a specialized one-shot path.
+- Flexible orders save 20–29% while retaining the existing enforcer's approval-shape, swap-calldata, and output-delta
+  validations.
+- The specialized manager's compact redemption event is part of the measured saving; the generic manager emits the full
+  delegation.
 
 ## Limitations
 
