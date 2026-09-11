@@ -127,7 +127,7 @@ Use the [LiFi API](https://docs.li.fi/) (or your routing layer) to obtain:
 Constraints:
 
 - `target = terms.lifiDiamond`
-- `value = 0` (v1 — native-fee bridges not supported)
+- `value = 0` for ERC20 input, or `value = inputAmount` when `inputToken == address(0)` (native ETH input)
 - `callData.length >= 4`
 
 Ensure the user's DeleGator is the `msg.sender` from LiFi's perspective (tokens pulled via `transferFrom(delegator, ...)`), which requires prior `approve(lifiDiamond, ...)`.
@@ -245,6 +245,7 @@ Your **session account** (delegate) typically submits the UserOp or transaction 
 | Scenario | On-chain outcome |
 |---|---|
 | Same-chain + EVM `outputRecipient` + EVM `outputAssetId` | `afterHook` verifies recipient balance increased by ≥ `quote.minAmountOut` |
+| Same-chain + EVM `outputRecipient` + `bytes32(0)` output | `afterHook` verifies `recipient.balance` increased by ≥ `quote.minAmountOut` (native ETH) |
 | Cross-chain or non-EVM recipient | `afterHook` silently no-ops; bridge initiation is the last enforced step |
 
 Do not rely on source-chain balance checks for cross-chain delivery confirmation.
@@ -318,7 +319,7 @@ Terms use LiFi API `bytes32` for BTC asset id and recipient, and LiFi BTC `desti
 | Contract | v1.3.0 (most chains) |
 |---|---|
 | `DelegationManager` | `0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3` |
-| `LiFiSwapEnforcer` | Deploy per chain — not yet in [`documents/Deployments.md`](documents/Deployments.md) |
+| `LiFiSwapEnforcer` | `0x64a9B2277dcDD134e78d30bEe11c3056e8E56ffE` — see [`documents/Deployments.md`](documents/Deployments.md) |
 
 LiFi Diamond: use [`deployments/`](https://github.com/lifinance/contracts/tree/main/deployments) from the LI.FI contracts repo for your network.
 

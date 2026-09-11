@@ -135,6 +135,10 @@ ERC721MultiOperationIncreaseBalanceEnforcer: 0x44877cDAFC0d529ab144bb6B0e202eE37
 ERC1155MultiOperationIncreaseBalanceEnforcer: 0x9eB86bbdaA71D4D8d5Fb1B8A9457F04D3344797b
 NativeTokenMultiOperationIncreaseBalanceEnforcer: 0xaD551E9b971C1b0c02c577bFfCFAA20b81777276
 ApprovalRevocationEnforcer: 0xe264F1f09A19505a1ca1a86D5b01E8bFdb64324A
+LiFiSwapEnforcer: 0xD0e70cd777a527fB798e5EcA8800c5E3588041d4
+ChainlinkPriceRuleEnforcer: 0x4dAEbF9C5813EFF2606acD41BA25e57841e7cb75
+
+> **LiFiSwapEnforcer v2 (Base, 2026-03-20):** Calldata verification upgrade — `beforeHook` decodes LiFi execution calldata and verifies destination chain + recipient against user-signed terms. CREATE2 salt `GATOR`, deployer `0x9fEad8B19C044C2f404dac38B925Ea16ADaa2954`. Previous deployment `0x64a9B2277dcDD134e78d30bEe11c3056e8E56ffE` is superseded on Base.
 
 DelegationMetaSwapAdapter
 Ethereum: 0xe41eB5A3F6e35f1A8C77113F372892D09820C3fD

@@ -7,6 +7,9 @@ out/
 
 report/
 
+.agents/
+skills-lock.json
+
 # Docs
 docs/
 
@@ -23,3 +26,7 @@ filtered-lcov.info
 
 # Node Modules
 node_modules/
+
+# LiFi swap CLI saved delegations (signed payloads)
+scripts/lifi-swap/delegations/*.json
+scripts/lifi-swap/.env

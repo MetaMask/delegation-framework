@@ -58,6 +58,7 @@ ENFORCERS=(
   "ERC1155MultiOperationIncreaseBalanceEnforcer"
   "NativeTokenMultiOperationIncreaseBalanceEnforcer"
   "ApprovalRevocationEnforcer"
+  "LiFiSwapEnforcer"
 )
 
 ADDRESSES=(
@@ -96,6 +97,7 @@ ADDRESSES=(
   "0x9eB86bbdaA71D4D8d5Fb1B8A9457F04D3344797b"
   "0xaD551E9b971C1b0c02c577bFfCFAA20b81777276"
   "0xe264F1f09A19505a1ca1a86D5b01E8bFdb64324A"
+  "0xD0e70cd777a527fB798e5EcA8800c5E3588041d4"
 )
 
 ###############################################################################

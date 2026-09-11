@@ -506,3 +506,81 @@ If you have deep knowledge of the delegation framework and specifically need to 
 
 - State will be isolated under the wrapper's address namespace
 - This pattern should only be used when the isolation is intentional and well-understood
+
+---
+
+### ChainlinkPriceRuleEnforcer
+
+The `ChainlinkPriceRuleEnforcer` gates a delegation's redemption on a Chainlink price condition. It composes alongside other enforcers (e.g. `LiFiSwapEnforcer`) on the same delegation — all `beforeHook` checks must pass (AND semantics).
+
+#### Rule kinds
+
+| Kind | Value | Description |
+| --- | --- | --- |
+| `DIP` | 0 | Price fell ≥ `thresholdBps` over ≤ `windowSeconds` |
+| `RISE` | 1 | Price rose ≥ `thresholdBps` over ≤ `windowSeconds` |
+| `ABSOLUTE_GTE` | 2 | Current price ≥ `triggerPrice` |
+| `ABSOLUTE_LTE` | 3 | Current price ≤ `triggerPrice` |
+
+#### Terms layout (68 bytes, signed at delegation time)
+
+| Offset | Field | Size | Type | Notes |
+| --- | --- | --- | --- | --- |
+| 0 | `priceFeed` | 20 | `address` | Chainlink proxy (e.g. Base ETH/USD `0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70`) |
+| 20 | `ruleKind` | 1 | `uint8` | See rule kind table |
+| 21 | `expectedDecimals` | 1 | `uint8` | Must match `feed.decimals()` (1-18); prevents decimal mismatch errors |
+| 22 | `windowSeconds` | 4 | `uint32` | For DIP/RISE; 0 for absolute |
+| 26 | `thresholdBps` | 2 | `uint16` | e.g. 1000 = 10%; 0 for absolute |
+| 28 | `maxStaleSeconds` | 4 | `uint32` | Max age of current round |
+| 32 | `minGapSeconds` | 4 | `uint32` | Min age of reference round (anti-noise); 0 = only blocks future timestamps |
+| 36 | `triggerPrice` | 32 | `int256` | Feed decimals; 0 = unused (relative rules) |
+
+Pack with `ChainlinkPriceRuleLib.encodeTerms()` or `abi.encodePacked(...)` in the same field order.
+
+#### Args layout (redemption time)
+
+```solidity
+args = abi.encode(uint80 referenceRoundId)  // 0 for absolute-only rules
+```
+
+#### Trust model
+
+- **Current price**: always `latestRoundData()` on `terms.priceFeed` (never from args). Validates `answeredInRound >= roundId` (round is complete), `updatedAt > 0`, and `block.timestamp - updatedAt <= maxStaleSeconds`.
+- **Reference price**: `args.referenceRoundId` → `getRoundData()` + timestamp validation against `terms.windowSeconds`. Validates `answeredInRound >= referenceRoundId`, `referenceRoundId < latestRoundId`, and `updatedAt` is within `[now - windowSeconds, now - minGapSeconds]`.
+- **Decimals**: `feed.decimals()` must match `terms.expectedDecimals` — prevents decimal mismatch errors on `triggerPrice`.
+- **afterHook**: no-op (price check is pre-execution only; no state writes).
+
+A malicious redeemer cannot game the condition by supplying a stale `referenceRoundId` — the enforcer validates `updatedAt` against the user-specified window and `minGapSeconds`, and rejects future timestamps even when `minGapSeconds == 0`.
+
+**Feed address verification (critical):** The enforcer does NOT validate `priceFeed` against a registry. Integrators building delegation-construction UIs MUST hard-verify the feed address (e.g. against the [Chainlink feeds list](https://docs.chain.link/data-feeds/price-feeds/addresses)) before presenting terms to the user for signing. A malicious feed address completely bypasses all price checks and allows the redeemer to trigger the rule at will.
+
+#### Composition with LiFiSwapEnforcer
+
+Stack on the same delegation:
+
+| Caveat | Enforcer | Purpose |
+| --- | --- | --- |
+| `allowedTargets` | `AllowedTargetsEnforcer` | Only LiFi diamond |
+| `valueLte` | `ValueLteEnforcer` | No ETH |
+| `chainlinkPriceRule` | `ChainlinkPriceRuleEnforcer` | Price gate (dip / rise / absolute) |
+| `lifiSwap` | `LiFiSwapEnforcer` | Budget, slippage, signed quote |
+
+Use cases: "buy the dip" (DIP rule), "take profit" (RISE or ABSOLUTE_GTE), "spike sell" (RISE with short window).
+
+#### Base mainnet price feeds
+
+| Pair | Proxy address |
+| --- | --- |
+| ETH/USD | `0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70` |
+| USDC/USD | `0x7e860098F58bBFC8648a4311b374B1D669a2bc6B` |
+
+Always verify feed addresses via the [Chainlink price feed addresses page](https://docs.chain.link/data-feeds/price-feeds/addresses) before production use.
+
+#### L2 considerations
+
+On L2s (Base, Arbitrum, etc.), consider also using a [sequencer uptime feed](https://docs.chain.link/data-feeds/l2-sequencer-feeds) to avoid reading stale prices during sequencer downtime. This enforcer only checks `maxStaleSeconds`; it does not integrate a sequencer feed directly.
+
+#### Integration guides
+
+- [Wallet integration guide](../ChainlinkPriceRuleEnforcer-Wallet-Integration.md) — EIP-7715 grant flow, terms encoding, LiFi stacking
+- [App integration guide](../ChainlinkPriceRuleEnforcer-App-Integration.md) — reference round selection, redemption, buy-the-dip / take-profit examples
