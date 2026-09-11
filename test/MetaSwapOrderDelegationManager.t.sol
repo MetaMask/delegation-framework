@@ -347,6 +347,27 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         assertEq(tokenOut.balanceOf(orderAccount), TOKEN_OUT_AMOUNT);
     }
 
+    function test_flexibleRedeemsNativeOutput() public {
+        bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(0), orderAccount);
+        Delegation memory delegation_ = _signIntent(terms_, 19);
+        Execution[] memory executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
+        executions_[1].callData = abi.encodeCall(
+            IMetaSwap.swap,
+            (
+                "redeemer-route",
+                IERC20(address(tokenIn)),
+                TOKEN_IN_AMOUNT,
+                abi.encode(IERC20(address(0)), TOKEN_OUT_AMOUNT)
+            )
+        );
+        uint256 nativeBefore_ = orderAccount.balance;
+
+        _redeemIntent(delegation_, ExecutionLib.encodeBatch(executions_));
+
+        assertEq(tokenIn.balanceOf(orderAccount), 900 ether);
+        assertEq(orderAccount.balance, nativeBefore_ + TOKEN_OUT_AMOUNT);
+    }
+
     function test_flexibleAllowsDifferentRouteData() public {
         bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount);
 
