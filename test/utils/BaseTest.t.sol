@@ -30,6 +30,7 @@ import { DelegationManager } from "../../src/DelegationManager.sol";
 import { DeleGatorCore } from "../../src/DeleGatorCore.sol";
 import { HybridDeleGator } from "../../src/HybridDeleGator.sol";
 import { MultiSigDeleGator } from "../../src/MultiSigDeleGator.sol";
+import { EIP7702MultiManagerDeleGator } from "../../src/EIP7702/EIP7702MultiManagerDeleGator.sol";
 import { EIP7702StatelessDeleGator } from "../../src/EIP7702/EIP7702StatelessDeleGator.sol";
 import "forge-std/Test.sol";
 
@@ -54,11 +55,13 @@ abstract contract BaseTest is Test {
 
     // Delegation Manager
     DelegationManager public delegationManager;
+    DelegationManager public defaultDelegationManager2;
 
     // DeleGator Implementations
     HybridDeleGator public hybridDeleGatorImpl;
     MultiSigDeleGator public multiSigDeleGatorImpl;
     EIP7702StatelessDeleGator public eip7702StatelessDeleGatorImpl;
+    EIP7702MultiManagerDeleGator public eip7702MultiManagerDeleGatorImpl;
 
     // Users
     TestUsers internal users;
@@ -88,6 +91,8 @@ abstract contract BaseTest is Test {
         // DelegationManager
         delegationManager = new DelegationManager(makeAddr("DelegationManager Owner"));
         vm.label(address(delegationManager), "Delegation Manager");
+        defaultDelegationManager2 = new DelegationManager(makeAddr("Default DelegationManager 2 Owner"));
+        vm.label(address(defaultDelegationManager2), "Default DelegationManager 2");
 
         // Set constant values for easy access
         ROOT_AUTHORITY = delegationManager.ROOT_AUTHORITY();
@@ -106,6 +111,9 @@ abstract contract BaseTest is Test {
 
         eip7702StatelessDeleGatorImpl = new EIP7702StatelessDeleGator(delegationManager, entryPoint);
         vm.label(address(eip7702StatelessDeleGatorImpl), "EIP7702Stateless DeleGator");
+
+        eip7702MultiManagerDeleGatorImpl = new EIP7702MultiManagerDeleGator(delegationManager, defaultDelegationManager2);
+        vm.label(address(eip7702MultiManagerDeleGatorImpl), "EIP7702 MultiManager DeleGator");
 
         // Create users
         users = _createUsers();
@@ -437,6 +445,8 @@ abstract contract BaseTest is Test {
             return deployDeleGator_MultiSig(_user);
         } else if (_implementation == Implementation.EIP7702Stateless) {
             return deployDeleGator_EIP7702Stateless(_user);
+        } else if (_implementation == Implementation.EIP7702MultiManager) {
+            return deployDeleGator_EIP7702MultiManager(_user.addr);
         } else {
             revert("Invalid Implementation");
         }
@@ -489,6 +499,11 @@ abstract contract BaseTest is Test {
 
     function deployDeleGator_EIP7702Stateless(address _eoaAddress) public returns (address) {
         vm.etch(_eoaAddress, bytes.concat(hex"ef0100", abi.encodePacked(eip7702StatelessDeleGatorImpl)));
+        return _eoaAddress;
+    }
+
+    function deployDeleGator_EIP7702MultiManager(address _eoaAddress) public returns (address) {
+        vm.etch(_eoaAddress, bytes.concat(hex"ef0100", abi.encodePacked(eip7702MultiManagerDeleGatorImpl)));
         return _eoaAddress;
     }
 

@@ -76,6 +76,19 @@ add_contract \
         "0x0000000071727De22E5E9d8BAf0edAc6f37da032")" \
     ""
 
+# EIP7702MultiManagerDeleGator
+# No address is committed until an actual deployment exists. Set all three variables to include it.
+if [[ -n "${EIP7702_MULTI_MANAGER_ADDRESS:-}" ]]; then
+    add_contract \
+        "EIP7702MultiManagerDeleGator" \
+        "src/EIP7702/EIP7702MultiManagerDeleGator.sol" \
+        "$EIP7702_MULTI_MANAGER_ADDRESS" \
+        "$(encode_args "constructor(address,address)" \
+            "$DEFAULT_DELEGATION_MANAGER_1" \
+            "$DEFAULT_DELEGATION_MANAGER_2")" \
+        ""
+fi
+
 # NativeTokenPaymentEnforcer
 add_contract \
     "NativeTokenPaymentEnforcer" \
