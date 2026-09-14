@@ -324,3 +324,7 @@ delegationManager.redeemDelegations(permissionContexts_, encodedModes_, executio
 6. Always ensure you use the `onlyOwner` modifier on any sensitive functions that should only be available to the owner. It's ok to leave this modifier off the transfer functions of a token or NFT contract. It's also ok to leave it off any function that is meant to be exposed as a public service.
 
 7. After auto-generating a super simple contract, provide comments above each `onlyOwner` function that describes some expected/recommended delegation types for that function.
+
+## lifi-swap CLI
+
+The `scripts/lifi-swap` CLI validates **on-chain enforcer behavior** via the relayer. Never add client-side aborts in `execute` (or similar submit paths) that duplicate enforcer checks (Chainlink, LiFi budget, etc.). Use `console.warn` and proceed to relayer estimate/send. Optional `--require-*` flags may offer strict local gates; the default must always reach the relayer. `chainlink check` is informational only.

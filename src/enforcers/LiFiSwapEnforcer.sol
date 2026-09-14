@@ -64,6 +64,14 @@ contract LiFiSwapEnforcer is CaveatEnforcer {
         uint256 balanceBefore;
     }
 
+    // ----------------------------------------------------------------------------------------------
+    // STORAGE LAYOUT INVARIANT (upgradeable via TransparentUpgradeableProxy).
+    // `periodicAllowances` (slot 0) and `afterHookContexts` (slot 1) MUST be preserved in this order
+    // and type by every future implementation. Only append new state variables after `afterHookContexts`.
+    // Reordering, removing, or retyping any existing variable corrupts live delegation state and is a
+    // storage-collision bug. The proxy stores its own `implementation`/`admin` in EIP-1967 slots
+    // (~0x360894… / ~0xb53127…), which do not collide with these low slots.
+    // ----------------------------------------------------------------------------------------------
     mapping(address delegationManager => mapping(bytes32 delegationHash => PeriodicAllowance)) public periodicAllowances;
 
     mapping(bytes32 contextKey => AfterHookContext context) public afterHookContexts;
@@ -125,6 +133,7 @@ contract LiFiSwapEnforcer is CaveatEnforcer {
     )
         public
         override
+        virtual
         onlySingleCallTypeMode(_mode)
         onlyDefaultExecutionMode(_mode)
     {

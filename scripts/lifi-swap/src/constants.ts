@@ -3,6 +3,10 @@ export const BASE_CHAIN_ID = 8453;
 export const DELEGATION_MANAGER =
   "0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3" as const;
 
+// TODO(upgradeable-enforcer): after deploying the TransparentUpgradeableProxy on Base via
+// script/DeployLiFiSwapEnforcer.s.sol, replace the address below with the logged PROXY address
+// (NOT the implementation address). New delegations will then bind to the upgradeable proxy; existing
+// signed delegations keep hitting this non-upgradeable enforcer and continue to work.
 export const LIFI_SWAP_ENFORCER =
   "0xD0e70cd777a527fB798e5EcA8800c5E3588041d4" as const;
 
