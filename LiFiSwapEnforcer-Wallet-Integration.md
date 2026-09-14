@@ -49,7 +49,7 @@ Reference deployments (v1.3.0, same address on most supported chains): see [`doc
 |---|---|
 | `DelegationManager` | Validates delegations; calls enforcer hooks; triggers `executeFromExecutor` on the user's DeleGator |
 | User `DeleGator` (Hybrid / MultiSig / EIP-7702) | Smart account that holds assets and executes LiFi calls |
-| `LiFiSwapEnforcer` | `0x64a9B2277dcDD134e78d30bEe11c3056e8E56ffE` (CREATE2; same address on all deployed chains) |
+| `LiFiSwapEnforcer` | `0x64a9B2277dcDD134e78d30bEe11c3056e8E56ffE` (CREATE2; same address on all deployed chains) — see [`documents/Deployments.md`](documents/Deployments.md) for the canonical address per environment. Note: an upgradeable `TransparentUpgradeableProxy` wrapper is being introduced; new delegations should reference the **proxy** address (logged by `script/DeployLiFiSwapEnforcer.s.sol`), while existing signed delegations keep hitting the non-upgradeable enforcer above. |
 | `AllowedTargetsEnforcer` + `AllowedMethodsEnforcer` | Recommended for the separate **approve onboarding** delegation |
 | LiFi Diamond (source chain) | Swap/bridge entrypoint — address pinned in terms |
 
@@ -243,7 +243,9 @@ When the dapp redeems, the enforcer requires:
 - **Mode:** single call + default execution (`ModeLib.encodeSimpleSingle()`)
 - **Target:** `terms.lifiDiamond`
 - **Value:** `0` for ERC20 input, or `inputAmount` when `inputToken == address(0)` (native ETH input)
-- **Calldata:** `keccak256(callData) == quote.calldataHash` (signed by quote signer)
+- **Calldata hash:** `keccak256(callData) == quote.calldataHash` (signed by quote signer)
+- **Calldata shape:** the enforcer decodes the calldata per the `RouteKind` supplied in args and asserts the **recipient** and **destination chain** embedded in the calldata equal `terms.outputRecipient` and `terms.destinationChainId`. The calldata must therefore match terms not only by hash but also by decoded recipient/dest-chain. See the App integration guide's "RouteKind: selecting the decode branch" section for the per-route decode rules.
+- **Args:** must carry a `RouteKind` (0=SameChain, 1=EvmBridge, 2=NearBtc, 3=LayerSwapBtc) as the first element of the 3-tuple `(RouteKind, SignedLiFiQuote, signature)`. The wallet sets `args = ""` at grant time; the dapp/quote-signer fills `RouteKind` + quote + signature at redemption. `RouteKind` is not in the delegation hash.
 - **Period budget:** `quote.inputAmount` consumed from `(delegationManager, delegationHash)` allowance
 - **Slippage:** `quote.minAmountOut >= quote.expectedAmountOut * (10000 - slippageBps) / 10000`
 

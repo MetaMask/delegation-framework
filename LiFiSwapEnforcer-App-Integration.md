@@ -37,7 +37,7 @@ sequenceDiagram
     LiFi-->>App: transactionRequest.data (diamond calldata)
     App->>QS: Build SignedLiFiQuote + sign(delegationHash, chainId)
     QS-->>App: quote + EIP-191 signature
-    App->>App: args = abi.encode(quote, signature)
+    App->>App: args = abi.encode(routeKind, quote, signature)
     App->>App: Patch caveat.args on delegation copy
     App->>DM: redeemDelegations(context, mode, execution)
     DM->>Enf: beforeHook → execute → afterHook
@@ -122,13 +122,14 @@ Use the [LiFi API](https://docs.li.fi/) (or your routing layer) to obtain:
 - Input amount, expected output, minimum output
 - Confirmation that route matches delegation terms (`inputToken`, `outputAssetId`, `outputRecipient`, `destinationChainId`)
 
-**Important:** The enforcer does not decode facet selectors. The entire calldata blob is bound via `calldataHash = keccak256(callData)`.
+**Important:** The enforcer **does** decode the calldata. In addition to the `calldataHash` binding (`keccak256(callData) == quote.calldataHash`, signed by the quote signer), the enforcer decodes the calldata per the `RouteKind` you supply in args (see Step 6a) and asserts that the **recipient** and **destination chain** embedded in the calldata match the signed `terms`. So the calldata must not only hash-match the quote — its recipient and destination-chain fields must also equal `terms.outputRecipient` and `terms.destinationChainId`. A route whose calldata recipient/dest-chain differs from terms will revert even if the hash matches.
 
 Constraints:
 
 - `target = terms.lifiDiamond`
 - `value = 0` for ERC20 input, or `value = inputAmount` when `inputToken == address(0)` (native ETH input)
 - `callData.length >= 4`
+- The calldata's recipient and destination-chain fields must match `terms` (enforced per `RouteKind` — see Step 6a)
 
 Ensure the user's DeleGator is the `msg.sender` from LiFi's perspective (tokens pulled via `transferFrom(delegator, ...)`), which requires prior `approve(lifiDiamond, ...)`.
 
@@ -183,18 +184,50 @@ If this fails: `LiFiSwapEnforcer:slippage-exceeded`. Your quote signer should pr
 
 ## Step 6 — Encode caveat args
 
+Args are a **3-tuple with `RouteKind` first** — the enforcer decodes them as
+`(RouteKind, SignedLiFiQuote, bytes)` in `LiFiSwapEnforcer._decodeArgs` ([src/enforcers/LiFiSwapEnforcer.sol](src/enforcers/LiFiSwapEnforcer.sol)). Order matters: `RouteKind` must be the first element because that is the order `_decodeArgs` expects.
+
 ```solidity
-bytes memory args = abi.encode(quote, signature);
+LiFiSwapQuoteLib.RouteKind routeKind = LiFiSwapQuoteLib.RouteKind.EvmBridge; // pick per route — see Step 6a
+bytes memory args = abi.encode(routeKind, quote, signature);
 ```
 
 Set on the caveat **copy** you pass to `redeemDelegations` (do not mutate the user's signed delegation if you cache it — args are not in the delegation hash, so patching args on a copy is standard):
 
 ```typescript
 lifiCaveat.args = encodeAbiParameters(
-  [{ type: "tuple", components: [/* SignedLiFiQuote fields */] }, { type: "bytes" }],
-  [quote, signature]
+  [
+    { type: "uint8", name: "routeKind" }, // RouteKind enum (0..3), see Step 6a
+    { type: "tuple", components: [/* SignedLiFiQuote fields */] },
+    { type: "bytes" },
+  ],
+  [routeKind, quote, signature]
 );
 ```
+
+`RouteKind` is **not signed** by the quote signer — it lives in args, which are excluded from the delegation hash. The enforcer cross-checks it against the calldata selector and `terms` shape before its decode path runs, so a wrong value reverts rather than picking a weak decode path. See Step 6a for how to pick it.
+
+## Step 6a — RouteKind: selecting the decode branch
+
+`RouteKind` (`src/libraries/LiFiSwapQuoteLib.sol`) is an enum (0..3) that tells the enforcer which calldata layout to decode. It is supplied in args (see Step 6) and is **not** part of the signed quote. Each branch cross-checks the enum against the calldata's 4-byte selector and the `terms` shape, then decodes the recipient and destination-chain fields and asserts they equal `terms.outputRecipient` and `terms.destinationChainId`.
+
+| Value | Name | Route | LiFi facet / selectors | What the enforcer decodes & enforces |
+| --- | --- | --- | --- | --- |
+| 0 | `SameChain` | Same-chain EVM swap | `GenericSwapFacetV3` (`0x4666fc80` `0x733214a3` `0xaf7060fd` `0x2c57e884` `0x5fd9ae2e` `0x736eac0b`) | Requires `terms.destinationChainId == block.chainid` and a clean-EVM `outputRecipient`. Decodes the `_receiver` (4th param head @ calldata `0x64`) and asserts it equals `terms.outputRecipient`. |
+| 1 | `EvmBridge` | EVM-to-EVM bridge | Selector-agnostic; decodes `ILiFi.BridgeData` | Requires `terms.destinationChainId != block.chainid` and a clean-EVM `outputRecipient`. Decodes `BridgeData.receiver` (offset `+0xA0`) and `BridgeData.destinationChainId` (offset `+0xE0`); rejects the non-EVM sentinel; asserts both equal `terms`. |
+| 2 | `NearBtc` | EVM-to-BTC via NEAR Intents | `NEARIntentsFacet` (`0x5cf8113b` `0x3110c7b9`) | Requires `terms.destinationChainId != block.chainid` and a **non-clean** `outputRecipient`. Decodes `nonEVMReceiver` (1st field of the bridge-specific struct, offset `0x00`) and `BridgeData.destinationChainId`; asserts both equal `terms`. |
+| 3 | `LayerSwapBtc` | EVM-to-BTC via LayerSwap | `LayerSwapFacet` (`0xee9e98e0` `0x4c279d6b`) | Requires `terms.destinationChainId != block.chainid` and a **non-clean** `outputRecipient`. Decodes `nonEVMReceiver` (4th field of the bridge-specific struct, offset `0x60`) and `BridgeData.destinationChainId`; asserts both equal `terms`. |
+
+**How to pick `RouteKind`:** derive it from the LiFi route you fetched in Step 4.
+
+- If the route is a same-chain swap (destination chain == source chain, EVM recipient) → `SameChain` (0).
+- If the route is an EVM-to-EVM cross-chain bridge → `EvmBridge` (1).
+- If the route bridges to Bitcoin via NEAR Intents → `NearBtc` (2).
+- If the route bridges to Bitcoin via LayerSwap → `LayerSwapBtc` (3).
+
+A lying `RouteKind` reverts: each branch checks the calldata selector against the expected set for that route and checks the `terms` shape (clean vs non-clean EVM recipient, same vs cross chain), so passing `SameChain` for a BTC bridge (or vice versa) fails with `route-selector-mismatch` / `route-recipient-shape-mismatch` / `route-dest-chain-mismatch` rather than decoding under the wrong layout.
+
+Reference: `_verifyCalldataMatchesTerms` and the four `_verify*` branches in [`src/enforcers/LiFiSwapEnforcer.sol`](src/enforcers/LiFiSwapEnforcer.sol).
 
 ## Step 7 — Encode execution and call `redeemDelegations`
 
@@ -255,20 +288,42 @@ Do not rely on source-chain balance checks for cross-chain delivery confirmation
 | Revert | Cause |
 |---|---|
 | `LiFiSwapQuoteLib:invalid-terms-length` | Terms ≠ 284 bytes |
-| `LiFiSwapEnforcer:invalid-zero-quote-signer` | Malformed terms |
+| `LiFiSwapEnforcer:invalid-zero-diamond` | `terms.lifiDiamond == address(0)` |
+| `LiFiSwapEnforcer:invalid-zero-quote-signer` | `terms.quoteSigner == address(0)` |
+| `LiFiSwapEnforcer:invalid-zero-output-recipient` | `terms.outputRecipient == bytes32(0)` |
+| `LiFiSwapEnforcer:invalid-zero-destination-chain` | `terms.destinationChainId == 0` |
+| `LiFiSwapEnforcer:invalid-zero-period-amount` | `terms.periodAmount == 0` |
+| `LiFiSwapEnforcer:invalid-zero-period-duration` | `terms.periodDuration == 0` |
+| `LiFiSwapEnforcer:invalid-zero-start-date` | `terms.startDate == 0` |
 | `LiFiSwapEnforcer:invalid-slippage-bps` | `slippageBps >= 10000` |
 | `LiFiSwapEnforcer:invalid-target` | Execution target ≠ `lifiDiamond` |
-| `LiFiSwapEnforcer:invalid-value` | `msg.value` / execution value ≠ 0 |
+| `LiFiSwapEnforcer:invalid-native-value` | `inputToken == address(0)` but `value ≠ quote.inputAmount` |
+| `LiFiSwapEnforcer:invalid-value` | `inputToken != address(0)` but `value != 0` |
+| `LiFiSwapEnforcer:invalid-calldata-length` | `callData.length < 4` |
 | `LiFiSwapEnforcer:quote-expired` | `block.timestamp >= quote.expiration` |
 | `LiFiSwapEnforcer:invalid-quote-signature` | Wrong signer or wrong delegationHash/chainId in digest |
-| `LiFiSwapEnforcer:calldata-hash-mismatch` | Execution calldata ≠ signed hash |
-| `LiFiSwapEnforcer:invalid-delegator` | Quote.delegator ≠ delegation delegator |
-| `LiFiSwapEnforcer:invalid-output-recipient` | Quote field ≠ terms |
-| `LiFiSwapEnforcer:invalid-destination-chain` | Quote field ≠ terms |
-| `LiFiSwapEnforcer:slippage-exceeded` | minOut too low vs expectedOut and slippageBps |
-| `LiFiSwapEnforcer:period-amount-exceeded` | `inputAmount` over remaining budget |
-| `LiFiSwapEnforcer:insufficient-output-received` | Same-chain afterHook balance check failed |
+| `LiFiSwapEnforcer:calldata-hash-mismatch` | Execution calldata ≠ signed `quote.calldataHash` |
+| `LiFiSwapEnforcer:invalid-delegator` | `quote.delegator ≠ _delegator` |
+| `LiFiSwapEnforcer:invalid-diamond` | `quote.lifiDiamond ≠ terms.lifiDiamond` |
+| `LiFiSwapEnforcer:invalid-input-token` | `quote.inputToken ≠ terms.inputToken` |
+| `LiFiSwapEnforcer:invalid-output-asset` | `quote.outputAssetId ≠ terms.outputAssetId` |
+| `LiFiSwapEnforcer:invalid-output-recipient` | `quote.outputRecipient ≠ terms.outputRecipient` |
+| `LiFiSwapEnforcer:invalid-destination-chain` | `quote.destinationChainId ≠ terms.destinationChainId` |
+| `LiFiSwapEnforcer:slippage-exceeded` | `minAmountOut` too low vs `expectedAmountOut` and `slippageBps` |
+| `LiFiSwapEnforcer:invalid-zero-input-amount` | `quote.inputAmount == 0` |
+| `LiFiSwapEnforcer:swap-not-started` | First swap before `terms.startDate` |
+| `LiFiSwapEnforcer:period-amount-exceeded` | `inputAmount` over remaining period budget |
+| `LiFiSwapEnforcer:calldata-too-short` | Calldata too short to read a required 32-byte word (attacker-controlled offset guard) |
+| `LiFiSwapEnforcer:unsupported-route` | `RouteKind` not in 0..3, or NEAR/LayerSwap offset mismatch |
+| `LiFiSwapEnforcer:route-dest-chain-mismatch` | `RouteKind` implies same-chain but `terms.destinationChainId != block.chainid` (or vice versa) |
+| `LiFiSwapEnforcer:route-recipient-shape-mismatch` | `RouteKind` expects clean-EVM recipient but `terms.outputRecipient` is non-clean (or vice versa) |
+| `LiFiSwapEnforcer:route-selector-mismatch` | Calldata selector not in the set allowed for the given `RouteKind` |
+| `LiFiSwapEnforcer:non-evm-sentinel-receiver` | `EvmBridge` route but calldata `BridgeData.receiver` is the non-EVM sentinel |
+| `LiFiSwapEnforcer:calldata-recipient-mismatch` | Decoded calldata recipient ≠ `terms.outputRecipient` |
+| `LiFiSwapEnforcer:calldata-dest-chain-mismatch` | Decoded calldata `destinationChainId` ≠ `terms.destinationChainId` |
+| `LiFiSwapEnforcer:insufficient-output-received` | Same-chain `afterHook` balance check failed |
 | `CaveatEnforcer:invalid-call-type` | Batch mode used instead of single |
+| `CaveatEnforcer:invalid-execution-type` | Try execution mode used instead of default |
 
 Always **simulate** (`eth_call`) before submitting. Also check `delegationManager.disabledDelegations(delegationHash)`.
 
@@ -319,7 +374,7 @@ Terms use LiFi API `bytes32` for BTC asset id and recipient, and LiFi BTC `desti
 | Contract | v1.3.0 (most chains) |
 |---|---|
 | `DelegationManager` | `0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3` |
-| `LiFiSwapEnforcer` | `0x64a9B2277dcDD134e78d30bEe11c3056e8E56ffE` — see [`documents/Deployments.md`](documents/Deployments.md) |
+| `LiFiSwapEnforcer` | `0x64a9B2277dcDD134e78d30bEe11c3056e8E56ffE` — see [`documents/Deployments.md`](documents/Deployments.md) for the canonical address per environment. Note: an upgradeable `TransparentUpgradeableProxy` wrapper is being introduced; new delegations should reference the **proxy** address (logged by `script/DeployLiFiSwapEnforcer.s.sol`), while existing signed delegations keep hitting the non-upgradeable enforcer above. |
 
 LiFi Diamond: use [`deployments/`](https://github.com/lifinance/contracts/tree/main/deployments) from the LI.FI contracts repo for your network.
 
