@@ -6,6 +6,7 @@ import { runCreateChainlinkCommand } from "./commands/create-chainlink.js";
 import { runCreateCommand } from "./commands/create.js";
 import { runDeleteCommand } from "./commands/delete.js";
 import { runExecuteCommand } from "./commands/execute.js";
+import { runEstimateGasCommand } from "./commands/estimate-gas.js";
 import { runLifiChainsCommand } from "./commands/lifi-chains.js";
 import { runLifiConnectionsCommand } from "./commands/lifi-connections.js";
 import { runLifiQuoteCommand } from "./commands/lifi-quote.js";
@@ -28,6 +29,8 @@ Usage:
   npm run execute -- <id> [--amount <atoms>] [--dry-run] [--skip-approve] \\
     [--allow-bridges near,layerswap] [--deny-bridges relay] \\
     [--spoof-output-chain <name>] [--spoof-output-address <addr>] [--spoof-output-token <sym>]
+  npm run estimate-gas -- <id> [--amount <atoms>] [--skip-control] [--skip-relayer] [--skip-rpc] \\
+    [--fee-atoms <atoms>] [--allow-bridges ...] [--deny-bridges ...]
 
 LiFi API discovery (read-only, no PRIVATE_KEY):
   npm run lifi -- chains [--chain-types EVM,SVM,UTXO,MVM,TVM] [--json]
@@ -122,6 +125,10 @@ async function main(): Promise<void> {
     }
     if (command === "execute") {
       await runExecuteCommand([subcommand, ...rest].filter(Boolean));
+      return;
+    }
+    if (command === "estimate-gas") {
+      await runEstimateGasCommand([subcommand, ...rest].filter(Boolean));
       return;
     }
     if (command === "lifi" && subcommand === "chains") {

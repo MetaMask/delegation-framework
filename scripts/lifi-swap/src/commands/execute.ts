@@ -6,8 +6,6 @@ import {
   parseArgs,
   parseCommaList,
 } from "../config.js";
-import { resolveChainlinkArgs } from "../chainlink.js";
-import { QUOTE_EXPIRATION_SECONDS } from "../constants.js";
 import { savedExecutionChainId } from "../executionChain.js";
 import {
   createFeeDelegation,
@@ -16,19 +14,7 @@ import {
   readAvailableBudget,
   readErc20Allowance,
 } from "../delegations.js";
-import {
-  patchChainlinkArgs,
-  patchSwapDelegationArgs,
-  relayerExecution,
-} from "../encodings.js";
-import {
-  assertQuoteDiamond,
-  assertQuoteValueZero,
-  fetchLiFiQuote,
-  parseQuoteAmounts,
-  resolveQuoteToAddress,
-} from "../lifi.js";
-import { deriveRouteKind, encodeQuoteArgs, signQuote, verifyQuoteSigner } from "../quote.js";
+import { relayerExecution } from "../encodings.js";
 import {
   estimateAndPrepareSend,
   logEstimateResult,
@@ -41,11 +27,11 @@ import {
   pollUntilTerminal,
   serializeDelegations,
 } from "../relayer.js";
-import { resolveExecuteSpoofParams } from "../executeSpoof.js";
 import { formatExecuteQuoteSummary } from "../format.js";
+import { prepareSwapRedemption } from "../prepareSwapRedemption.js";
 import { loadDelegation } from "../store.js";
-import { hashCalldata, minAmountOutMeetsSlippage, termsRecordToEncoded } from "../terms.js";
-import { RouteKind, type SignedLiFiQuote } from "../types.js";
+import { termsRecordToEncoded } from "../terms.js";
+import { RouteKind } from "../types.js";
 
 export async function runExecuteCommand(argv: string[]): Promise<void> {
   const { positional, flags } = parseArgs(argv);
@@ -101,61 +87,36 @@ export async function runExecuteCommand(argv: string[]): Promise<void> {
     );
   }
 
-  const toAddress = resolveQuoteToAddress(saved, ctx.delegator);
-  const quoteFetch = await resolveExecuteSpoofParams(flags, saved, toAddress);
-  if (quoteFetch.spoofed) {
-    console.warn(
-      "Warning: enforcer testing mode — LiFi quote fetch params are spoofed; " +
-        "signed quote metadata still matches saved terms. Expect on-chain revert.\n" +
-        quoteFetch.spoofSummary,
-    );
-    console.warn(
-      "Likely enforcer errors:\n" +
-        quoteFetch.expectedRevertHints.map((h) => `  - ${h}`).join("\n"),
-    );
-  }
-
-  let patchedSwapDelegation = saved.swapDelegation;
-  let chainlinkResult;
-
-  if (saved.chainlinkTerms && !skipChainlink) {
-    chainlinkResult = await resolveChainlinkArgs(
-      ctx.publicClient,
-      saved.chainlinkTerms,
-      referenceRoundId,
-    );
-    if (!chainlinkResult.passed) {
-      const msg =
-        `Chainlink pre-check: ${chainlinkResult.reason ?? "not met"} — proceeding to relayer (enforcer decides on-chain).`;
-      if (requireChainlink) {
-        throw new Error(msg);
-      }
-      console.warn(`Warning: ${msg}`);
-    }
-    patchedSwapDelegation = patchChainlinkArgs(
-      patchedSwapDelegation,
-      chainlinkResult.args,
-    );
-  }
-
-  const lifiQuote = await fetchLiFiQuote({
-    fromChain: executionChainId,
-    toChain: quoteFetch.toChain,
-    fromToken: saved.terms.inputToken,
-    toToken: quoteFetch.toToken,
+  const prep = await prepareSwapRedemption({
+    saved,
+    ctx,
     fromAmount: cli.fromAmount,
-    fromAddress: ctx.delegator,
     slippage: cli.slippage,
-    toAddress: quoteFetch.toAddress,
+    flags: flags as Record<string, string | boolean>,
+    skipChainlink,
+    requireChainlink,
+    referenceRoundId,
     allowBridges,
     denyBridges,
   });
 
+  if (prep.quoteFetch.spoofed) {
+    console.warn(
+      "Warning: enforcer testing mode — LiFi quote fetch params are spoofed; " +
+        "signed quote metadata still matches saved terms. Expect on-chain revert.\n" +
+        prep.quoteFetch.spoofSummary,
+    );
+    console.warn(
+      "Likely enforcer errors:\n" +
+        prep.quoteFetch.expectedRevertHints.map((h) => `  - ${h}`).join("\n"),
+    );
+  }
+
   console.log(
     formatExecuteQuoteSummary({
-      lifiQuote,
+      lifiQuote: prep.lifiQuote,
       saved,
-      quoteFetch,
+      quoteFetch: prep.quoteFetch,
       executionChainId,
       fromAmount: cli.fromAmount,
       fromAddress: ctx.delegator,
@@ -167,62 +128,9 @@ export async function runExecuteCommand(argv: string[]): Promise<void> {
   );
   console.log("");
 
-  assertQuoteValueZero(lifiQuote);
-  assertQuoteDiamond(lifiQuote, saved.terms.lifiDiamond);
-
-  const { expectedAmountOut, minAmountOut } = parseQuoteAmounts(lifiQuote);
-  const slippageBps = BigInt(saved.terms.slippageBps);
-  if (!minAmountOutMeetsSlippage(minAmountOut, expectedAmountOut, slippageBps)) {
-    const minimumAllowed =
-      (expectedAmountOut * (10_000n - slippageBps)) / 10_000n;
-    throw new Error(
-      "LiFi quote fails on-chain slippage check: " +
-        `minAmountOut ${minAmountOut} < minimumAllowed ${minimumAllowed} ` +
-        `(expectedAmountOut ${expectedAmountOut}, terms.slippageBps ${slippageBps}). ` +
-        "Recreate the delegation with a higher --slippage-bps if the route requires more tolerance.",
-    );
-  }
-
-  const diamondCalldata = lifiQuote.transactionRequest.data;
-  const signedQuote: SignedLiFiQuote = {
-    delegator: saved.delegator,
-    lifiDiamond: saved.terms.lifiDiamond,
-    inputToken: saved.terms.inputToken,
-    outputAssetId: saved.terms.outputAssetId,
-    outputRecipient: saved.terms.outputRecipient,
-    destinationChainId: BigInt(saved.terms.destinationChainId),
-    inputAmount: cli.fromAmount,
-    expectedAmountOut,
-    minAmountOut,
-    calldataHash: hashCalldata(diamondCalldata),
-    expiration: BigInt(Math.floor(Date.now() / 1000) + QUOTE_EXPIRATION_SECONDS),
-  };
-
-  const signature = await signQuote(
-    ctx.account,
-    signedQuote,
-    saved.delegationHash,
-    executionChainId,
-  );
-
-  if (
-    !(await verifyQuoteSigner(
-      signedQuote,
-      saved.delegationHash,
-      executionChainId,
-      signature,
-      saved.terms.quoteSigner,
-    ))
-  ) {
-    throw new Error("Quote signature verification failed locally");
-  }
-
-  const routeKind = deriveRouteKind(lifiQuote, executionChainId);
-  patchedSwapDelegation = patchSwapDelegationArgs(
-    patchedSwapDelegation,
-    encodeQuoteArgs(routeKind, signedQuote, signature),
-  );
-
+  const diamondCalldata = prep.diamondCalldata;
+  const patchedSwapDelegation = prep.patchedSwapDelegation;
+  const { expectedAmountOut, minAmountOut } = prep;
   const paymentToken = findUsdcToken(chainCaps);
 
   const prepared = await estimateAndPrepareSend({
@@ -261,48 +169,12 @@ export async function runExecuteCommand(argv: string[]): Promise<void> {
 
   if (dryRun) {
     console.log("Dry run execute estimate succeeded.");
-    if (chainlinkResult) {
-      console.log(`  chainlinkPassed:   ${chainlinkResult.passed}`);
-      if (!chainlinkResult.passed && chainlinkResult.reason) {
-        console.log(`  chainlinkReason:   ${chainlinkResult.reason}`);
-      }
-      console.log(`  priceNow:          ${chainlinkResult.priceNow.toString()}`);
-      if (chainlinkResult.currentRoundId !== undefined) {
-        console.log(
-          `  currentRoundId:    ${chainlinkResult.currentRoundId.toString()}`,
-        );
-      }
-      if (chainlinkResult.windowNewestRoundId !== undefined) {
-        console.log(
-          `  windowNewestRoundId: ${chainlinkResult.windowNewestRoundId.toString()}`,
-        );
-      }
-      if (chainlinkResult.windowOldestRoundId !== undefined) {
-        console.log(
-          `  windowOldestRoundId: ${chainlinkResult.windowOldestRoundId.toString()}`,
-        );
-      }
-      if (chainlinkResult.priceRef !== undefined) {
-        console.log(`  priceRef:          ${chainlinkResult.priceRef.toString()}`);
-      }
-      if (chainlinkResult.referenceRoundId !== undefined) {
-        console.log(
-          `  referenceRoundId:  ${chainlinkResult.referenceRoundId.toString()}`,
-        );
-      }
-    }
     console.log(`  inputAmount:       ${cli.fromAmount.toString()}`);
     console.log(`  expectedAmountOut: ${expectedAmountOut.toString()}`);
     console.log(`  minAmountOut:      ${minAmountOut.toString()}`);
     console.log(`  availableBefore:   ${budget.available.toString()}`);
-    if (quoteFetch.spoofed) {
-      console.log(`  routeKind:         ${RouteKind[routeKind]} (${routeKind})`);
-      console.log(
-        `  termsDestChain:    ${saved.terms.destinationChainId} (signed quote)`,
-      );
-      console.log(`  fetchDestChain:    ${quoteFetch.toChain} (LiFi quote)`);
-      console.log(`  fetchToAddress:    ${quoteFetch.toAddress}`);
-      console.log(`  fetchToToken:      ${quoteFetch.toToken}`);
+    if (prep.quoteFetch.spoofed) {
+      console.log(`  routeKind:         ${RouteKind[prep.routeKind]} (${prep.routeKind})`);
     }
     logEstimateResult(prepared.estimate, " ");
     return;

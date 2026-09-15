@@ -8,6 +8,7 @@
     "chainlink": "tsx src/index.ts chainlink",
     "approve": "tsx src/index.ts approve",
     "execute": "tsx src/index.ts execute",
+    "estimate-gas": "tsx src/index.ts estimate-gas",
     "lifi": "tsx src/index.ts lifi",
     "test": "tsx --test src/termsEncoding.test.ts src/bitcoinEncoding.test.ts"
   },

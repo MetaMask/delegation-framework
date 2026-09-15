@@ -207,6 +207,31 @@ npm run delegation -- create --id usdc-weth-daily --force
 
 `approve` and `execute` use estimate-first submission: mock fee ≥ `minFee` from `relayer_getFeeData`, simulate via `relayer_estimate7710Transaction`, adjust fee from `requiredPaymentAmount` if needed, then send with signed `context`. Use `--dry-run` to see `gasUsed` and `requiredPaymentAmount` without submitting.
 
+## Gas estimate PoC (RPC state override vs relayer)
+
+Experimental command to test **pre-grant gas estimation**: simulate `DelegationManager.redeemDelegations` on your RPC with **bogus delegation signatures** and a **DelegatorEstimateShim** injected at the user delegator via [Geth state overrides](https://geth.ethereum.org/docs/interacting-with-geth/rpc/objects#state-override-set), then compare `eth_estimateGas` to **`relayer_estimate7710Transaction`** (valid signatures, same fee+swap bundle).
+
+```bash
+npm run estimate-gas -- usdc-eth-bridge-2min --amount 1000000
+```
+
+Requires `PRIVATE_KEY`, `BASE_RPC_URL` (must support `stateOverride` on `eth_call` / `eth_estimateGas`), and `RELAYER_URL`. Uses the same LiFi quote + quote-signer flow as `execute`. Overrides are passed as viem’s **`StateOverride` array** (`{ address, code?, stateDiff: [{ slot, value }] }`), not a raw Geth JSON map.
+
+**What it prints**
+
+- **Path A:** relayer `gasUsed` and `requiredPaymentAmount` (valid swap + fee delegations).
+- **Control:** `eth_call` with bogus sig and ERC-20 overrides only → expected signature revert.
+- **Path B:** `eth_call` + `eth_estimateGas` with delegator shim + bogus sig → should succeed.
+- **Comparison:** relayer gas vs RPC gas and delta (%).
+
+Flags: `--skip-control`, `--skip-relayer`, `--skip-rpc`, `--skip-rpc-debug`, `--fee-atoms`, plus the same bridge/chainlink flags as `execute`.
+
+When the full PoC `eth_call` fails, the CLI runs **fee-only** and **swap-only** batch simulations (unless `--skip-rpc-debug`) and decodes revert data (`Error(string)`, `Panic`, delegation-manager / shim custom errors) to pinpoint which leg failed.
+
+**Shim bytecode:** [`src/poc/DelegatorEstimateShim.sol`](../../src/poc/DelegatorEstimateShim.sol). After editing, run `forge build` and `node scripts/lifi-swap/scripts/export-shim-bytecode.mjs` to refresh [`src/poc/delegatorEstimateShimBytecode.ts`](./src/poc/delegatorEstimateShimBytecode.ts). The export script patches the `delegationManager` immutable via Foundry `immutableReferences` (do not global-replace zero addresses in bytecode).
+
+**Caveats:** RPC gas simulates direct `redeemDelegations`; the relayer includes its own submission/wrapper path. The shim’s `executeFromExecutor` is minimal—not byte-identical to `EIP7702StatelessDeleGator`. Use this to measure correlation, not as a production fee API.
+
 ## Chainlink price-gated swaps
 
 Stack [`ChainlinkPriceRuleEnforcer`](../../src/enforcers/ChainlinkPriceRuleEnforcer.sol) with LiFi for buy-the-dip, take-profit, and absolute price triggers. Use a **separate create command** — plain `delegation create` stays LiFi-only.
