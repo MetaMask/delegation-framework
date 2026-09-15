@@ -182,9 +182,136 @@ allowanceSlot(o, s)     = keccak256(abi.encode(spender, keccak256(abi.encode(own
 
 Use **max** of on-chain read vs required minimum so overrides never reduce existing funds.
 
-**viem format:** `StateOverride` is an **array** of `{ address, code?, stateDiff: [{ slot, value }] }`. Merge delegator `code` override with token `stateDiff` entries (see `mergeStateOverrides`).
-
 **RPC requirement:** Node must support `stateOverride` on `eth_call` and `eth_estimateGas` (Geth-style; many Base providers do).
+
+---
+
+## State override examples
+
+viem expects a **`StateOverride` array** (not a Geth address→object map). Each entry is one account to patch. Merge shim `code` on the delegator with `stateDiff` on ERC-20 contracts.
+
+### PoC (shim + USDC funding) — TypeScript (viem)
+
+Same wiring as [`estimate-gas.ts`](scripts/lifi-swap/src/commands/estimate-gas.ts) and [`stateOverride.ts`](scripts/lifi-swap/src/stateOverride.ts):
+
+```typescript
+import type { Address, Hex, StateOverride } from "viem";
+import { DELEGATOR_ESTIMATE_SHIM_CODE } from "./poc/delegatorEstimateShimBytecode.js";
+
+const delegator = "0x9fEad8B19C044C2f404dac38B925Ea16ADaa2954" as Address;
+const delegate = "0x16E09C6b5ec2382eE79A880A50ea7Fa48045fB34" as Address;
+const delegationManager = "0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3" as Address;
+const usdc = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as Address;
+const lifiDiamond = "0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE" as Address;
+
+const redeemCalldata: Hex = "0x…"; // encodeRedeemDelegationsCalldata(redeemParams)
+
+// 1) Shim at user delegator (replaces 7702 prefix for this simulation only)
+const shimOverride: StateOverride = [
+  { address: delegator, code: DELEGATOR_ESTIMATE_SHIM_CODE },
+];
+
+// 2) Fund delegator on USDC — slots from buildErc20FundingOverride / OZ layout
+//    (values below are illustrative for ~7M balance + max allowance; recompute per holder/spender/amounts)
+const fundingOverride: StateOverride = [
+  {
+    address: usdc,
+    stateDiff: [
+      {
+        slot: "0xba347e5d9819676d309f92073225b30ddc4d404e7c6f7e3e13c32630e19f8a57",
+        value:
+          "0x00000000000000000000000000000000000000000000000000000000006be204",
+      },
+      {
+        slot: "0xb14f98ca2232a271cc18cbb3acc24265244b5c4f367a4bae9e3e44e07b8bc491",
+        value:
+          "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffff1b1e3f",
+      },
+    ],
+  },
+];
+
+const stateOverride: StateOverride = [
+  ...shimOverride,
+  ...fundingOverride,
+  // When fee token == swap token, merge into one usdc entry (single address, merged stateDiff)
+];
+
+await publicClient.call({
+  account: delegate,
+  to: delegationManager,
+  data: redeemCalldata,
+  stateOverride,
+});
+
+const gas = await publicClient.estimateGas({
+  account: delegate,
+  to: delegationManager,
+  data: redeemCalldata,
+  stateOverride,
+});
+```
+
+`DELEGATOR_ESTIMATE_SHIM_CODE` is the full runtime hex from [`delegatorEstimateShimBytecode.ts`](scripts/lifi-swap/src/poc/delegatorEstimateShimBytecode.ts) (regenerate after shim Solidity changes).
+
+### Control (funding only, no shim)
+
+Same call, but **omit** the delegator entry — only token `stateDiff`. With bogus delegation signatures this must **revert** (real 7702 delegator still validates ERC-1271):
+
+```typescript
+const stateOverride: StateOverride = [...fundingOverride]; // no { address: delegator, code: … }
+```
+
+### Geth-style map (equivalent semantics)
+
+Some backends accept the object form under `stateOverride` in JSON-RPC. Logical content matches the viem array above:
+
+```json
+{
+  "0x9fEad8B19C044C2f404dac38B925Ea16ADaa2954": {
+    "code": "0x6080604052…"
+  },
+  "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": {
+    "stateDiff": {
+      "0xba347e5d9819676d309f92073225b30ddc4d404e7c6f7e3e13c32630e19f8a57": "0x00000000000000000000000000000000000000000000000000000000006be204",
+      "0xb14f98ca2232a271cc18cbb3acc24265244b5c4f367a4bae9e3e44e07b8bc491": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffff1b1e3f"
+    }
+  }
+}
+```
+
+viem 2.x converts the **array** form internally; do not pass this map to viem’s `stateOverride` unless your client explicitly documents map support.
+
+### Raw `eth_estimateGas` (relayer node → RPC)
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "eth_estimateGas",
+  "params": [
+    {
+      "from": "0x16E09C6b5ec2382eE79A880A50ea7Fa48045fB34",
+      "to": "0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3",
+      "data": "0xcef6d209…"
+    },
+    "latest",
+    {
+      "0x9fEad8B19C044C2f404dac38B925Ea16ADaa2954": {
+        "code": "0x6080604052…"
+      },
+      "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": {
+        "stateDiff": {
+          "0xba347e5d9819676d309f92073225b30ddc4d404e7c6f7e3e13c32630e19f8a57": "0x00000000000000000000000000000000000000000000000000000000006be204",
+          "0xb14f98ca2232a271cc18cbb3acc24265244b5c4f367a4bae9e3e44e07b8bc491": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffff1b1e3f"
+        }
+      }
+    }
+  ]
+}
+```
+
+Slot keys **depend on** `delegator`, `lifiDiamond`, and token layout — always derive with `buildErc20FundingOverride` (or the slot formulas above), not copy-paste from an old quote.
 
 ---
 
