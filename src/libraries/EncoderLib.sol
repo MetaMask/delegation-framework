@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
-pragma solidity 0.8.23;
+pragma solidity ^0.8.23;
 
 import { Delegation, Caveat } from "../utils/Types.sol";
 import { DELEGATION_TYPEHASH, CAVEAT_TYPEHASH } from "../utils/Constants.sol";
