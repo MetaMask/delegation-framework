@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
-pragma solidity 0.8.23;
+pragma solidity ^0.8.23;
 
 import { Test } from "forge-std/Test.sol";
 import { Vm } from "forge-std/Vm.sol";
