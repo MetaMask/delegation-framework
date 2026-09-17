@@ -9,7 +9,9 @@
     "approve": "tsx src/index.ts approve",
     "execute": "tsx src/index.ts execute",
     "estimate-gas": "tsx src/index.ts estimate-gas",
+    "poc:sepolia-estimate": "tsx src/poc/sepoliaEstimateUnsigned.ts",
     "lifi": "tsx src/index.ts lifi",
+    "quote:arc": "tsx src/index.ts lifi quote --input-token USDC --output-token EURC",
     "test": "tsx --test src/termsEncoding.test.ts src/bitcoinEncoding.test.ts"
   },
   "dependencies": {

@@ -1,4 +1,11 @@
-import { flagBool, flagNumber, flagString, parseArgs, parseCommaList } from "../config.js";
+import {
+  flagBool,
+  flagNumber,
+  flagString,
+  parseArgs,
+  parseCommaList,
+  signerAddressFromEnv,
+} from "../config.js";
 import { formatQuoteNotFound, formatQuoteSummary } from "../format.js";
 import { fetchQuote, LiFiApiError } from "../lifiApi.js";
 import {
@@ -17,13 +24,22 @@ function isQuoteNotFoundError(error: LiFiApiError): boolean {
 export async function runLifiQuoteCommand(argv: string[]): Promise<void> {
   const { flags } = parseArgs(argv);
 
-  const inputChainQuery = flagString(flags, "input-chain");
-  const outputChainQuery = flagString(flags, "output-chain");
+  const inputChainQuery =
+    flagString(flags, "input-chain") ?? process.env.LIFI_QUOTE_INPUT_CHAIN;
+  const outputChainQuery =
+    flagString(flags, "output-chain") ?? process.env.LIFI_QUOTE_OUTPUT_CHAIN;
   const inputTokenQuery = flagString(flags, "input-token");
   const outputTokenQuery = flagString(flags, "output-token");
-  const inputAddress = flagString(flags, "input-address");
-  const outputAddress = flagString(flags, "output-address");
-  const amountRaw = flagString(flags, "amount");
+  const defaultFrom = signerAddressFromEnv();
+  const inputAddress =
+    flagString(flags, "input-address") ??
+    process.env.LIFI_QUOTE_INPUT_ADDRESS ??
+    defaultFrom;
+  const outputAddress =
+    flagString(flags, "output-address") ??
+    process.env.LIFI_QUOTE_OUTPUT_ADDRESS ??
+    inputAddress;
+  const amountRaw = flagString(flags, "amount") ?? process.env.LIFI_FROM_AMOUNT;
 
   if (
     !inputChainQuery ||
@@ -35,8 +51,10 @@ export async function runLifiQuoteCommand(argv: string[]): Promise<void> {
     !amountRaw
   ) {
     throw new Error(
-      "Usage: lifi quote --input-chain <name> --input-token <symbol> --input-address <addr> " +
-        "--output-chain <name> --output-token <symbol> --output-address <addr> --amount <atoms> " +
+      "Usage: lifi quote --input-chain <name> --input-token <symbol> --output-chain <name> " +
+        "--output-token <symbol> --amount <atoms> " +
+        "[--input-address <addr>] [--output-address <addr>] " +
+        "(addresses default to PRIVATE_KEY EOA; chains default to LIFI_QUOTE_*_CHAIN in .env) " +
         "[--slippage 0.005] [--order FASTEST|CHEAPEST] [--allow-bridges relay,layerswap] " +
         "[--deny-bridges hop] [--calldata] [--raw-errors] [--json] [--verbose]",
     );

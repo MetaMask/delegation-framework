@@ -37,9 +37,10 @@ LiFi API discovery (read-only, no PRIVATE_KEY):
   npm run lifi -- tokens --chain <name> [--tags stablecoin] [--symbol USDC] [--json]
   npm run lifi -- tools [--chains base,eth] [--json]
   npm run lifi -- connections --from-chain <name> --to-chain <name> [--from-token USDC] [--json]
-  npm run lifi -- quote --input-chain <name> --input-token <sym> --input-address <addr> \\
-    --output-chain <name> --output-token <sym> --output-address <addr> --amount <atoms> \\
+  npm run lifi -- quote --input-chain <name> --input-token <sym> --output-chain <name> \\
+    --output-token <sym> --amount <atoms> [--input-address <addr>] [--output-address <addr>] \\
     [--allow-bridges relay,layerswap] [--deny-bridges hop] [--calldata] [--raw-errors] [--json]
+  npm run quote:arc -- --input-token USDC --output-token EURC --amount 1000000
 
 Create options (LiFi-only) — route flags (same style as lifi quote):
   --input-chain <name>        Source chain (e.g. Base); must match BASE_RPC_URL network
@@ -82,7 +83,8 @@ Execute options:
                               Over-budget amounts warn locally; enforcer enforces on-chain
 
 Environment (scripts/lifi-swap/.env):
-  PRIVATE_KEY, BASE_RPC_URL (must match --input-chain network), RELAYER_URL
+  PRIVATE_KEY, ARC_RPC_URL or BASE_RPC_URL (must match --input-chain network), RELAYER_URL
+  Optional quote defaults: LIFI_QUOTE_INPUT_CHAIN, LIFI_QUOTE_OUTPUT_CHAIN, LIFI_FROM_AMOUNT
   Optional defaults: LIFI_PERIOD_*, LIFI_SLIPPAGE*, LIFI_FROM_AMOUNT (execute)
   Legacy create-only: LIFI_FROM_TOKEN, LIFI_TO_TOKEN, LIFI_TO_CHAIN
   Optional create override: LIFI_DIAMOND (source-chain LiFi diamond address)

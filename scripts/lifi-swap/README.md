@@ -42,7 +42,17 @@ npm run lifi -- tools --chains base,eth
 # Possible routes between chains
 npm run lifi -- connections --from-chain Base --to-chain Bitcoin --from-token USDC
 
+# Arc mainnet quote (uses LIFI_QUOTE_*_CHAIN and PRIVATE_KEY from .env)
+npm run quote:arc -- --amount 1000000
+
 # Quote with human-readable chain/token names (amount in token atoms)
+npm run lifi -- quote \
+  --input-chain Arc \
+  --input-token USDC \
+  --output-chain Arc \
+  --output-token EURC \
+  --amount 1000000
+
 npm run lifi -- quote \
   --input-chain Base \
   --input-token USDC \

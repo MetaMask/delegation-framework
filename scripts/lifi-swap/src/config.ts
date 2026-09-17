@@ -1,8 +1,8 @@
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Address, Hex } from "viem";
-import { getAddress, isHex } from "viem";
+import { getAddress, isHex, type Address, type Hex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 
 import {
   BASE_CHAIN_ID,
@@ -90,11 +90,28 @@ function parseOptionalAddressEnv(name: string): Address | undefined {
 function resolveRpcUrl(override?: string): string {
   return (
     override ??
+    optionalEnv("ARC_RPC_URL") ??
     optionalEnv("BASE_RPC_URL") ??
     (() => {
-      throw new Error("Missing BASE_RPC_URL in scripts/lifi-swap/.env");
+      throw new Error(
+        "Missing RPC URL in scripts/lifi-swap/.env (set ARC_RPC_URL or BASE_RPC_URL)",
+      );
     })()
   );
+}
+
+/** EOA for LiFi quote `fromAddress` / `toAddress` when flags are omitted. */
+export function signerAddressFromEnv(): Address | undefined {
+  const explicit =
+    parseOptionalAddressEnv("LIFI_QUOTE_FROM_ADDRESS") ??
+    parseOptionalAddressEnv("LIFI_QUOTE_INPUT_ADDRESS");
+  if (explicit) return explicit;
+
+  const raw = optionalEnv("PRIVATE_KEY");
+  if (!raw) return undefined;
+  const normalized = raw.startsWith("0x") ? raw : `0x${raw}`;
+  if (!isHex(normalized)) return undefined;
+  return getAddress(privateKeyToAccount(normalized).address);
 }
 
 export function loadCliConfig(overrides: Partial<CliConfig> = {}): CliConfig {
