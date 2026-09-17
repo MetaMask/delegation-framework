@@ -1,6 +1,6 @@
 /**
  * Temporary probe: POST relayer_estimate7710Transaction twice on Sepolia
- * (signed vs bytes32(0) placeholder signature) against the 1Shot dev relayer.
+ * (signed vs 65-byte zero placeholder signature) against the 1Shot dev relayer.
  *
  *   cd scripts/lifi-swap && npx tsx src/poc/sepoliaEstimateUnsigned.ts
  *   npm run poc:sepolia-estimate
@@ -34,15 +34,14 @@ import {
   type Estimate7710Result,
   type Send7710Params,
 } from "../relayer.js";
+import { BOGUS_DELEGATION_SIGNATURE } from "../pocConstants.js";
+
+const PLACEHOLDER_DELEGATION_SIGNATURE = BOGUS_DELEGATION_SIGNATURE;
 
 const CHAIN_ID = 11155111;
 const RELAYER_URL = "https://relayer.1shotapi.dev/relayers";
 const WORK_RECIPIENT = getAddress("0x4a0C5B7c1262d5D76B26235F7D96E86C24de3532");
 const WORK_AMOUNT = 10_000n;
-
-/** Same placeholder as 1shot-okx-relayer DelegationSignatureUtils (unsigned estimate). */
-const PLACEHOLDER_DELEGATION_SIGNATURE: Hex =
-  "0x0000000000000000000000000000000000000000000000000000000000000000";
 
 function parsePrivateKey(): Hex {
   const raw = process.env.PRIVATE_KEY;
@@ -322,7 +321,7 @@ async function main(): Promise<void> {
 
   const placeholderEnvelope = await postEstimate(placeholderParams);
   printEstimate(
-    "2. placeholder estimate (signature bytes32(0))",
+    "2. placeholder estimate (65-byte zero signature)",
     placeholderParams,
     placeholderEnvelope,
   );
