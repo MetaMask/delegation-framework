@@ -141,6 +141,13 @@ ChainlinkPriceRuleEnforcer: 0x4dAEbF9C5813EFF2606acD41BA25e57841e7cb75
 
 > **LiFiSwapEnforcer v2 (Base, 2026-03-20):** Calldata verification upgrade — `beforeHook` decodes LiFi execution calldata and verifies destination chain + recipient against user-signed terms. CREATE2 salt `GATOR`, deployer `0x9fEad8B19C044C2f404dac38B925Ea16ADaa2954`. Previous deployment `0x64a9B2277dcDD134e78d30bEe11c3056e8E56ffE` is superseded on Base.
 
+> **LiFiSwapEnforcer v3 (upgradeable, Arc/Base/Ethereum, 2026-09-18):** Deployed behind an OpenZeppelin `TransparentUpgradeableProxy` so enforcement logic can be upgraded without requiring users to re-sign delegations. CREATE2 salts `IMPL=GATOR`, `PROXY=GATOR_PROXY`, deployer `0x9fEad8B19C044C2f404dac38B925Ea16ADaa2954`. All three addresses are identical across Arc (5042), Base (8453), and Ethereum (1):
+> - `LiFiSwapEnforcer` impl: `0xb91DA9586242742c6384Ab06fdEd4C9A742fd050`
+> - `LiFiSwapEnforcer` PROXY: `0x29fcBBa852439616c4D614A2fa6411E42b760153` — new delegations reference this as `enforcer`
+> - `ProxyAdmin` (upgrade auth): `0x1798093F7B364f25D9Ad79E04313C6078C2c5FC8`
+>
+> Verification: impl + `TransparentUpgradeableProxy` + `ProxyAdmin` verified on Ethereum (1) and Base (8453) via Etherscan v2. Arc (5042) uses Blockscout Pro, which does not expose a verification API endpoint on this instance — verify Arc via the explorer web UI (upload standard JSON input). Existing signed delegations keep hitting v2 `0xD0e70cd777a527fB798e5EcA8800c5E3588041d4` on Base and continue to work; no migration required.
+
 DelegationMetaSwapAdapter
 Ethereum: 0xe41eB5A3F6e35f1A8C77113F372892D09820C3fD
 Optimism, Base, Arbitrum, Linea: 0x5e4b49156D23D890e7DC264c378a443C2d22A80E

@@ -23,6 +23,10 @@ optimizer = true
   tab_width = 4
   wrap_comments = true
   
+[etherscan]
+  mainnet = { key = "${ETHERSCAN_API_KEY}", url = "https://api.etherscan.io/v2/api" }
+  base = { key = "${ETHERSCAN_API_KEY}", url = "https://api.etherscan.io/v2/api" }
+
 [rpc_endpoints]
   mainnet = "${MAINNET_RPC_URL}"
   linea = "${LINEA_RPC_URL}"
