@@ -4,6 +4,8 @@
  *
  *   cd scripts/lifi-swap && npx tsx src/poc/sepoliaEstimateUnsigned.ts
  *   npm run poc:sepolia-estimate
+ *
+ * Docs (for relayer / integrator write-up): ./UnsignedEstimate7710.md
  */
 import {
   isHex,
