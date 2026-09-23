@@ -9,8 +9,9 @@ import { ModeCode, Execution } from "../utils/Types.sol";
 
 /**
  * @title ExactCalldataBatchEnforcer
- * @notice Ensures that the provided batch execution calldata matches exactly the expected calldata for each execution.
- * @dev This enforcer operates only in batch execution call type and with default execution mode.
+ * @notice Ensures that each batch execution matches the terms Execution (target, value, and calldata).
+ * @dev Terms are encoded as Execution[]. Calldata-only comparison would leave target and value
+ *      unconstrained despite being present in terms. Operates only in batch + default execution mode.
  */
 contract ExactCalldataBatchEnforcer is CaveatEnforcer {
     using ExecutionLib for bytes;
@@ -19,7 +20,7 @@ contract ExactCalldataBatchEnforcer is CaveatEnforcer {
     ////////////////////////////// Public Methods //////////////////////////////
 
     /**
-     * @notice Validates that each execution's calldata in the batch matches the expected calldata.
+     * @notice Validates that each execution in the batch matches the expected target, value, and calldata.
      * @param _terms The encoded expected Executions.
      * @param _mode The execution mode. (Must be Batch callType, Default execType)
      * @param _executionCallData The batch execution calldata.
@@ -45,8 +46,11 @@ contract ExactCalldataBatchEnforcer is CaveatEnforcer {
         // Validate that the number of executions matches the number of expected calldata
         require(executions_.length == termsExecutions_.length, "ExactCalldataBatchEnforcer:invalid-batch-size");
 
-        // Check each execution's calldata matches exactly
+        // Terms encode full Execution[]; enforce target and value as well as calldata so a
+        // redeemer cannot swap the token (or attach ETH) while reusing identical calldata.
         for (uint256 i = 0; i < executions_.length; i++) {
+            require(executions_[i].target == termsExecutions_[i].target, "ExactCalldataBatchEnforcer:invalid-target");
+            require(executions_[i].value == termsExecutions_[i].value, "ExactCalldataBatchEnforcer:invalid-value");
             require(
                 keccak256(termsExecutions_[i].callData) == keccak256(executions_[i].callData),
                 "ExactCalldataBatchEnforcer:invalid-calldata"
