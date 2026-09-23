@@ -82,8 +82,9 @@ contract ERC20TransferAmountEnforcer is CaveatEnforcer {
         internal
         returns (uint256 limit_, uint256 spent_)
     {
-        (address target_,, bytes calldata callData_) = _executionCallData.decodeSingle();
+        (address target_, uint256 value_, bytes calldata callData_) = _executionCallData.decodeSingle();
 
+        require(value_ == 0, "ERC20TransferAmountEnforcer:invalid-value");
         require(callData_.length == 68, "ERC20TransferAmountEnforcer:invalid-execution-length");
 
         address allowedContract_;

@@ -96,6 +96,17 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         );
     }
 
+    /// @notice Reverts if a token transfer execution carries non-zero native value.
+    function testRevertOnNonZeroValue() public {
+        bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
+        bytes memory callData_ = _encodeERC20Transfer(bob, 10 ether);
+        bytes memory execCallData_ = _encodeSingleExecution(address(basicERC20), 1, callData_);
+        vm.expectRevert("ERC20PeriodTransferEnforcer:invalid-value");
+        erc20PeriodTransferEnforcer.beforeHook(
+            terms_, "", singleDefaultMode, execCallData_, dummyDelegationHash, address(0), redeemer
+        );
+    }
+
     /// @notice Reverts if the target contract in execution data does not match the token in terms_.
     function testInvalidContract() public {
         bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
