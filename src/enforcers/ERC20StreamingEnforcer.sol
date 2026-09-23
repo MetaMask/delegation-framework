@@ -155,8 +155,9 @@ contract ERC20StreamingEnforcer is CaveatEnforcer {
     )
         private
     {
-        (address target_,, bytes calldata callData_) = _executionCallData.decodeSingle();
+        (address target_, uint256 value_, bytes calldata callData_) = _executionCallData.decodeSingle();
 
+        require(value_ == 0, "ERC20StreamingEnforcer:invalid-value");
         require(callData_.length == 68, "ERC20StreamingEnforcer:invalid-execution-length");
 
         (address token_, uint256 initialAmount_, uint256 maxAmount_, uint256 amountPerSecond_, uint256 startTime_) =
