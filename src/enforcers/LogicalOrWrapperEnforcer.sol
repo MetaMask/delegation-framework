@@ -47,6 +47,9 @@ import { ModeCode, Caveat } from "../utils/Types.sol";
  *  - Never assume the redeemer will select the most restrictive group.
  *  - Design caveat groups with the understanding that the redeemer will choose the path of least
  *    resistance.
+ *  - Stateful caveat enforcers keep isolated state per group (the delegation hash forwarded
+ *    to sub-enforcers is namespaced by the selected group index), so budgets/periods do not
+ *    leak across groups. To share a budget across alternative paths, use a single group.
  *
  * Use this enforcer at your own risk and ensure it aligns with your intended security model.
  */
@@ -266,11 +269,26 @@ contract LogicalOrWrapperEnforcer is CaveatEnforcer {
                     selectedGroup_.caveatArgs[i],
                     _params.mode,
                     _params.executionCallData,
-                    _params.delegationHash,
+                    _getGroupDelegationHash(_params.delegationHash, selectedGroup_.groupIndex),
                     _params.delegator,
                     _params.redeemer
                 )
             );
         }
+    }
+
+    /**
+     * @notice Namespaces the delegation hash by the selected group.
+     * @dev Stateful caveat enforcers key their state by delegation hash (not by terms),
+     *      so without namespacing every group that references the same stateful enforcer
+     *      shares one state: the first-used group initialises it (e.g. pinning a period
+     *      start or filling a call counter) for all other groups, invisibly to the
+     *      delegator. With namespacing each group's state is isolated; a shared budget
+     *      can still be expressed by placing the caveats in a single group.
+     * @param _delegationHash The hash of the delegation being redeemed.
+     * @param _groupIndex The index of the caveat group selected for this redemption.
+     */
+    function _getGroupDelegationHash(bytes32 _delegationHash, uint256 _groupIndex) internal pure returns (bytes32) {
+        return keccak256(abi.encode(_delegationHash, _groupIndex));
     }
 }
