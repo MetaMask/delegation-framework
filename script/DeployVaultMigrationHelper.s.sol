@@ -4,13 +4,13 @@ pragma solidity 0.8.23;
 import "forge-std/Script.sol";
 import { console2 } from "forge-std/console2.sol";
 
-import { VaultMigrationAdapter } from "../src/helpers/VaultMigrationAdapter.sol";
+import { VaultMigrationHelper } from "../src/helpers/VaultMigrationHelper.sol";
 
 /**
- * @title DeployVaultMigrationAdapter
- * @notice Deploys VaultMigrationAdapter deterministically with CREATE2.
+ * @title DeployVaultMigrationHelper
+ * @notice Deploys VaultMigrationHelper deterministically with CREATE2.
  */
-contract DeployVaultMigrationAdapter is Script {
+contract DeployVaultMigrationHelper is Script {
     bytes32 internal salt;
     address internal owner;
     address internal baseAdapter;
@@ -18,7 +18,7 @@ contract DeployVaultMigrationAdapter is Script {
 
     function setUp() public {
         salt = bytes32(abi.encodePacked(vm.envString("SALT")));
-        owner = vm.envAddress("VAULT_MIGRATION_ADAPTER_OWNER_ADDRESS");
+        owner = vm.envAddress("VAULT_MIGRATION_HELPER_OWNER_ADDRESS");
         baseAdapter = vm.envAddress("BASE_VEDA_ADAPTER_ADDRESS");
         premiumAdapter = vm.envAddress("PREMIUM_VEDA_ADAPTER_ADDRESS");
 
@@ -32,9 +32,9 @@ contract DeployVaultMigrationAdapter is Script {
 
     function run() public {
         vm.startBroadcast();
-        address deployed = address(new VaultMigrationAdapter{ salt: salt }(owner, baseAdapter, premiumAdapter));
+        address deployed = address(new VaultMigrationHelper{ salt: salt }(owner, baseAdapter, premiumAdapter));
         vm.stopBroadcast();
 
-        console2.log("VaultMigrationAdapter: %s", deployed);
+        console2.log("VaultMigrationHelper: %s", deployed);
     }
 }
