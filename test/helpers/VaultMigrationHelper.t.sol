@@ -77,6 +77,7 @@ contract VaultMigrationHelperTest is BaseTest {
     event BatchMigrationToPremiumExecuted(address indexed caller, uint256 count);
     event BatchMigrationToBaseExecuted(address indexed caller, uint256 count);
     event PremiumTransferExecuted(address indexed from, address indexed to, uint256 amount);
+    event BatchPremiumTransferExecuted(address indexed caller, uint256 count);
     event StuckTokensWithdrawn(IERC20 indexed token, address indexed recipient, uint256 amount);
 
     function setUp() public override {
@@ -347,6 +348,10 @@ contract VaultMigrationHelperTest is BaseTest {
 
         vm.expectRevert(VaultMigrationHelper.InvalidBatchLength.selector);
         migrationHelper.migrateToBaseByDelegationBatch(baseParams_);
+
+        VaultMigrationHelper.PremiumTransferParams[] memory transferParams_ = new VaultMigrationHelper.PremiumTransferParams[](0);
+        vm.expectRevert(VaultMigrationHelper.InvalidBatchLength.selector);
+        migrationHelper.premiumTransferBatch(transferParams_);
     }
 
     function test_migrateToPremium_revertsOnExpiredCompliance() public {
@@ -640,6 +645,49 @@ contract VaultMigrationHelperTest is BaseTest {
         vm.clearMockedCalls();
     }
 
+    function test_premiumTransferBatch_movesEachDelegatorToRecipient() public {
+        uint256 aliceShares_ = _depositToPremium(users.alice, 300e6, 330, block.timestamp + 20 minutes);
+        uint256 carolShares_ = _depositToPremium(users.carol, 400e6, 331, block.timestamp + 21 minutes);
+        address recipient_ = makeAddr("premiumTransferRecipient");
+        address alice_ = address(users.alice.deleGator);
+        address carol_ = address(users.carol.deleGator);
+
+        VaultMigrationHelper.PremiumTransferParams[] memory params_ = new VaultMigrationHelper.PremiumTransferParams[](2);
+        params_[0] = _premiumTransferParams(users.alice, aliceShares_, 332, recipient_, block.timestamp + 20 minutes);
+        params_[1] = _premiumTransferParams(users.carol, carolShares_, 333, recipient_, block.timestamp + 21 minutes);
+
+        vm.expectEmit(true, false, false, true, address(migrationHelper));
+        emit BatchPremiumTransferExecuted(address(users.bob.deleGator), 2);
+        vm.prank(address(users.bob.deleGator));
+        migrationHelper.premiumTransferBatch(params_);
+
+        assertEq(PREMIUM_VAULT.balanceOf(alice_), 0);
+        assertEq(PREMIUM_VAULT.balanceOf(carol_), 0);
+        assertEq(PREMIUM_VAULT.balanceOf(recipient_), aliceShares_ + carolShares_);
+        _assertNoAdapterDust();
+    }
+
+    function test_premiumTransferBatch_revertsAllWhenLaterStreamFails() public {
+        uint256 aliceShares_ = _depositToPremium(users.alice, 300e6, 340, block.timestamp + 20 minutes);
+        uint256 carolShares_ = _depositToPremium(users.carol, 400e6, 341, block.timestamp + 21 minutes);
+        address recipient_ = makeAddr("premiumTransferRecipient");
+        address alice_ = address(users.alice.deleGator);
+        address carol_ = address(users.carol.deleGator);
+
+        VaultMigrationHelper.PremiumTransferParams[] memory params_ = new VaultMigrationHelper.PremiumTransferParams[](2);
+        params_[0] = _premiumTransferParams(users.alice, aliceShares_, 342, recipient_, block.timestamp + 20 minutes);
+        params_[1] = _premiumTransferParams(users.carol, carolShares_, 343, recipient_, block.timestamp - 1);
+
+        vm.prank(address(users.bob.deleGator));
+        vm.expectRevert(VaultMigrationHelper.ComplianceCheckFailed.selector);
+        migrationHelper.premiumTransferBatch(params_);
+
+        assertEq(PREMIUM_VAULT.balanceOf(alice_), aliceShares_);
+        assertEq(PREMIUM_VAULT.balanceOf(carol_), carolShares_);
+        assertEq(PREMIUM_VAULT.balanceOf(recipient_), 0);
+        _assertNoAdapterDust();
+    }
+
     function test_withdrawEmergency_revertsOnNonOwner() public {
         BasicERC20 testToken_ = new BasicERC20(adapterOwner, "TestToken", "TST", 0);
         vm.prank(adapterOwner);
@@ -807,6 +855,26 @@ contract VaultMigrationHelperTest is BaseTest {
                 _delegator, address(baseAdapter), address(MUSD), _depositAmount, _depositSalt
             ),
             minimumMint: 0
+        });
+    }
+
+    function _premiumTransferParams(
+        TestUser memory _delegator,
+        uint256 _amount,
+        uint256 _salt,
+        address _to,
+        uint256 _deadline
+    )
+        internal
+        view
+        returns (VaultMigrationHelper.PremiumTransferParams memory)
+    {
+        address from_ = address(_delegator.deleGator);
+        return VaultMigrationHelper.PremiumTransferParams({
+            from: from_,
+            to: _to,
+            delegations: _createPremiumTransferChain(_delegator, _amount, _salt, address(migrationHelper)),
+            compliance: _transferComplianceData(from_, _to, _amount, _deadline, COMPLIANCE_SIGNER_KEY)
         });
     }
 

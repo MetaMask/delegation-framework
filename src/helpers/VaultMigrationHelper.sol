@@ -65,6 +65,20 @@ contract VaultMigrationHelper is Ownable2Step {
         uint256 minimumMint;
     }
 
+    /**
+     * @notice Parameters for one compliance-gated premium share transfer.
+     * @param from Share owner and root delegator.
+     * @param to Compliance-approved recipient of the premium shares.
+     * @param delegations Chain sorted leaf to root. Leaf `delegate` must be this helper.
+     * @param compliance Backend-issued EIP-191 approval (`deadline` + `signature`).
+     */
+    struct PremiumTransferParams {
+        address from;
+        address to;
+        Delegation[] delegations;
+        IComplianceVedaTeller.ComplianceData compliance;
+    }
+
     ////////////////////////////// Events //////////////////////////////
 
     /**
@@ -106,6 +120,13 @@ contract VaultMigrationHelper is Ownable2Step {
     event PremiumTransferExecuted(address indexed from, address indexed to, uint256 amount);
 
     /**
+     * @notice Emitted after a batch of premium share transfers completes.
+     * @param caller Address that submitted the permissionless batch.
+     * @param count Number of transfers executed.
+     */
+    event BatchPremiumTransferExecuted(address indexed caller, uint256 count);
+
+    /**
      * @notice Emitted when stuck tokens are withdrawn by owner.
      * @param token Address of the token withdrawn.
      * @param recipient Address of the recipient.
@@ -124,7 +145,7 @@ contract VaultMigrationHelper is Ownable2Step {
     /// @dev Thrown when either delegation chain contains fewer than two delegations.
     error InvalidDelegationsLength();
 
-    /// @dev Thrown when a migration batch is empty.
+    /// @dev Thrown when a batch is empty.
     error InvalidBatchLength();
 
     /// @dev Thrown when the withdrawal and deposit chains have different root delegators.
@@ -265,6 +286,61 @@ contract VaultMigrationHelper is Ownable2Step {
     )
         external
     {
+        _premiumTransfer(_from, _to, _delegations, _compliance);
+    }
+
+    /**
+     * @notice Moves multiple delegators' entire premium vault balances sequentially in one atomic transaction.
+     * @dev A revert from any transfer rolls back the entire batch. Each stream needs its own compliance
+     *      signature because the digest includes `from`, `to`, amount, and deadline.
+     * @param _params Transfer parameters for each stream.
+     * @notice Security consideration: Callable by anyone. Every delegation chain and compliance signature
+     *      remains independently enforced.
+     */
+    function premiumTransferBatch(PremiumTransferParams[] calldata _params) external {
+        uint256 length_ = _params.length;
+        if (length_ == 0) revert InvalidBatchLength();
+
+        for (uint256 i = 0; i < length_;) {
+            PremiumTransferParams calldata params_ = _params[i];
+            _premiumTransfer(params_.from, params_.to, params_.delegations, params_.compliance);
+            unchecked {
+                ++i;
+            }
+        }
+
+        emit BatchPremiumTransferExecuted(msg.sender, length_);
+    }
+
+    /**
+     * @notice Emergency function to recover tokens accidentally sent to this contract.
+     * @dev Migrations should not leave balances here. `premiumTransfer` only holds shares mid-transaction.
+     *      This function is only for recovering tokens sent to this contract by mistake.
+     * @param _token The token to be recovered.
+     * @param _amount The amount of tokens to recover.
+     * @param _recipient The address to receive the recovered tokens.
+     */
+    function withdrawEmergency(IERC20 _token, uint256 _amount, address _recipient) external onlyOwner {
+        if (_recipient == address(0)) revert InvalidRecipient();
+
+        _token.safeTransfer(_recipient, _amount);
+
+        emit StuckTokensWithdrawn(_token, _recipient, _amount);
+    }
+
+    ////////////////////////////// Private/Internal Methods //////////////////////////////
+
+    /**
+     * @notice Executes one compliance-gated premium share transfer.
+     */
+    function _premiumTransfer(
+        address _from,
+        address _to,
+        Delegation[] calldata _delegations,
+        IComplianceVedaTeller.ComplianceData calldata _compliance
+    )
+        internal
+    {
         if (_from == address(0) || _to == address(0)) revert InvalidZeroAddress();
 
         uint256 length_ = _delegations.length;
@@ -294,24 +370,6 @@ contract VaultMigrationHelper is Ownable2Step {
 
         emit PremiumTransferExecuted(_from, _to, amount_);
     }
-
-    /**
-     * @notice Emergency function to recover tokens accidentally sent to this contract.
-     * @dev Migrations should not leave balances here. `premiumTransfer` only holds shares mid-transaction.
-     *      This function is only for recovering tokens sent to this contract by mistake.
-     * @param _token The token to be recovered.
-     * @param _amount The amount of tokens to recover.
-     * @param _recipient The address to receive the recovered tokens.
-     */
-    function withdrawEmergency(IERC20 _token, uint256 _amount, address _recipient) external onlyOwner {
-        if (_recipient == address(0)) revert InvalidRecipient();
-
-        _token.safeTransfer(_recipient, _amount);
-
-        emit StuckTokensWithdrawn(_token, _recipient, _amount);
-    }
-
-    ////////////////////////////// Private/Internal Methods //////////////////////////////
 
     /**
      * @notice Executes one base-to-premium migration.
