@@ -13,6 +13,7 @@ import { ArgsEqualityCheckEnforcer } from "../src/enforcers/ArgsEqualityCheckEnf
 import { BlockNumberEnforcer } from "../src/enforcers/BlockNumberEnforcer.sol";
 import { DeployedEnforcer } from "../src/enforcers/DeployedEnforcer.sol";
 import { ERC20BalanceChangeEnforcer } from "../src/enforcers/ERC20BalanceChangeEnforcer.sol";
+import { ERC20SwapEnforcer } from "../src/enforcers/ERC20SwapEnforcer.sol";
 import { ERC20TransferAmountEnforcer } from "../src/enforcers/ERC20TransferAmountEnforcer.sol";
 import { ERC20StreamingEnforcer } from "../src/enforcers/ERC20StreamingEnforcer.sol";
 import { ERC20PeriodTransferEnforcer } from "../src/enforcers/ERC20PeriodTransferEnforcer.sol";
@@ -28,6 +29,7 @@ import { LimitedCallsEnforcer } from "../src/enforcers/LimitedCallsEnforcer.sol"
 import { LogicalOrWrapperEnforcer } from "../src/enforcers/LogicalOrWrapperEnforcer.sol";
 import { MultiTokenPeriodEnforcer } from "../src/enforcers/MultiTokenPeriodEnforcer.sol";
 import { NativeBalanceChangeEnforcer } from "../src/enforcers/NativeBalanceChangeEnforcer.sol";
+import { NativeSwapEnforcer } from "../src/enforcers/NativeSwapEnforcer.sol";
 import { NativeTokenPaymentEnforcer } from "../src/enforcers/NativeTokenPaymentEnforcer.sol";
 import { NativeTokenPeriodTransferEnforcer } from "../src/enforcers/NativeTokenPeriodTransferEnforcer.sol";
 import { NativeTokenStreamingEnforcer } from "../src/enforcers/NativeTokenStreamingEnforcer.sol";
@@ -94,6 +96,9 @@ contract DeployCaveatEnforcers is Script {
         deployedAddress = address(new ERC20BalanceChangeEnforcer{ salt: salt }());
         console2.log("ERC20BalanceChangeEnforcer: %s", deployedAddress);
 
+        deployedAddress = address(new ERC20SwapEnforcer{ salt: salt }());
+        console2.log("ERC20SwapEnforcer: %s", deployedAddress);
+
         deployedAddress = address(new ERC20TransferAmountEnforcer{ salt: salt }());
         console2.log("ERC20TransferAmountEnforcer: %s", deployedAddress);
 
@@ -138,6 +143,9 @@ contract DeployCaveatEnforcers is Script {
 
         deployedAddress = address(new NativeBalanceChangeEnforcer{ salt: salt }());
         console2.log("NativeBalanceChangeEnforcer: %s", deployedAddress);
+
+        deployedAddress = address(new NativeSwapEnforcer{ salt: salt }());
+        console2.log("NativeSwapEnforcer: %s", deployedAddress);
 
         address argsEqualityCheckEnforcer = address(new ArgsEqualityCheckEnforcer{ salt: salt }());
         console2.log("ArgsEqualityCheckEnforcer: %s", argsEqualityCheckEnforcer);
