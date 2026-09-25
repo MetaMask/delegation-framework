@@ -44,4 +44,20 @@ interface IComplianceVedaTeller {
     )
         external
         returns (uint256 assetsOut);
+
+    /**
+     * @notice RolesAuthority used to check compliance-signer and transfer-allowlist roles.
+     */
+    function authority() external view returns (address);
+
+    /**
+     * @notice Role ID that a recovered compliance signer must hold, or 255 to disable Teller checks.
+     * @dev `VaultMigrationHelper.premiumTransfer` reverts when this value is 255.
+     */
+    function complianceSignerRole() external view returns (uint8);
+
+    /**
+     * @notice Maximum seconds a compliance deadline may extend beyond `block.timestamp`, or 0 for no cap.
+     */
+    function complianceWindow() external view returns (uint96);
 }
