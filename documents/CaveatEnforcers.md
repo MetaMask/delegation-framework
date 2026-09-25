@@ -25,6 +25,68 @@ Enforcers can target specific call type modes: **single** or **batch**, and exec
 
 ---
 
+### MetaSwapFlexibleSettlementEnforcer
+
+MetaSwap-router caveat for **one** native or ERC-20 swap (optional `approve` / reset-approve). The redeemer picks
+the route; signed terms fix target, input, approval shape, output, recipient, min output, redeemer allowlist, and
+optional time/id policy.
+
+**Embedded behaviors**
+
+| Concern    | Behavior                                                                              |
+| ---------- | ------------------------------------------------------------------------------------- |
+| Settlement | Exact `MetaSwap.swap` ± approval legs (`BATCH_DEFAULT_MODE`)                          |
+| Min output | ERC-20 or native balance increase ≥ `tokenOutMin` (`tokenOut == address(0)` → native) |
+| Redeemer   | Packed allowlist (required, ≥1 address)                                               |
+| Timestamp  | Optional; `0` disables a bound (non-inclusive, like `TimestampEnforcer`)              |
+| Id         | Optional; `0` → hash one-shot; non-zero → IdEnforcer bitmap + mutual exclusion        |
+
+**Shapes**
+
+- Native: `swap{ value: tokenInAmount }(...)`
+- ERC-20: `swap` only / `approve(amount)+swap` / `approve(0)+approve(amount)+swap`
+
+**Terms**
+
+```text
+metaSwap(20) | tokenIn(20) | tokenInAmount(32) | approvalMode(1) |
+tokenOut(20) | recipient(20) | tokenOutMin(32) |
+timestampAfter(16) | timestampBefore(16) | id(32) | redeemers(20*N)
+```
+
+`ApprovalMode`: `None=0` (native only), `SkipApproval=1`, `Approve=2`, `ResetApprove=3`. Execution count must match.
+`SkipApproval` does not read allowance. Args are unused.
+
+**Optional policies**
+
+- Timestamp: both `0` → no window; otherwise same rules as `TimestampEnforcer`
+- Id: `0` → `consumedSettlements[manager, hash]`; non-zero → bitmap per `(manager, delegator)`, no hash flag;
+  failed fills roll back either write
+
+```solidity
+bytes memory terms = abi.encodePacked(
+    metaSwap, tokenIn, tokenInAmount,
+    uint8(MetaSwapFlexibleSettlementEnforcer.ApprovalMode.Approve),
+    tokenOut, recipient, tokenOutMin,
+    uint128(0), uint128(0), // no timestamp
+    uint256(0),             // hash one-shot
+    redeemer
+);
+```
+
+Approve spender / swap token words must be canonical ABI addresses. Swap calldata ≥ 196 bytes
+(`swap(string,address,uint256,bytes)` head).
+
+#### Trust Assumptions
+
+Route `aggregatorId` / `data` are unrestricted — trust MetaSwap, adapters, and the redeemer. Min output can be met by
+any balance increase (unrelated transfers, rebases, bad token accounting). Residual allowance may remain if MetaSwap
+spends less than approved. Input and output must differ.
+
+Deploy: `script/DeployCaveatEnforcers.s.sol`. Verify: `script/verification/verify-enforcer-contracts.sh`.
+
+---
+
 ## Enforcer Details
 
 ### NativeTokenPaymentEnforcer
@@ -57,7 +119,6 @@ Balance Change Enforcers allow setting up guardrails around balance changes for 
 2. **Hash Key Generation**: The hash key is generated using the delegation manager address and delegation hash (plus token address and token ID for ERC1155), ensuring each delegation has its own isolated state.
 
 3. **Balance Caching**: In `beforeHook`, the enforcer:
-
    - Checks that the enforcer isn't already locked for this delegation
    - Locks the enforcer to prevent concurrent access
    - Caches the current balance of the recipient
@@ -191,15 +252,15 @@ The Permit2 branches are restricted to the canonical deployment at `0x0000000000
 
 The enforcer reads a **1-byte bitmask** from `terms` to control which revocation primitives the delegate may use:
 
-| Bit | Hex mask | Allowed primitive |
-|-----|----------|-------------------|
-| 0   | `0x01`   | ERC-20 `approve(spender, 0)` |
-| 1   | `0x02`   | ERC-721 `approve(address(0), tokenId)` |
+| Bit | Hex mask | Allowed primitive                                         |
+| --- | -------- | --------------------------------------------------------- |
+| 0   | `0x01`   | ERC-20 `approve(spender, 0)`                              |
+| 1   | `0x02`   | ERC-721 `approve(address(0), tokenId)`                    |
 | 2   | `0x04`   | `setApprovalForAll(operator, false)` (ERC-721 & ERC-1155) |
-| 3   | `0x08`   | Permit2 `approve(token, spender, 0, 0)` |
-| 4   | `0x10`   | Permit2 `lockdown((address,address)[])` |
-| 5   | `0x20`   | Permit2 `invalidateNonces(token, spender, newNonce)` |
-| 6–7 | —        | Reserved; MUST be zero |
+| 3   | `0x08`   | Permit2 `approve(token, spender, 0, 0)`                   |
+| 4   | `0x10`   | Permit2 `lockdown((address,address)[])`                   |
+| 5   | `0x20`   | Permit2 `invalidateNonces(token, spender, newNonce)`      |
+| 6–7 | —        | Reserved; MUST be zero                                    |
 
 - Terms MUST be exactly 1 byte.
 - A zero mask (`0x00`) is rejected — at least one primitive must be permitted.
@@ -223,11 +284,11 @@ terms = 0x3F  →  all six primitives allowed
 
 The three Permit2 primitives target different parts of Permit2's state, and **none of them subsumes the others**:
 
-| Primitive             | Zeros `amount`? | Resets `expiration`?            | Bumps `nonce`? | Invalidates pending signed permits? |
-|-----------------------|-----------------|---------------------------------|----------------|-------------------------------------|
+| Primitive             | Zeros `amount`? | Resets `expiration`?           | Bumps `nonce`? | Invalidates pending signed permits? |
+| --------------------- | --------------- | ------------------------------ | -------------- | ----------------------------------- |
 | `approve(_,_,0,0)`    | yes             | yes (set to `block.timestamp`) | no             | no                                  |
-| `lockdown(pairs)`     | yes             | no                              | no             | no                                  |
-| `invalidateNonces(…)` | no              | no                              | yes            | yes                                 |
+| `lockdown(pairs)`     | yes             | no                             | no             | no                                  |
+| `invalidateNonces(…)` | no              | no                             | yes            | yes                                 |
 
 To **fully sever** a delegator's Permit2 exposure to a `(token, spender)` pair, both an on-chain allowance revocation (bit 3 or 4) **and** a nonce invalidation (bit 5) are typically required. Enabling only on-chain revocation leaves any signed-but-unredeemed `permit` payloads live; enabling only nonce invalidation leaves the existing on-chain allowance intact. Bit-mask `0x38` enables all three.
 
@@ -262,7 +323,7 @@ The three Permit2 branches intentionally **omit** this on-chain liveness pre-che
 The Permit2 branches assume the canonical Uniswap-deployed Permit2 contract is at `_PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3` on the target chain. On chains where Uniswap has deployed Permit2 this is a safe deterministic address. On chains where canonical Permit2 is **not** deployed:
 
 - if the address is empty, the executor's call returns successfully with no effect (harmless no-op);
-- if a *different* contract happens to live at that address, the selector dispatches into whatever that contract does. The `approve(0, 0)` branch is partially self-protected by its structural calldata checks (any contract under that selector would have to interpret the layout identically to grant authority), but `lockdown` and `invalidateNonces` have no such structural moat.
+- if a _different_ contract happens to live at that address, the selector dispatches into whatever that contract does. The `approve(0, 0)` branch is partially self-protected by its structural calldata checks (any contract under that selector would have to interpret the layout identically to grant authority), but `lockdown` and `invalidateNonces` have no such structural moat.
 
 Delegators on chains without canonical Permit2 should NOT enable bits 3, 4, or 5.
 
