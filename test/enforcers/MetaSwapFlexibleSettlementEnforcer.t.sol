@@ -59,14 +59,22 @@ contract MetaSwapFlexibleSettlementEnforcerTest is CaveatEnforcerBaseTest {
     MetaSwapFlexibleSettlementEnforcer.ApprovalMode internal constant RESET =
     MetaSwapFlexibleSettlementEnforcer.ApprovalMode.ResetApprove;
 
+    uint256 internal constant ORDER_ID = 42;
+    uint128 internal constant NO_TIMESTAMP = 0;
+    uint256 internal constant NO_ID = 0;
+
     MetaSwapFlexibleSettlementEnforcer internal enforcer;
     BasicERC20 internal tokenIn;
     BasicERC20 internal tokenOut;
     FlexibleSettlementMetaSwapMock internal metaSwap;
     address internal alice;
     address internal relayer;
+    uint128 internal expiresAt;
 
-    event SettlementConsumed(address indexed delegationManager, bytes32 indexed delegationHash, address indexed redeemer);
+    event SettlementConsumed(
+        address indexed delegationManager, bytes32 indexed delegationHash, address indexed redeemer, uint256 id
+    );
+    event UsedId(address indexed sender, address indexed delegator, address indexed redeemer, uint256 id);
 
     function setUp() public override {
         super.setUp();
@@ -77,6 +85,7 @@ contract MetaSwapFlexibleSettlementEnforcerTest is CaveatEnforcerBaseTest {
         metaSwap = new FlexibleSettlementMetaSwapMock();
         alice = address(users.alice.deleGator);
         relayer = makeAddr("Relayer");
+        expiresAt = uint128(block.timestamp + 1 days);
 
         tokenIn.mint(alice, 1_000 ether);
         tokenOut.mint(address(metaSwap), 10_000 ether);
@@ -95,6 +104,11 @@ contract MetaSwapFlexibleSettlementEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(info_.tokenOut, address(tokenOut));
         assertEq(info_.recipient, alice);
         assertEq(info_.tokenOutMin, TOKEN_OUT_MIN);
+        assertEq(info_.timestampAfter, NO_TIMESTAMP);
+        assertEq(info_.timestampBefore, NO_TIMESTAMP);
+        assertEq(info_.id, NO_ID);
+        assertEq(info_.redeemers.length, 1);
+        assertEq(info_.redeemers[0], relayer);
     }
 
     function test_getTermsInfoDecodesNativeInputSettlement() public {
@@ -231,10 +245,20 @@ contract MetaSwapFlexibleSettlementEnforcerTest is CaveatEnforcerBaseTest {
 
     function test_revertsForInvalidTermsLength() public {
         vm.expectRevert("MetaSwapFlexibleSettlementEnforcer:invalid-terms");
-        enforcer.getTermsInfo(new bytes(144));
+        enforcer.getTermsInfo(new bytes(228));
 
+        // Long enough for the fixed header + redeemer bytes, but not a multiple of 20.
+        bytes memory misaligned_ = _terms(address(tokenIn), APPROVE, address(tokenOut), alice);
+        bytes memory padded_ = bytes.concat(misaligned_, bytes1(0x00));
         vm.expectRevert("MetaSwapFlexibleSettlementEnforcer:invalid-terms");
-        enforcer.getTermsInfo(new bytes(146));
+        enforcer.getTermsInfo(padded_);
+
+        bytes memory truncated_ = new bytes(misaligned_.length - 1);
+        for (uint256 i_; i_ < truncated_.length; ++i_) {
+            truncated_[i_] = misaligned_[i_];
+        }
+        vm.expectRevert("MetaSwapFlexibleSettlementEnforcer:invalid-terms");
+        enforcer.getTermsInfo(truncated_);
     }
 
     function test_revertsForInvalidRequiredTerms() public {
@@ -460,7 +484,11 @@ contract MetaSwapFlexibleSettlementEnforcerTest is CaveatEnforcerBaseTest {
 
     function test_afterHookRevertsForInvalidTermsLength() public {
         vm.expectRevert("MetaSwapFlexibleSettlementEnforcer:invalid-terms");
-        enforcer.afterHook(new bytes(144), hex"", batchDefaultMode, hex"", bytes32(0), alice, relayer);
+        enforcer.afterHook(new bytes(228), hex"", batchDefaultMode, hex"", bytes32(0), alice, relayer);
+
+        bytes memory misaligned_ = bytes.concat(_terms(address(tokenIn), APPROVE, address(tokenOut), alice), bytes1(0x00));
+        vm.expectRevert("MetaSwapFlexibleSettlementEnforcer:invalid-terms");
+        enforcer.afterHook(misaligned_, hex"", batchDefaultMode, hex"", bytes32(0), alice, relayer);
     }
 
     function test_afterHookConsumesSettlementAndEmitsEvent() public {
@@ -471,10 +499,153 @@ contract MetaSwapFlexibleSettlementEnforcerTest is CaveatEnforcerBaseTest {
 
         vm.prank(address(delegationManager));
         vm.expectEmit(true, true, true, true, address(enforcer));
-        emit SettlementConsumed(address(delegationManager), delegationHash_, relayer);
+        emit SettlementConsumed(address(delegationManager), delegationHash_, relayer, NO_ID);
         enforcer.afterHook(terms_, hex"", batchDefaultMode, hex"", delegationHash_, alice, relayer);
 
         assertTrue(enforcer.consumedSettlements(enforcer.getSettlementKey(address(delegationManager), delegationHash_)));
+    }
+
+    function test_revertsForUnauthorizedRedeemer() public {
+        vm.expectRevert("MetaSwapFlexibleSettlementEnforcer:unauthorized-redeemer");
+        _beforeAs(
+            address(delegationManager),
+            _terms(address(tokenIn), APPROVE, address(tokenOut), alice),
+            _erc20Executions(1, address(tokenIn), TOKEN_IN_AMOUNT, "route", hex""),
+            keccak256("unauthorized"),
+            makeAddr("Intruder")
+        );
+    }
+
+    function test_optionalTimestampAllowsUnboundedWindow() public {
+        _before(
+            _policyTerms(address(tokenIn), APPROVE, address(tokenOut), alice, NO_TIMESTAMP, NO_TIMESTAMP, NO_ID),
+            _erc20Executions(1, address(tokenIn), TOKEN_IN_AMOUNT, "route", hex""),
+            keccak256("no-timestamp")
+        );
+    }
+
+    function test_acceptsTimestampAfterWhenWindowIsOpen() public {
+        vm.warp(100);
+        expiresAt = uint128(block.timestamp + 1 days);
+        _before(
+            _policyTerms(address(tokenIn), APPROVE, address(tokenOut), alice, 50, expiresAt, NO_ID),
+            _erc20Executions(1, address(tokenIn), TOKEN_IN_AMOUNT, "route", hex""),
+            keccak256("timestamp-after-ok")
+        );
+    }
+
+    function test_allowsRedeemerAnywhereInAllowlist() public {
+        address[] memory redeemers_ = new address[](3);
+        redeemers_[0] = address(0);
+        redeemers_[1] = makeAddr("OtherSigner");
+        redeemers_[2] = relayer;
+
+        bytes memory terms_ = _rawTerms(
+            address(metaSwap),
+            address(tokenIn),
+            TOKEN_IN_AMOUNT,
+            uint8(APPROVE),
+            address(tokenOut),
+            alice,
+            TOKEN_OUT_MIN,
+            NO_TIMESTAMP,
+            NO_TIMESTAMP,
+            NO_ID,
+            redeemers_
+        );
+        _before(terms_, _erc20Executions(1, address(tokenIn), TOKEN_IN_AMOUNT, "route", hex""), keccak256("multi-redeemer"));
+    }
+
+    function test_getIsUsedReturnsFalseForUnusedId() public {
+        assertFalse(enforcer.getIsUsed(address(delegationManager), alice, ORDER_ID));
+    }
+
+    function test_revertsForExpiredDelegation() public {
+        vm.warp(expiresAt);
+        vm.expectRevert("MetaSwapFlexibleSettlementEnforcer:expired-delegation");
+        _before(
+            _policyTerms(address(tokenIn), APPROVE, address(tokenOut), alice, NO_TIMESTAMP, expiresAt, NO_ID),
+            _erc20Executions(1, address(tokenIn), TOKEN_IN_AMOUNT, "route", hex""),
+            keccak256("expired")
+        );
+    }
+
+    function test_revertsForEarlyDelegation() public {
+        vm.expectRevert("MetaSwapFlexibleSettlementEnforcer:early-delegation");
+        _before(
+            _policyTerms(address(tokenIn), APPROVE, address(tokenOut), alice, uint128(block.timestamp + 1), expiresAt, NO_ID),
+            _erc20Executions(1, address(tokenIn), TOKEN_IN_AMOUNT, "route", hex""),
+            keccak256("early")
+        );
+    }
+
+    function test_optionalIdUsesHashBasedConsumption() public {
+        Delegation memory delegation_ = _sign(_terms(address(tokenIn), APPROVE, address(tokenOut), alice));
+        bytes32 delegationHash_ = EncoderLib._getDelegationHash(delegation_);
+        Execution[] memory executions_ = _erc20Executions(
+            1, address(tokenIn), TOKEN_IN_AMOUNT, "best-route", abi.encode(IERC20(address(tokenOut)), TOKEN_OUT_AMOUNT)
+        );
+        _redeem(delegation_, executions_);
+
+        assertTrue(enforcer.consumedSettlements(enforcer.getSettlementKey(address(delegationManager), delegationHash_)));
+        assertFalse(enforcer.getIsUsed(address(delegationManager), alice, NO_ID));
+
+        vm.expectRevert("MetaSwapFlexibleSettlementEnforcer:settlement-already-used");
+        _redeem(delegation_, executions_);
+    }
+
+    function test_nonZeroIdUsesBitmapAndSkipsHashConsumption() public {
+        bytes memory terms_ = _policyTerms(address(tokenIn), APPROVE, address(tokenOut), alice, NO_TIMESTAMP, expiresAt, ORDER_ID);
+        Delegation memory delegation_ = _sign(terms_);
+        bytes32 delegationHash_ = EncoderLib._getDelegationHash(delegation_);
+        Execution[] memory executions_ = _erc20Executions(
+            1, address(tokenIn), TOKEN_IN_AMOUNT, "best-route", abi.encode(IERC20(address(tokenOut)), TOKEN_OUT_AMOUNT)
+        );
+
+        vm.expectEmit(true, true, true, true, address(enforcer));
+        emit UsedId(address(delegationManager), alice, relayer, ORDER_ID);
+        vm.expectEmit(true, true, true, true, address(enforcer));
+        emit SettlementConsumed(address(delegationManager), delegationHash_, relayer, ORDER_ID);
+        _redeem(delegation_, executions_);
+
+        assertTrue(enforcer.getIsUsed(address(delegationManager), alice, ORDER_ID));
+        assertFalse(enforcer.consumedSettlements(enforcer.getSettlementKey(address(delegationManager), delegationHash_)));
+    }
+
+    function test_replacementOrdersShareIdAreMutuallyExclusive() public {
+        bytes memory terms_ = _policyTerms(address(tokenIn), APPROVE, address(tokenOut), alice, NO_TIMESTAMP, expiresAt, ORDER_ID);
+        Execution[] memory executions_ = _erc20Executions(
+            1, address(tokenIn), TOKEN_IN_AMOUNT, "best-route", abi.encode(IERC20(address(tokenOut)), TOKEN_OUT_AMOUNT)
+        );
+        Delegation memory first_ = _signWithSalt(terms_, 0);
+        Delegation memory second_ = _signWithSalt(terms_, 1);
+
+        _redeem(second_, executions_);
+        assertTrue(enforcer.getIsUsed(address(delegationManager), alice, ORDER_ID));
+
+        tokenIn.mint(alice, TOKEN_IN_AMOUNT);
+        vm.expectRevert("MetaSwapFlexibleSettlementEnforcer:id-already-used");
+        _redeem(first_, executions_);
+    }
+
+    function test_idConsumptionRollsBackOnInsufficientOutput() public {
+        bytes memory terms_ = _policyTerms(address(tokenIn), APPROVE, address(tokenOut), alice, NO_TIMESTAMP, expiresAt, ORDER_ID);
+        Delegation memory delegation_ = _sign(terms_);
+        Execution[] memory insufficient_ = _erc20Executions(
+            1, address(tokenIn), TOKEN_IN_AMOUNT, "bad-route", abi.encode(IERC20(address(tokenOut)), TOKEN_OUT_MIN - 1)
+        );
+
+        vm.expectRevert("MetaSwapFlexibleSettlementEnforcer:insufficient-output");
+        _redeem(delegation_, insufficient_);
+        assertFalse(enforcer.getIsUsed(address(delegationManager), alice, ORDER_ID));
+
+        _redeem(
+            delegation_,
+            _erc20Executions(
+                1, address(tokenIn), TOKEN_IN_AMOUNT, "new-route", abi.encode(IERC20(address(tokenOut)), TOKEN_OUT_MIN)
+            )
+        );
+        assertTrue(enforcer.getIsUsed(address(delegationManager), alice, ORDER_ID));
     }
 
     function test_afterHookRevertsForInsufficientOutput() public {
@@ -610,7 +781,37 @@ contract MetaSwapFlexibleSettlementEnforcerTest is CaveatEnforcerBaseTest {
         view
         returns (bytes memory)
     {
-        return _rawTerms(address(metaSwap), tokenIn_, TOKEN_IN_AMOUNT, uint8(approvalMode_), tokenOut_, recipient_, TOKEN_OUT_MIN);
+        return _policyTerms(tokenIn_, approvalMode_, tokenOut_, recipient_, NO_TIMESTAMP, NO_TIMESTAMP, NO_ID);
+    }
+
+    function _policyTerms(
+        address tokenIn_,
+        MetaSwapFlexibleSettlementEnforcer.ApprovalMode approvalMode_,
+        address tokenOut_,
+        address recipient_,
+        uint128 timestampAfter_,
+        uint128 timestampBefore_,
+        uint256 id_
+    )
+        private
+        view
+        returns (bytes memory)
+    {
+        address[] memory redeemers_ = new address[](1);
+        redeemers_[0] = relayer;
+        return _rawTerms(
+            address(metaSwap),
+            tokenIn_,
+            TOKEN_IN_AMOUNT,
+            uint8(approvalMode_),
+            tokenOut_,
+            recipient_,
+            TOKEN_OUT_MIN,
+            timestampAfter_,
+            timestampBefore_,
+            id_,
+            redeemers_
+        );
     }
 
     function _rawTerms(
@@ -623,10 +824,59 @@ contract MetaSwapFlexibleSettlementEnforcerTest is CaveatEnforcerBaseTest {
         uint256 tokenOutMin_
     )
         private
+        view
+        returns (bytes memory)
+    {
+        address[] memory redeemers_ = new address[](1);
+        redeemers_[0] = relayer;
+        return _rawTerms(
+            metaSwap_,
+            tokenIn_,
+            tokenInAmount_,
+            approvalMode_,
+            tokenOut_,
+            recipient_,
+            tokenOutMin_,
+            NO_TIMESTAMP,
+            NO_TIMESTAMP,
+            NO_ID,
+            redeemers_
+        );
+    }
+
+    function _rawTerms(
+        address metaSwap_,
+        address tokenIn_,
+        uint256 tokenInAmount_,
+        uint8 approvalMode_,
+        address tokenOut_,
+        address recipient_,
+        uint256 tokenOutMin_,
+        uint128 timestampAfter_,
+        uint128 timestampBefore_,
+        uint256 id_,
+        address[] memory redeemers_
+    )
+        private
         pure
         returns (bytes memory)
     {
-        return abi.encodePacked(metaSwap_, tokenIn_, tokenInAmount_, approvalMode_, tokenOut_, recipient_, tokenOutMin_);
+        bytes memory packed_ = abi.encodePacked(
+            metaSwap_,
+            tokenIn_,
+            tokenInAmount_,
+            approvalMode_,
+            tokenOut_,
+            recipient_,
+            tokenOutMin_,
+            timestampAfter_,
+            timestampBefore_,
+            id_
+        );
+        for (uint256 i_; i_ < redeemers_.length; ++i_) {
+            packed_ = abi.encodePacked(packed_, redeemers_[i_]);
+        }
+        return packed_;
     }
 
     function _nativeExecutions(
@@ -693,7 +943,7 @@ contract MetaSwapFlexibleSettlementEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     function _before(bytes memory terms_, Execution[] memory executions_, bytes32 delegationHash_) private {
-        _beforeAs(address(delegationManager), terms_, executions_, delegationHash_);
+        _beforeAs(address(delegationManager), terms_, executions_, delegationHash_, relayer);
     }
 
     function _beforeAs(
@@ -704,15 +954,33 @@ contract MetaSwapFlexibleSettlementEnforcerTest is CaveatEnforcerBaseTest {
     )
         private
     {
-        vm.prank(delegationManager_);
-        enforcer.beforeHook(terms_, hex"", batchDefaultMode, ExecutionLib.encodeBatch(executions_), delegationHash_, alice, relayer);
+        _beforeAs(delegationManager_, terms_, executions_, delegationHash_, relayer);
     }
 
-    function _sign(bytes memory terms_) private view returns (Delegation memory delegation_) {
+    function _beforeAs(
+        address delegationManager_,
+        bytes memory terms_,
+        Execution[] memory executions_,
+        bytes32 delegationHash_,
+        address redeemer_
+    )
+        private
+    {
+        vm.prank(delegationManager_);
+        enforcer.beforeHook(
+            terms_, hex"", batchDefaultMode, ExecutionLib.encodeBatch(executions_), delegationHash_, alice, redeemer_
+        );
+    }
+
+    function _sign(bytes memory terms_) private view returns (Delegation memory) {
+        return _signWithSalt(terms_, 0);
+    }
+
+    function _signWithSalt(bytes memory terms_, uint256 salt_) private view returns (Delegation memory delegation_) {
         Caveat[] memory caveats_ = new Caveat[](1);
         caveats_[0] = Caveat({ enforcer: address(enforcer), terms: terms_, args: hex"" });
         delegation_ = Delegation({
-            delegate: ANY_DELEGATE, delegator: alice, authority: ROOT_AUTHORITY, caveats: caveats_, salt: 0, signature: hex""
+            delegate: ANY_DELEGATE, delegator: alice, authority: ROOT_AUTHORITY, caveats: caveats_, salt: salt_, signature: hex""
         });
         delegation_ = signDelegation(users.alice, delegation_);
     }

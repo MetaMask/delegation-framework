@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
+import { BitMaps } from "@openzeppelin/contracts/utils/structs/BitMaps.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
@@ -10,17 +11,24 @@ import { Execution, ModeCode } from "../utils/Types.sol";
 
 /**
  * @title MetaSwapFlexibleSettlementEnforcer
- * @notice Authorizes one MetaSwap settlement with a redeemer-selected route, exact input, and minimum output.
- * @dev The settlement combines batch validation, one-shot consumption, and output enforcement. It accepts:
- *      - Native: `[swap{ value: tokenInAmount }(...)]`
- *      - ERC-20 without approval: `[swap(...)]`
- *      - ERC-20 with approval: `[approve(metaSwap, tokenInAmount), swap(...)]`
- *      - ERC-20 with reset: `[approve(metaSwap, 0), approve(metaSwap, tokenInAmount), swap(...)]`
+ * @notice One MetaSwap router settlement (native/ERC-20, optional approval) with a minimum output.
+ * @dev Single caveat combining:
+ *      - MetaSwap batch shape validation (swap ± approve / reset-approve)
+ *      - ERC20 / native min balance increase (`tokenOut == address(0)` → native)
+ *      - Redeemer allowlist (required)
+ *      - Timestamp window (optional: `0` disables a bound)
+ *      - Id bitmap (optional: `id == 0` → per-delegation-hash one-shot instead)
  *
- * The signed approval mode selects one exact ERC-20 shape. MetaSwap's dynamic `aggregatorId` and route `data`
- * remain unrestricted. The configured MetaSwap contract and its adapters must therefore be trusted.
+ * Shapes:
+ *      - Native: `[swap{ value: tokenInAmount }(...)]`
+ *      - ERC-20 skip approval: `[swap(...)]`
+ *      - ERC-20 approve: `[approve(metaSwap, tokenInAmount), swap(...)]`
+ *      - ERC-20 reset: `[approve(metaSwap, 0), approve(metaSwap, tokenInAmount), swap(...)]`
+ *
+ * `aggregatorId` / route `data` stay unrestricted — trust MetaSwap and its adapters.
  */
 contract MetaSwapFlexibleSettlementEnforcer is CaveatEnforcer {
+    using BitMaps for BitMaps.BitMap;
     using ExecutionLib for bytes;
 
     enum ApprovalMode {
@@ -38,42 +46,43 @@ contract MetaSwapFlexibleSettlementEnforcer is CaveatEnforcer {
         address tokenOut;
         address recipient;
         uint256 tokenOutMin;
+        uint128 timestampAfter;
+        uint128 timestampBefore;
+        uint256 id;
+        address[] redeemers;
     }
 
-    uint256 private constant TERMS_LENGTH = 145;
+    /// @dev Settlement (145) + timestampAfter (16) + timestampBefore (16) + id (32).
+    uint256 private constant FIXED_TERMS_LENGTH = 209;
     uint256 private constant APPROVE_CALL_LENGTH = 68;
     // Selector + four-word head + two dynamic length words.
     uint256 private constant SWAP_CALL_MIN_LENGTH = 196;
 
-    /// @notice Records settlements that have already been used.
+    /// @notice Used when `id == 0` (hash-based one-shot).
     mapping(bytes32 settlementKey => bool isUsed) public consumedSettlements;
 
-    /// @dev Caches the recipient's balance between the DelegationManager's before and after hooks.
+    /// @dev Used when `id != 0` (IdEnforcer-style bitmap).
+    mapping(address delegationManager => mapping(address delegator => BitMaps.BitMap id)) private isUsedId;
+
+    /// @dev Recipient output balance between before/after hooks.
     mapping(bytes32 settlementKey => uint256 balanceBefore) private balanceSnapshots;
 
-    /**
-     * @notice Emitted after a settlement satisfies its minimum output and is permanently consumed.
-     * @param delegationManager DelegationManager that redeemed the settlement.
-     * @param delegationHash Hash identifying the signed delegation.
-     * @param redeemer Address that submitted the redemption.
-     */
-    event SettlementConsumed(address indexed delegationManager, bytes32 indexed delegationHash, address indexed redeemer);
+    event SettlementConsumed(
+        address indexed delegationManager, bytes32 indexed delegationHash, address indexed redeemer, uint256 id
+    );
 
-    /**
-     * @notice Returns the storage key used to isolate a settlement.
-     * @param delegationManager_ DelegationManager that redeems the delegation.
-     * @param delegationHash_ Hash identifying the delegation.
-     */
+    event UsedId(address indexed sender, address indexed delegator, address indexed redeemer, uint256 id);
+
     function getSettlementKey(address delegationManager_, bytes32 delegationHash_) external pure returns (bytes32) {
         return _getSettlementKey(delegationManager_, delegationHash_);
     }
 
+    function getIsUsed(address delegationManager_, address delegator_, uint256 id_) external view returns (bool) {
+        return isUsedId[delegationManager_][delegator_].get(id_);
+    }
+
     /**
-     * @notice Validates the batch, caches the output balance, and locks the settlement against reuse.
-     * @param terms_ Packed settlement constraints.
-     * @param mode_ Execution mode; must be batch/default.
-     * @param executionCallData_ ABI-encoded `Execution[]`.
-     * @param delegationHash_ Hash identifying the signed delegation.
+     * @notice Validates policies and batch shape, locks one-shot state, and snapshots output balance.
      */
     function beforeHook(
         bytes calldata terms_,
@@ -81,8 +90,8 @@ contract MetaSwapFlexibleSettlementEnforcer is CaveatEnforcer {
         ModeCode mode_,
         bytes calldata executionCallData_,
         bytes32 delegationHash_,
-        address,
-        address
+        address delegator_,
+        address redeemer_
     )
         public
         override
@@ -90,21 +99,16 @@ contract MetaSwapFlexibleSettlementEnforcer is CaveatEnforcer {
         onlyDefaultExecutionMode(mode_)
     {
         Terms memory termsInfo_ = getTermsInfo(terms_);
-        Execution[] calldata executions_ = executionCallData_.decodeBatch();
-        _validateExecutions(executions_, termsInfo_);
+        _validateRedeemer(termsInfo_.redeemers, redeemer_);
+        _validateTimestamp(termsInfo_.timestampAfter, termsInfo_.timestampBefore);
+        _validateExecutions(executionCallData_.decodeBatch(), termsInfo_);
+        _consume(termsInfo_.id, delegationHash_, delegator_, redeemer_);
 
-        bytes32 settlementKey_ = _getSettlementKey(msg.sender, delegationHash_);
-        require(!consumedSettlements[settlementKey_], "MetaSwapFlexibleSettlementEnforcer:settlement-already-used");
-
-        consumedSettlements[settlementKey_] = true;
-        balanceSnapshots[settlementKey_] = _balanceOf(termsInfo_.tokenOut, termsInfo_.recipient);
+        balanceSnapshots[_getSettlementKey(msg.sender, delegationHash_)] = _balanceOf(termsInfo_.tokenOut, termsInfo_.recipient);
     }
 
     /**
-     * @notice Enforces the minimum output and permanently consumes the successful settlement.
-     * @param terms_ Packed settlement constraints.
-     * @param delegationHash_ Hash identifying the signed delegation.
-     * @param redeemer_ Address that submitted the redemption.
+     * @notice Requires the recipient's output balance to have increased by at least `tokenOutMin`.
      */
     function afterHook(
         bytes calldata terms_,
@@ -118,32 +122,32 @@ contract MetaSwapFlexibleSettlementEnforcer is CaveatEnforcer {
         public
         override
     {
-        require(terms_.length == TERMS_LENGTH, "MetaSwapFlexibleSettlementEnforcer:invalid-terms");
+        _requireValidTermsLength(terms_.length);
 
         bytes32 settlementKey_ = _getSettlementKey(msg.sender, delegationHash_);
         address tokenOut_ = address(bytes20(terms_[73:93]));
         address recipient_ = address(bytes20(terms_[93:113]));
         uint256 tokenOutMin_ = uint256(bytes32(terms_[113:145]));
+        uint256 id_ = uint256(bytes32(terms_[177:209]));
         uint256 balanceBefore_ = balanceSnapshots[settlementKey_];
         delete balanceSnapshots[settlementKey_];
 
         uint256 balanceAfter_ = _balanceOf(tokenOut_, recipient_);
-
         require(
             balanceAfter_ >= balanceBefore_ && balanceAfter_ - balanceBefore_ >= tokenOutMin_,
             "MetaSwapFlexibleSettlementEnforcer:insufficient-output"
         );
 
-        emit SettlementConsumed(msg.sender, delegationHash_, redeemer_);
+        emit SettlementConsumed(msg.sender, delegationHash_, redeemer_, id_);
     }
 
     /**
-     * @notice Decodes and validates signed settlement terms.
-     * @param terms_ Packed as
-     * `metaSwap(20) | tokenIn(20) | tokenInAmount(32) | approvalMode(1) | tokenOut(20) | recipient(20) | tokenOutMin(32)`.
+     * @notice Decodes packed terms:
+     * `metaSwap(20) | tokenIn(20) | tokenInAmount(32) | approvalMode(1) | tokenOut(20) | recipient(20) |
+     *  tokenOutMin(32) | timestampAfter(16) | timestampBefore(16) | id(32) | redeemers(20*N)`.
      */
     function getTermsInfo(bytes calldata terms_) public pure returns (Terms memory termsInfo_) {
-        require(terms_.length == TERMS_LENGTH, "MetaSwapFlexibleSettlementEnforcer:invalid-terms");
+        _requireValidTermsLength(terms_.length);
 
         termsInfo_.metaSwap = address(bytes20(terms_[0:20]));
         termsInfo_.tokenIn = address(bytes20(terms_[20:40]));
@@ -152,6 +156,9 @@ contract MetaSwapFlexibleSettlementEnforcer is CaveatEnforcer {
         termsInfo_.tokenOut = address(bytes20(terms_[73:93]));
         termsInfo_.recipient = address(bytes20(terms_[93:113]));
         termsInfo_.tokenOutMin = uint256(bytes32(terms_[113:145]));
+        termsInfo_.timestampAfter = uint128(bytes16(terms_[145:161]));
+        termsInfo_.timestampBefore = uint128(bytes16(terms_[161:177]));
+        termsInfo_.id = uint256(bytes32(terms_[177:209]));
 
         require(
             termsInfo_.metaSwap != address(0) && termsInfo_.tokenInAmount != 0 && termsInfo_.recipient != address(0)
@@ -159,20 +166,74 @@ contract MetaSwapFlexibleSettlementEnforcer is CaveatEnforcer {
             "MetaSwapFlexibleSettlementEnforcer:invalid-terms"
         );
 
-        require(approvalMode_ <= uint8(ApprovalMode.ResetApprove), "MetaSwapFlexibleSettlementEnforcer:invalid-approval-mode");
+        // Native input requires None; ERC-20 input requires a non-None mode.
+        if (termsInfo_.tokenIn == address(0)) {
+            require(approvalMode_ == uint8(ApprovalMode.None), "MetaSwapFlexibleSettlementEnforcer:invalid-approval-mode");
+        } else {
+            require(
+                approvalMode_ > uint8(ApprovalMode.None) && approvalMode_ <= uint8(ApprovalMode.ResetApprove),
+                "MetaSwapFlexibleSettlementEnforcer:invalid-approval-mode"
+            );
+        }
         termsInfo_.approvalMode = ApprovalMode(approvalMode_);
+
+        uint256 redeemerCount_ = (terms_.length - FIXED_TERMS_LENGTH) / 20;
+        termsInfo_.redeemers = new address[](redeemerCount_);
+        for (uint256 i_; i_ < redeemerCount_; ++i_) {
+            uint256 offset_ = FIXED_TERMS_LENGTH + (i_ * 20);
+            termsInfo_.redeemers[i_] = address(bytes20(terms_[offset_:offset_ + 20]));
+        }
+    }
+
+    function _requireValidTermsLength(uint256 length_) private pure {
+        require(length_ >= FIXED_TERMS_LENGTH + 20, "MetaSwapFlexibleSettlementEnforcer:invalid-terms");
+        require((length_ - FIXED_TERMS_LENGTH) % 20 == 0, "MetaSwapFlexibleSettlementEnforcer:invalid-terms");
+    }
+
+    function _validateRedeemer(address[] memory redeemers_, address redeemer_) private pure {
+        uint256 length_ = redeemers_.length;
+        for (uint256 i_; i_ < length_; ++i_) {
+            if (redeemer_ == redeemers_[i_]) return;
+        }
+        revert("MetaSwapFlexibleSettlementEnforcer:unauthorized-redeemer");
+    }
+
+    function _validateTimestamp(uint128 timestampAfter_, uint128 timestampBefore_) private view {
+        if (timestampAfter_ > 0) {
+            require(block.timestamp > timestampAfter_, "MetaSwapFlexibleSettlementEnforcer:early-delegation");
+        }
+        if (timestampBefore_ > 0) {
+            require(block.timestamp < timestampBefore_, "MetaSwapFlexibleSettlementEnforcer:expired-delegation");
+        }
+    }
+
+    /**
+     * @dev `id == 0`: one-shot keyed by `(manager, delegationHash)`.
+     *      `id != 0`: one-shot + mutual exclusion keyed by `(manager, delegator, id)`.
+     *      Hash consumption is skipped in the id path — replaying the same delegation reuses the same id,
+     *      so the bitmap already blocks it; the id also blocks other hashes that share that order id.
+     */
+    function _consume(uint256 id_, bytes32 delegationHash_, address delegator_, address redeemer_) private {
+        if (id_ == 0) {
+            bytes32 settlementKey_ = _getSettlementKey(msg.sender, delegationHash_);
+            require(!consumedSettlements[settlementKey_], "MetaSwapFlexibleSettlementEnforcer:settlement-already-used");
+            consumedSettlements[settlementKey_] = true;
+            return;
+        }
+
+        require(!isUsedId[msg.sender][delegator_].get(id_), "MetaSwapFlexibleSettlementEnforcer:id-already-used");
+        isUsedId[msg.sender][delegator_].set(id_);
+        emit UsedId(msg.sender, delegator_, redeemer_, id_);
     }
 
     function _validateExecutions(Execution[] calldata executions_, Terms memory termsInfo_) private pure {
-        ApprovalMode approvalMode_ = termsInfo_.approvalMode;
-
         if (termsInfo_.tokenIn == address(0)) {
-            require(approvalMode_ == ApprovalMode.None, "MetaSwapFlexibleSettlementEnforcer:invalid-approval-mode");
             require(executions_.length == 1, "MetaSwapFlexibleSettlementEnforcer:invalid-batch-length");
             _validateSwap(executions_[0], termsInfo_.metaSwap, address(0), termsInfo_.tokenInAmount, termsInfo_.tokenInAmount);
             return;
         }
 
+        ApprovalMode approvalMode_ = termsInfo_.approvalMode;
         if (approvalMode_ == ApprovalMode.SkipApproval) {
             require(executions_.length == 1, "MetaSwapFlexibleSettlementEnforcer:approval-shape-not-allowed");
             _validateSwap(executions_[0], termsInfo_.metaSwap, termsInfo_.tokenIn, termsInfo_.tokenInAmount, 0);
@@ -180,13 +241,12 @@ contract MetaSwapFlexibleSettlementEnforcer is CaveatEnforcer {
             require(executions_.length == 2, "MetaSwapFlexibleSettlementEnforcer:approval-shape-not-allowed");
             _validateApproval(executions_[0], termsInfo_.tokenIn, termsInfo_.metaSwap, termsInfo_.tokenInAmount);
             _validateSwap(executions_[1], termsInfo_.metaSwap, termsInfo_.tokenIn, termsInfo_.tokenInAmount, 0);
-        } else if (approvalMode_ == ApprovalMode.ResetApprove) {
+        } else {
+            // ResetApprove — only remaining ERC-20 mode after getTermsInfo.
             require(executions_.length == 3, "MetaSwapFlexibleSettlementEnforcer:approval-shape-not-allowed");
             _validateApproval(executions_[0], termsInfo_.tokenIn, termsInfo_.metaSwap, 0);
             _validateApproval(executions_[1], termsInfo_.tokenIn, termsInfo_.metaSwap, termsInfo_.tokenInAmount);
             _validateSwap(executions_[2], termsInfo_.metaSwap, termsInfo_.tokenIn, termsInfo_.tokenInAmount, 0);
-        } else {
-            revert("MetaSwapFlexibleSettlementEnforcer:invalid-approval-mode");
         }
     }
 
