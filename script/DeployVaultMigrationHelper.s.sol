@@ -9,6 +9,9 @@ import { VaultMigrationHelper } from "../src/helpers/VaultMigrationHelper.sol";
 /**
  * @title DeployVaultMigrationHelper
  * @notice Deploys VaultMigrationHelper deterministically with CREATE2.
+ * @dev Fill the required variables in the .env file
+ * @dev run the script with:
+ * forge script script/DeployVaultMigrationHelper.s.sol --rpc-url <your_rpc_url> --private-key $PRIVATE_KEY --broadcast
  */
 contract DeployVaultMigrationHelper is Script {
     bytes32 internal salt;
