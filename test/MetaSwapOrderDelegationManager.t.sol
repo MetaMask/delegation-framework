@@ -17,7 +17,6 @@ import { DelegationManager } from "../src/DelegationManager.sol";
 import { EIP7702StatelessDeleGator } from "../src/EIP7702/EIP7702StatelessDeleGator.sol";
 import { ExactExecutionBatchEnforcer } from "../src/enforcers/ExactExecutionBatchEnforcer.sol";
 import { LimitedCallsEnforcer } from "../src/enforcers/LimitedCallsEnforcer.sol";
-import { MetaSwapFlexibleSettlementEnforcer } from "../src/enforcers/MetaSwapFlexibleSettlementEnforcer.sol";
 import { IMetaSwap } from "../src/helpers/interfaces/IMetaSwap.sol";
 import { IDelegationManager } from "../src/interfaces/IDelegationManager.sol";
 import { BasicERC20 } from "./utils/BasicERC20.t.sol";
@@ -100,7 +99,6 @@ contract MetaSwapOrderDelegationManagerTest is Test {
     DelegationManager private genericManager;
     ExactExecutionBatchEnforcer private exactBatchEnforcer;
     LimitedCallsEnforcer private limitedCallsEnforcer;
-    MetaSwapFlexibleSettlementEnforcer private flexibleEnforcer;
     MetaSwapHooklessDelegationManager private hooklessManager;
     MetaSwapOrderDelegationManager private orderManager;
 
@@ -119,7 +117,6 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         genericManager = new DelegationManager(address(this));
         exactBatchEnforcer = new ExactExecutionBatchEnforcer();
         limitedCallsEnforcer = new LimitedCallsEnforcer();
-        flexibleEnforcer = new MetaSwapFlexibleSettlementEnforcer();
         hooklessManager = new MetaSwapHooklessDelegationManager();
         orderManager = new MetaSwapOrderDelegationManager();
 
@@ -409,14 +406,164 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         _redeemIntent(delegation_, ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT)));
     }
 
-    // -------- Flexible validation (ported from MetaSwapFlexibleSettlementEnforcer) --------
+    // -------- Flexible validation --------
 
     function test_flexibleRejectsInvalidTermsLength() public {
         vm.expectRevert(MetaSwapDelegationManagerBase.InvalidTerms.selector);
-        orderManager.getFlexibleTermsInfo(new bytes(145));
+        orderManager.getFlexibleTermsInfo(new bytes(209));
 
         vm.expectRevert(MetaSwapDelegationManagerBase.InvalidTerms.selector);
-        orderManager.getFlexibleTermsInfo(new bytes(147));
+        orderManager.getFlexibleTermsInfo(new bytes(210));
+
+        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidTerms.selector);
+        orderManager.getFlexibleTermsInfo(new bytes(229));
+    }
+
+    function test_flexibleDecodesOptionalPolicies() public {
+        address[] memory redeemers_ = new address[](2);
+        redeemers_[0] = address(0);
+        redeemers_[1] = relayer;
+
+        MetaSwapOrderDelegationManager.FlexibleTerms memory info_ = orderManager.getFlexibleTermsInfo(
+            _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount, 100, 200, 7, redeemers_)
+        );
+
+        assertEq(info_.metaSwap, address(metaSwap));
+        assertEq(info_.tokenIn, address(tokenIn));
+        assertEq(info_.tokenInAmount, TOKEN_IN_AMOUNT);
+        assertEq(uint8(info_.approvalMode), uint8(_approveMode()));
+        assertEq(info_.tokenOut, address(tokenOut));
+        assertEq(info_.recipient, orderAccount);
+        assertEq(info_.tokenOutMin, TOKEN_OUT_MIN);
+        assertEq(info_.timestampAfter, 100);
+        assertEq(info_.timestampBefore, 200);
+        assertEq(info_.id, 7);
+        assertEq(info_.redeemers.length, 2);
+        assertEq(info_.redeemers[0], address(0));
+        assertEq(info_.redeemers[1], relayer);
+    }
+
+    function test_flexibleAllowsZeroAddressInRedeemerList() public {
+        address[] memory redeemers_ = new address[](2);
+        redeemers_[0] = address(0);
+        redeemers_[1] = relayer;
+        bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount, 0, 0, 0, redeemers_);
+
+        _redeemIntent(_signIntent(terms_, 80), ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT)));
+        assertEq(tokenOut.balanceOf(orderAccount), TOKEN_OUT_AMOUNT);
+    }
+
+    function test_flexibleZeroAddressDoesNotAuthorizeOtherRedeemers() public {
+        address[] memory redeemers_ = new address[](1);
+        redeemers_[0] = address(0);
+        bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount, 0, 0, 0, redeemers_);
+
+        Delegation memory delegation_ = _signIntent(terms_, 81);
+        vm.expectRevert(MetaSwapOrderDelegationManager.UnauthorizedRedeemer.selector);
+        _redeemIntent(delegation_, ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT)));
+    }
+
+    function test_flexibleRejectsUnlistedRedeemer() public {
+        address[] memory redeemers_ = new address[](1);
+        redeemers_[0] = makeAddr("OtherRedeemer");
+        bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount, 0, 0, 0, redeemers_);
+
+        Delegation memory delegation_ = _signIntent(terms_, 82);
+        vm.expectRevert(MetaSwapOrderDelegationManager.UnauthorizedRedeemer.selector);
+        _redeemIntent(delegation_, ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT)));
+    }
+
+    function test_flexibleDelegateStillRestrictsListedRedeemer() public {
+        address station_ = makeAddr("Station");
+        address[] memory redeemers_ = new address[](1);
+        redeemers_[0] = relayer;
+        bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount, 0, 0, 0, redeemers_);
+
+        Delegation memory delegation_ = _signIntentWithDelegate(terms_, 83, station_);
+        vm.expectRevert(MetaSwapDelegationManagerBase.InvalidDelegate.selector);
+        _redeemIntent(delegation_, ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT)));
+    }
+
+    function test_flexibleTimestampWindow() public {
+        uint128 opensAt_ = uint128(block.timestamp);
+        uint128 expiresAt_ = uint128(block.timestamp + 1 days);
+        address[] memory redeemers_ = _relayerRedeemers();
+        bytes memory terms_ = _flexibleTerms(
+            address(tokenIn), _approveMode(), address(tokenOut), orderAccount, opensAt_, expiresAt_, 0, redeemers_
+        );
+        bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT));
+
+        Delegation memory early_ = _signIntent(terms_, 84);
+        vm.expectRevert(MetaSwapOrderDelegationManager.EarlyDelegation.selector);
+        _redeemIntent(early_, encoded_);
+
+        vm.warp(opensAt_ + 1);
+        _redeemIntent(_signIntent(terms_, 85), encoded_);
+        assertEq(tokenOut.balanceOf(orderAccount), TOKEN_OUT_AMOUNT);
+
+        vm.warp(expiresAt_);
+        Delegation memory expired_ = _signIntent(terms_, 86);
+        vm.expectRevert(MetaSwapOrderDelegationManager.ExpiredDelegation.selector);
+        _redeemIntent(expired_, encoded_);
+    }
+
+    function test_flexibleIdZeroSkipsBitmap() public {
+        bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount);
+        bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT));
+
+        _redeemIntent(_signIntent(terms_, 87), encoded_);
+        _redeemIntent(_signIntent(terms_, 88), encoded_);
+
+        assertFalse(orderManager.getIsUsed(orderAccount, 0));
+        assertEq(tokenOut.balanceOf(orderAccount), TOKEN_OUT_AMOUNT * 2);
+    }
+
+    function test_flexibleIdExcludesSiblingOrders() public {
+        address[] memory redeemers_ = _relayerRedeemers();
+        bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount, 0, 0, 7, redeemers_);
+        bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT));
+        Delegation memory first_ = _signIntent(terms_, 89);
+        Delegation memory second_ = _signIntent(terms_, 90);
+
+        vm.expectEmit(true, true, false, true, address(orderManager));
+        emit MetaSwapOrderDelegationManager.UsedId(orderAccount, relayer, 7);
+        _redeemIntent(first_, encoded_);
+
+        vm.expectRevert(MetaSwapOrderDelegationManager.IdAlreadyUsed.selector);
+        _redeemIntent(second_, encoded_);
+
+        assertTrue(orderManager.getIsUsed(orderAccount, 7));
+        assertFalse(orderManager.disabledDelegations(orderManager.getDelegationHash(second_)));
+        assertEq(tokenOut.balanceOf(orderAccount), TOKEN_OUT_AMOUNT);
+    }
+
+    function test_flexibleDisableDoesNotConsumeId() public {
+        address[] memory redeemers_ = _relayerRedeemers();
+        bytes memory terms_ =
+            _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount, 0, 0, 11, redeemers_);
+        Delegation memory cancelled_ = _signIntent(terms_, 91);
+        Delegation memory replacement_ = _signIntent(terms_, 92);
+
+        vm.prank(orderAccount);
+        orderManager.disableDelegation(cancelled_);
+        assertFalse(orderManager.getIsUsed(orderAccount, 11));
+
+        _redeemIntent(replacement_, ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT)));
+        assertTrue(orderManager.getIsUsed(orderAccount, 11));
+        assertEq(tokenOut.balanceOf(orderAccount), TOKEN_OUT_AMOUNT);
+    }
+
+    function test_flexibleIdRevertsAtomicallyForInsufficientOutput() public {
+        address[] memory redeemers_ = _relayerRedeemers();
+        bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount, 0, 0, 9, redeemers_);
+        Delegation memory delegation_ = _signIntent(terms_, 93);
+
+        vm.expectRevert(MetaSwapDelegationManagerBase.InsufficientOutput.selector);
+        _redeemIntent(delegation_, ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_MIN - 1)));
+
+        assertFalse(orderManager.getIsUsed(orderAccount, 9));
+        assertFalse(orderManager.disabledDelegations(orderManager.getDelegationHash(delegation_)));
+        assertEq(tokenIn.balanceOf(orderAccount), 1_000 ether);
     }
 
     function test_flexibleRejectsInvalidRequiredTerms() public {
@@ -574,13 +721,15 @@ contract MetaSwapOrderDelegationManagerTest is Test {
 
         executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
         executions_[1].callData = abi.encodeCall(
-            IMetaSwap.swap, ("redeemer-route", IERC20(makeAddr("OtherToken")), TOKEN_IN_AMOUNT, abi.encode(tokenOut, TOKEN_OUT_AMOUNT))
+            IMetaSwap.swap,
+            ("redeemer-route", IERC20(makeAddr("OtherToken")), TOKEN_IN_AMOUNT, abi.encode(tokenOut, TOKEN_OUT_AMOUNT))
         );
         _expectInvalidSwap(executions_, 70);
 
         executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
         executions_[1].callData = abi.encodeCall(
-            IMetaSwap.swap, ("redeemer-route", IERC20(address(tokenIn)), TOKEN_IN_AMOUNT - 1, abi.encode(tokenOut, TOKEN_OUT_AMOUNT))
+            IMetaSwap.swap,
+            ("redeemer-route", IERC20(address(tokenIn)), TOKEN_IN_AMOUNT - 1, abi.encode(tokenOut, TOKEN_OUT_AMOUNT))
         );
         _expectInvalidSwap(executions_, 71);
     }
@@ -670,78 +819,6 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         vm.prank(relayer);
         genericManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
         emit log_named_uint("generic ExactBatch + LimitedCalls(1), native", gasBefore_ - gasleft());
-    }
-
-    function test_gas_genericFlexibleSettlementEnforcer() public {
-        bytes memory terms_ = abi.encodePacked(
-            address(metaSwap),
-            address(tokenIn),
-            TOKEN_IN_AMOUNT,
-            uint8(MetaSwapFlexibleSettlementEnforcer.ApprovalMode.Approve),
-            address(tokenOut),
-            genericAccount,
-            TOKEN_OUT_MIN
-        );
-        Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ enforcer: address(flexibleEnforcer), terms: terms_, args: hex"" });
-        Delegation memory delegation_ = _signGeneric(caveats_, 101);
-        bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20ExecutionsFor(genericAccount, 1, TOKEN_OUT_AMOUNT));
-
-        (bytes[] memory permissionContexts_, ModeCode[] memory modes_, bytes[] memory executionContexts_) =
-            _redemptionInputs(delegation_, encoded_);
-
-        uint256 gasBefore_ = gasleft();
-        vm.prank(relayer);
-        genericManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
-        emit log_named_uint("generic FlexibleSettlementEnforcer", gasBefore_ - gasleft());
-    }
-
-    function test_gas_genericFlexibleSettlementEnforcerResetApproval() public {
-        bytes memory terms_ = abi.encodePacked(
-            address(metaSwap),
-            address(tokenIn),
-            TOKEN_IN_AMOUNT,
-            uint8(MetaSwapFlexibleSettlementEnforcer.ApprovalMode.ResetApprove),
-            address(tokenOut),
-            genericAccount,
-            TOKEN_OUT_MIN
-        );
-        Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ enforcer: address(flexibleEnforcer), terms: terms_, args: hex"" });
-        Delegation memory delegation_ = _signGeneric(caveats_, 107);
-        bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20ExecutionsFor(genericAccount, 2, TOKEN_OUT_AMOUNT));
-
-        (bytes[] memory permissionContexts_, ModeCode[] memory modes_, bytes[] memory executionContexts_) =
-            _redemptionInputs(delegation_, encoded_);
-
-        uint256 gasBefore_ = gasleft();
-        vm.prank(relayer);
-        genericManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
-        emit log_named_uint("generic FlexibleSettlementEnforcer, reset approval", gasBefore_ - gasleft());
-    }
-
-    function test_gas_genericFlexibleSettlementEnforcerNative() public {
-        bytes memory terms_ = abi.encodePacked(
-            address(metaSwap),
-            address(0),
-            TOKEN_IN_AMOUNT,
-            uint8(MetaSwapFlexibleSettlementEnforcer.ApprovalMode.None),
-            address(tokenOut),
-            genericAccount,
-            TOKEN_OUT_MIN
-        );
-        Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ enforcer: address(flexibleEnforcer), terms: terms_, args: hex"" });
-        Delegation memory delegation_ = _signGeneric(caveats_, 108);
-        bytes memory encoded_ = ExecutionLib.encodeBatch(_nativeExecutions(TOKEN_OUT_AMOUNT));
-
-        (bytes[] memory permissionContexts_, ModeCode[] memory modes_, bytes[] memory executionContexts_) =
-            _redemptionInputs(delegation_, encoded_);
-
-        uint256 gasBefore_ = gasleft();
-        vm.prank(relayer);
-        genericManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
-        emit log_named_uint("generic FlexibleSettlementEnforcer, native", gasBefore_ - gasleft());
     }
 
     function test_gas_hooklessFlexible() public {
@@ -870,7 +947,25 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         view
         returns (bytes memory)
     {
-        return abi.encodePacked(
+        address[] memory redeemers_ = _relayerRedeemers();
+        return _flexibleTerms(tokenIn_, approvalMode_, tokenOut_, recipient_, 0, 0, 0, redeemers_);
+    }
+
+    function _flexibleTerms(
+        address tokenIn_,
+        MetaSwapOrderDelegationManager.ApprovalMode approvalMode_,
+        address tokenOut_,
+        address recipient_,
+        uint128 timestampAfter_,
+        uint128 timestampBefore_,
+        uint256 id_,
+        address[] memory redeemers_
+    )
+        private
+        view
+        returns (bytes memory)
+    {
+        bytes memory packed_ = abi.encodePacked(
             uint8(MetaSwapOrderDelegationManager.Intent.FlexibleSettlement),
             address(metaSwap),
             tokenIn_,
@@ -878,8 +973,21 @@ contract MetaSwapOrderDelegationManagerTest is Test {
             uint8(approvalMode_),
             tokenOut_,
             recipient_,
-            TOKEN_OUT_MIN
+            TOKEN_OUT_MIN,
+            timestampAfter_,
+            timestampBefore_,
+            id_
         );
+        uint256 redeemerCount_ = redeemers_.length;
+        for (uint256 i_; i_ < redeemerCount_; ++i_) {
+            packed_ = abi.encodePacked(packed_, redeemers_[i_]);
+        }
+        return packed_;
+    }
+
+    function _relayerRedeemers() private view returns (address[] memory redeemers_) {
+        redeemers_ = new address[](1);
+        redeemers_[0] = relayer;
     }
 
     function _rawFlexibleTerms(
@@ -918,7 +1026,11 @@ contract MetaSwapOrderDelegationManagerTest is Test {
             approvalMode_,
             tokenOut_,
             recipient_,
-            tokenOutMin_
+            tokenOutMin_,
+            uint128(0),
+            uint128(0),
+            uint256(0),
+            address(1)
         );
     }
 
@@ -928,14 +1040,7 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         );
     }
 
-    function _expectFlexibleRevert(
-        bytes memory terms_,
-        Execution[] memory executions_,
-        bytes4 selector_,
-        uint256 salt_
-    )
-        private
-    {
+    function _expectFlexibleRevert(bytes memory terms_, Execution[] memory executions_, bytes4 selector_, uint256 salt_) private {
         Delegation memory delegation_ = _signIntent(terms_, salt_);
         vm.expectRevert(selector_);
         _redeemIntent(delegation_, ExecutionLib.encodeBatch(executions_));
@@ -956,10 +1061,7 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         _expectFlexibleRevert(terms_, executions_, MetaSwapOrderDelegationManager.InvalidSwap.selector, salt_);
     }
 
-    function _redeemCatch(
-        Delegation memory delegation_,
-        bytes memory executionContext_
-    )
+    function _redeemCatch(Delegation memory delegation_, bytes memory executionContext_)
         private
         returns (bytes memory revertData_)
     {
@@ -974,6 +1076,32 @@ contract MetaSwapOrderDelegationManagerTest is Test {
 
     function _signIntent(bytes memory terms_, uint256 salt_) private view returns (Delegation memory) {
         return _signIntentWithKey(ORDER_KEY, terms_, salt_);
+    }
+
+    function _signIntentWithDelegate(
+        bytes memory terms_,
+        uint256 salt_,
+        address delegate_
+    )
+        private
+        view
+        returns (Delegation memory)
+    {
+        Caveat[] memory caveats_ = new Caveat[](1);
+        caveats_[0] = Caveat({ enforcer: address(orderManager), terms: terms_, args: hex"" });
+        Delegation memory delegation_ = Delegation({
+            delegate: delegate_,
+            delegator: orderAccount,
+            authority: orderManager.ROOT_AUTHORITY(),
+            caveats: caveats_,
+            salt: salt_,
+            signature: hex""
+        });
+        bytes32 typedDataHash_ =
+            MessageHashUtils.toTypedDataHash(orderManager.getDomainHash(), orderManager.getDelegationHash(delegation_));
+        (uint8 v_, bytes32 r_, bytes32 s_) = vm.sign(ORDER_KEY, typedDataHash_);
+        delegation_.signature = abi.encodePacked(r_, s_, v_);
+        return delegation_;
     }
 
     function _signIntentWithKey(

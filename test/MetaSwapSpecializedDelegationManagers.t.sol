@@ -13,9 +13,7 @@ import { MetaSwapDelegationManagerBase } from "../src/MetaSwapDelegationManagerB
 import { MetaSwapFlexibleSettlementManagerBase } from "../src/experiments/MetaSwapFlexibleSettlementManagerBase.sol";
 import { MetaSwapExecutionBuilderDelegationManager } from "../src/experiments/MetaSwapExecutionBuilderDelegationManager.sol";
 import { MetaSwapHooklessDelegationManager } from "../src/experiments/MetaSwapHooklessDelegationManager.sol";
-import { DelegationManager } from "../src/DelegationManager.sol";
 import { EIP7702StatelessDeleGator } from "../src/EIP7702/EIP7702StatelessDeleGator.sol";
-import { MetaSwapFlexibleSettlementEnforcer } from "../src/enforcers/MetaSwapFlexibleSettlementEnforcer.sol";
 import { IMetaSwap } from "../src/helpers/interfaces/IMetaSwap.sol";
 import { IDelegationManager } from "../src/interfaces/IDelegationManager.sol";
 import { BasicERC20 } from "./utils/BasicERC20.t.sol";
@@ -61,7 +59,6 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
     uint256 private constant TOKEN_IN_AMOUNT = 100 ether;
     uint256 private constant TOKEN_OUT_MIN = 190 ether;
     uint256 private constant TOKEN_OUT_AMOUNT = 200 ether;
-    uint256 private constant STANDARD_KEY = 0x5151;
     uint256 private constant HOOKLESS_KEY = 0xA11CE;
     uint256 private constant BUILDER_KEY = 0xB0B;
 
@@ -69,11 +66,8 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
     SpecializedManagerMetaSwapMock private metaSwap;
     BasicERC20 private tokenIn;
     BasicERC20 private tokenOut;
-    DelegationManager private standardManager;
-    MetaSwapFlexibleSettlementEnforcer private standardEnforcer;
     MetaSwapHooklessDelegationManager private hooklessManager;
     MetaSwapExecutionBuilderDelegationManager private builderManager;
-    address private standardAccount;
     address private hooklessAccount;
     address private builderAccount;
     address private relayer;
@@ -85,23 +79,17 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
         tokenOut = new BasicERC20(address(this), "Token Out", "TOUT", 0);
         relayer = makeAddr("Relayer");
 
-        standardManager = new DelegationManager(address(this));
-        standardEnforcer = new MetaSwapFlexibleSettlementEnforcer();
         hooklessManager = new MetaSwapHooklessDelegationManager();
         builderManager = new MetaSwapExecutionBuilderDelegationManager();
 
-        standardAccount = vm.addr(STANDARD_KEY);
         hooklessAccount = vm.addr(HOOKLESS_KEY);
         builderAccount = vm.addr(BUILDER_KEY);
-        _installDeleGator(standardAccount, address(standardManager));
         _installDeleGator(hooklessAccount, address(hooklessManager));
         _installDeleGator(builderAccount, address(builderManager));
 
-        tokenIn.mint(standardAccount, 1_000 ether);
         tokenIn.mint(hooklessAccount, 1_000 ether);
         tokenIn.mint(builderAccount, 1_000 ether);
         tokenOut.mint(address(metaSwap), 10_000 ether);
-        vm.deal(standardAccount, 1_000 ether);
         vm.deal(hooklessAccount, 1_000 ether);
         vm.deal(builderAccount, 1_000 ether);
         vm.deal(address(metaSwap), 10_000 ether);
@@ -151,19 +139,6 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
 
         assertEq(hooklessAccount.balance, nativeBefore_ - TOKEN_IN_AMOUNT);
         assertEq(tokenOut.balanceOf(hooklessAccount), TOKEN_OUT_AMOUNT);
-    }
-
-    function test_gas_standardManagerWithSettlementEnforcer() public {
-        bytes memory terms_ = _terms(address(tokenIn), _approveMode(), address(tokenOut), standardAccount);
-        Delegation memory delegation_ = _signStandard(STANDARD_KEY, standardAccount, terms_, 100);
-        (bytes[] memory permissionContexts_, ModeCode[] memory modes_, bytes[] memory executionContexts_) = _redemptionInputs(
-            delegation_, ExecutionLib.encodeBatch(_erc20Executions(1, address(tokenIn), TOKEN_IN_AMOUNT, TOKEN_OUT_AMOUNT))
-        );
-
-        uint256 gasBefore_ = gasleft();
-        vm.prank(relayer);
-        standardManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
-        emit log_named_uint("standard manager + enforcer", gasBefore_ - gasleft());
     }
 
     function test_gas_hooklessManager() public {
@@ -414,40 +389,6 @@ contract MetaSwapSpecializedDelegationManagersTest is Test {
 
         bytes32 delegationHash_ = manager_.getDelegationHash(delegation_);
         bytes32 typedDataHash_ = MessageHashUtils.toTypedDataHash(manager_.getDomainHash(), delegationHash_);
-        (uint8 v_, bytes32 r_, bytes32 s_) = vm.sign(signerKey_, typedDataHash_);
-        delegation_ = Delegation({
-            delegate: delegation_.delegate,
-            delegator: delegation_.delegator,
-            authority: delegation_.authority,
-            caveats: delegation_.caveats,
-            salt: delegation_.salt,
-            signature: abi.encodePacked(r_, s_, v_)
-        });
-    }
-
-    function _signStandard(
-        uint256 signerKey_,
-        address delegator_,
-        bytes memory terms_,
-        uint256 salt_
-    )
-        private
-        view
-        returns (Delegation memory delegation_)
-    {
-        Caveat[] memory caveats_ = new Caveat[](1);
-        caveats_[0] = Caveat({ enforcer: address(standardEnforcer), terms: terms_, args: hex"" });
-        delegation_ = Delegation({
-            delegate: address(0xa11),
-            delegator: delegator_,
-            authority: standardManager.ROOT_AUTHORITY(),
-            caveats: caveats_,
-            salt: salt_,
-            signature: hex""
-        });
-
-        bytes32 delegationHash_ = standardManager.getDelegationHash(delegation_);
-        bytes32 typedDataHash_ = MessageHashUtils.toTypedDataHash(standardManager.getDomainHash(), delegationHash_);
         (uint8 v_, bytes32 r_, bytes32 s_) = vm.sign(signerKey_, typedDataHash_);
         delegation_ = Delegation({
             delegate: delegation_.delegate,

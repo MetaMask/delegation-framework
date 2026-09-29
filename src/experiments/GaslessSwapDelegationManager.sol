@@ -23,7 +23,7 @@ import { Caveat, Delegation, ModeCode } from "../utils/Types.sol";
  *      2. LimitedCallsEnforcer with limit = 1
  *
  *      Limit order:
- *      1. ExactExecutionEnforcer OR MetaSwap7702CalldataEnforcer
+ *      1. ExactExecutionEnforcer, or the configured calldata enforcer address
  *      2. LimitedCallsEnforcer with limit = 1
  *      3. NativeBalanceChangeEnforcer OR ERC20BalanceChangeEnforcer, configured for a minimum increase
  *         of the root delegator's output-token balance.
@@ -66,7 +66,7 @@ contract GaslessSwapDelegationManager is EIP712 {
     /**
      * @notice Configures the only enforcers accepted by this manager.
      * @param exactExecutionEnforcer_ ExactExecutionEnforcer deployment.
-     * @param metaSwap7702CalldataEnforcer_ MetaSwap7702CalldataEnforcer deployment.
+     * @param metaSwap7702CalldataEnforcer_ Configured calldata enforcer. Its address is the accepted limit-order caveat.
      * @param limitedCallsEnforcer_ LimitedCallsEnforcer deployment.
      * @param nativeBalanceChangeEnforcer_ NativeBalanceChangeEnforcer deployment.
      * @param erc20BalanceChangeEnforcer_ ERC20BalanceChangeEnforcer deployment.
@@ -82,8 +82,8 @@ contract GaslessSwapDelegationManager is EIP712 {
     {
         if (
             exactExecutionEnforcer_ == address(0) || metaSwap7702CalldataEnforcer_ == address(0)
-                || limitedCallsEnforcer_ == address(0)
-                || nativeBalanceChangeEnforcer_ == address(0) || erc20BalanceChangeEnforcer_ == address(0)
+                || limitedCallsEnforcer_ == address(0) || nativeBalanceChangeEnforcer_ == address(0)
+                || erc20BalanceChangeEnforcer_ == address(0)
         ) {
             revert InvalidConfiguration();
         }
@@ -195,9 +195,8 @@ contract GaslessSwapDelegationManager is EIP712 {
         bool flexibleMetaSwap_ = caveats_[0].enforcer == metaSwap7702CalldataEnforcer;
         if (
             (!exactExecution_ && !flexibleMetaSwap_) || (count_ == 2 && !exactExecution_)
-                || caveats_[1].enforcer != limitedCallsEnforcer
-                || caveats_[0].args.length != 0 || caveats_[1].args.length != 0 || caveats_[1].terms.length != 32
-                || _loadWord(caveats_[1].terms, 0) != 1
+                || caveats_[1].enforcer != limitedCallsEnforcer || caveats_[0].args.length != 0 || caveats_[1].args.length != 0
+                || caveats_[1].terms.length != 32 || _loadWord(caveats_[1].terms, 0) != 1
         ) {
             revert InvalidProfile();
         }

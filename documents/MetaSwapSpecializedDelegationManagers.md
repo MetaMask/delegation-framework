@@ -30,12 +30,20 @@ wrap. Supported shapes:
 
 ### FlexibleSettlement (limit order)
 
-Same economics as `MetaSwapFlexibleSettlementEnforcer` / the hookless manager:
+Same settlement shape as the hookless manager, plus the limit-order policies. There is still no redelegation chain.
 
 ```text
 terms = intent(1) | metaSwap(20) | tokenIn(20) | tokenInAmount(32) | approvalMode(1)
         | tokenOut(20) | recipient(20) | tokenOutMin(32)
+        | timestampAfter(16) | timestampBefore(16) | id(32) | redeemers(20*N)
 ```
+
+- Redeemers are required (`N >= 1`). `address(0)` is a normal allowlist entry for Sentinel pre-sign simulation. The base
+  `delegate` check still applies, so a multi-signer order sets `delegate` to `ANY_DELEGATE` and lists the stations.
+- Timestamp bounds are optional. `0` disables that bound. A set bound is exclusive (`timestamp > after` and
+  `timestamp < before`).
+- `id == 0` skips the bitmap. The delegation hash is still one-shot. `id != 0` also burns that id for the delegator, so
+  a sibling order with the same id cannot fill. `disableDelegation` does not burn the id.
 
 Redeemer supplies an encoded `Execution[]`. The manager validates approval/swap shape (not `aggregatorId` / route),
 snapshots the output balance in memory, executes, then enforces `tokenOutMin`.
@@ -61,21 +69,18 @@ Measured with `gasleft()` immediately around `redeemDelegations` in
 using an ECDSA signature and a zero starting output-token balance. Values include the manager call but exclude top-level
 transaction intrinsic calldata gas.
 
-| Purpose                  | Swap shape        | Existing `DelegationManager` path             | Existing gas | Order gas | Saving |
-| ------------------------ | ----------------- | --------------------------------------------- | ------------ | --------- | ------ |
-| Gasless exact swap       | Native swap       | `ExactExecutionBatch` + `LimitedCalls(1)`     | `167,475`    | `96,618`  | 42.3%  |
-| Gasless exact swap       | `approve + swap`  | `ExactExecutionBatch` + `LimitedCalls(1)`     | `230,987`    | `152,242` | 34.1%  |
-| Gasless exact swap       | `reset + approve + swap` | `ExactExecutionBatch` + `LimitedCalls(1)` | `244,355`    | `157,710` | 35.5%  |
-| Flexible limit order     | Native swap       | `MetaSwapFlexibleSettlementEnforcer`          | `143,414`    | `101,730` | 29.1%  |
-| Flexible limit order     | `approve + swap`  | `MetaSwapFlexibleSettlementEnforcer`          | `200,783`    | `158,990` | 20.8%  |
-| Flexible limit order     | `reset + approve + swap` | `MetaSwapFlexibleSettlementEnforcer`    | `207,974`    | `166,072` | 20.1%  |
+| Purpose            | Swap shape               | Existing `DelegationManager` path         | Existing gas | Order gas | Saving |
+| ------------------ | ------------------------ | ----------------------------------------- | ------------ | --------- | ------ |
+| Gasless exact swap | Native swap              | `ExactExecutionBatch` + `LimitedCalls(1)` | `167,475`    | `96,618`  | 42.3%  |
+| Gasless exact swap | `approve + swap`         | `ExactExecutionBatch` + `LimitedCalls(1)` | `230,987`    | `152,242` | 34.1%  |
+| Gasless exact swap | `reset + approve + swap` | `ExactExecutionBatch` + `LimitedCalls(1)` | `244,355`    | `157,710` | 35.5%  |
 
 Takeaways:
 
 - Exact orders save 34–42% by replacing generic delegation loops, hook calls, full execution terms, and the
   `LimitedCallsEnforcer` state/event with a specialized one-shot path.
-- Flexible orders save 20–29% while retaining the existing enforcer's approval-shape, swap-calldata, and output-delta
-  validations.
+- Flexible order redemption gas, with one redeemer, an open timestamp window, and `id == 0`: native `101,491`,
+  `approve + swap` `158,750`, `reset + approve + swap` `165,828`.
 - The specialized manager's compact redemption event is part of the measured saving; the generic manager emits the full
   delegation.
 
@@ -83,7 +88,8 @@ Takeaways:
 
 - Delegation chains, multiple caveats, multiple redemption batches, self-authorized empty contexts, try mode, and generic
   enforcers are intentionally unsupported.
-- No on-chain expiry for exact/gasless; relayers enforce freshness off-chain.
+- No on-chain expiry for exact/gasless; relayers enforce freshness off-chain. Flexible orders can set an optional
+  timestamp window.
 - No `enableDelegation` or pause controls.
 - Flexible route data retains the same trusted-delegate and unrelated-balance-increase assumptions as the settlement
   enforcer.
