@@ -23,6 +23,13 @@ interface ITellerConfiguration {
     function setTransferRestrictions(uint8 transferAllowedRole, uint8 allowlistedRouterRole) external;
 }
 
+/// @dev Custom errors thrown by the deployed Veda `TellerWithMultiAssetSupport` (Base V0.3). Declared here so the
+///      negative tests can assert the exact revert reason instead of accepting any revert.
+interface ITellerErrors {
+    error TellerWithMultiAssetSupport__ComplianceCheckFailed();
+    error TellerWithMultiAssetSupport__MinimumMintNotMet();
+}
+
 /// forge-config: default.evm_version = "cancun"
 contract ComplianceVedaLendingTest is BaseTest {
     IComplianceVedaTeller internal constant TELLER = IComplianceVedaTeller(0xB0025a2eBc0474d4F28E975F0D3E70471246ebae);
@@ -157,7 +164,7 @@ contract ComplianceVedaLendingTest is BaseTest {
             _complianceData(address(users.alice.deleGator), DEPOSIT_AMOUNT, deadline_, COMPLIANCE_SIGNER_KEY);
 
         vm.prank(address(users.bob.deleGator));
-        vm.expectRevert();
+        vm.expectRevert(ITellerErrors.TellerWithMultiAssetSupport__ComplianceCheckFailed.selector);
         adapter.depositByDelegation(freshDelegations_, 0, compliance_);
     }
 
@@ -168,7 +175,7 @@ contract ComplianceVedaLendingTest is BaseTest {
             _complianceData(address(users.alice.deleGator), DEPOSIT_AMOUNT, deadline_, COMPLIANCE_SIGNER_KEY);
 
         vm.prank(address(users.bob.deleGator));
-        vm.expectRevert();
+        vm.expectRevert(ITellerErrors.TellerWithMultiAssetSupport__ComplianceCheckFailed.selector);
         adapter.depositByDelegation(delegations_, 0, compliance_);
     }
 
@@ -179,7 +186,7 @@ contract ComplianceVedaLendingTest is BaseTest {
             _complianceData(address(users.alice.deleGator), DEPOSIT_AMOUNT, deadline_, 0xBAD);
 
         vm.prank(address(users.bob.deleGator));
-        vm.expectRevert();
+        vm.expectRevert(ITellerErrors.TellerWithMultiAssetSupport__ComplianceCheckFailed.selector);
         adapter.depositByDelegation(delegations_, 0, compliance_);
     }
 
@@ -190,7 +197,7 @@ contract ComplianceVedaLendingTest is BaseTest {
             _complianceData(address(users.bob.deleGator), DEPOSIT_AMOUNT, deadline_, COMPLIANCE_SIGNER_KEY);
 
         vm.prank(address(users.bob.deleGator));
-        vm.expectRevert();
+        vm.expectRevert(ITellerErrors.TellerWithMultiAssetSupport__ComplianceCheckFailed.selector);
         adapter.depositByDelegation(delegations_, 0, compliance_);
     }
 
@@ -201,7 +208,7 @@ contract ComplianceVedaLendingTest is BaseTest {
             _complianceData(address(users.alice.deleGator), DEPOSIT_AMOUNT, deadline_, COMPLIANCE_SIGNER_KEY);
 
         vm.prank(address(users.bob.deleGator));
-        vm.expectRevert();
+        vm.expectRevert(ITellerErrors.TellerWithMultiAssetSupport__MinimumMintNotMet.selector);
         adapter.depositByDelegation(delegations_, type(uint256).max, compliance_);
     }
 
