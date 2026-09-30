@@ -51,9 +51,11 @@ import { IComplianceVedaTeller } from "./interfaces/IComplianceVedaTeller.sol";
  *         - A transfer enforcer to control which tokens/shares and amounts can be transferred
  *         - A redeemer enforcer that restricts redemption to only the ComplianceVedaAdapter contract
  *
- *      2. The operator then redelegates to this ComplianceVedaAdapter contract with additional constraints:
- *         - Allowed methods enforcer limiting which functions can be called
- *         - Limited calls enforcer restricting the delegation to a single execution
+ *      2. The operator then redelegates to this ComplianceVedaAdapter contract. The leaf caveat is an
+ *         `ERC20TransferAmountEnforcer` capped to the exact amount. That enforcer already requires
+ *         `IERC20.transfer` (`0xa9059cbb`) and the token target — `depositToken` for deposits,
+ *         `boringVault` for withdrawals — so a separate allowed-methods caveat is not used. A limited-calls
+ *         enforcer can further restrict the redelegation to a single execution.
  *
  *      3. For deposits: the adapter redeems the delegation chain, transfers tokens from the user to itself,
  *         and calls `teller.deposit(...)` with the caller-supplied `ComplianceData` to mint shares to the user.
@@ -69,7 +71,9 @@ import { IComplianceVedaTeller } from "./interfaces/IComplianceVedaTeller.sol";
  *      - The first caveat of the leaf delegation (`_delegations[0].caveats[0]`) must follow the
  *        ERC20TransferAmountEnforcer terms format: abi.encodePacked(address token, uint256 amount) (52 bytes).
  *        The adapter parses only the amount from these terms; the token address encoded in bytes 0–19 is
- *        consumed by the enforcer itself and is not read by this adapter.
+ *        consumed by the enforcer itself and is not read by this adapter. The enforcer evaluates the
+ *        preliminary token transfer redeemed through `DelegationManager`, not the adapter entry point or
+ *        the subsequent Teller call.
  *
  * @notice Security consideration: Anyone can call `depositByDelegation` and `withdrawByDelegation` — there is no
  *      caller restriction. Security is enforced entirely through the delegation chain and, for deposits, the
