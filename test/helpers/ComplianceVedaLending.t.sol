@@ -21,6 +21,8 @@ interface IRolesAuthority {
 interface ITellerConfiguration {
     function owner() external view returns (address);
     function setTransferRestrictions(uint8 transferAllowedRole, uint8 allowlistedRouterRole) external;
+    function assetData(address asset) external view returns (bool allowDeposits, bool allowWithdraws, uint16 sharePremium);
+    function updateAssetData(address asset, bool allowDeposits, bool allowWithdraws, uint16 sharePremium) external;
 }
 
 /// @dev Custom errors thrown by the deployed Veda `TellerWithMultiAssetSupport` (Base V0.3). Declared here so the
@@ -201,6 +203,20 @@ contract ComplianceVedaLendingTest is BaseTest {
         adapter.depositByDelegation(delegations_, 0, compliance_);
     }
 
+    /// @notice A non-zero `sharePremium` haircuts minted shares below the fair-value amount.
+    function test_deposit_sharePremiumHaircutsMint() public {
+        _setSharePremium(0);
+        uint256 fairShares_ = _depositViaAdapter(DEPOSIT_AMOUNT, 40, block.timestamp + 30 minutes);
+
+        uint16 premiumBps_ = 1_000;
+        _setSharePremium(premiumBps_);
+        uint256 haircutShares_ = _depositViaAdapter(DEPOSIT_AMOUNT, 41, block.timestamp + 31 minutes);
+
+        uint256 expected_ = fairShares_ * (10_000 - uint256(premiumBps_)) / 10_000;
+        assertLt(haircutShares_, fairShares_);
+        assertEq(haircutShares_, expected_);
+    }
+
     function test_reverts_minimumMintTooHigh() public {
         uint256 deadline_ = block.timestamp + 30 minutes;
         Delegation[] memory delegations_ = _createDelegationChain(address(MUSD), DEPOSIT_AMOUNT, 33);
@@ -220,6 +236,12 @@ contract ComplianceVedaLendingTest is BaseTest {
         adapter.depositByDelegationBatch(deposits_);
         vm.expectRevert(ComplianceVedaAdapter.InvalidBatchLength.selector);
         adapter.withdrawByDelegationBatch(withdrawals_);
+    }
+
+    function _setSharePremium(uint16 _sharePremium) internal {
+        (bool allowDeposits_, bool allowWithdraws_,) = ITellerConfiguration(address(TELLER)).assetData(address(MUSD));
+        vm.prank(ITellerConfiguration(address(TELLER)).owner());
+        ITellerConfiguration(address(TELLER)).updateAssetData(address(MUSD), allowDeposits_, allowWithdraws_, _sharePremium);
     }
 
     function _configureForkRoles() internal {

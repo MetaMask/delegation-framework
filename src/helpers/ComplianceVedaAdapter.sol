@@ -242,9 +242,12 @@ contract ComplianceVedaAdapter is Ownable2Step {
      *      root delegator.
      * @param _delegations Array of Delegation objects, sorted leaf to root
      * @param _minimumMint Minimum vault shares the caller expects to receive, used as a sanity-check
-     *      bound. The Veda vault conversion is always at fair value; rate drift from yield streaming
-     *      is negligible. A tolerance of 0.1-0.5% is recommended. If this check causes a revert,
-     *      no funds are lost — retry with a fresh quote.
+     *      bound. Minted shares are the accountant's fair value reduced by
+     *      `assetData(depositToken).sharePremium` when that premium is non-zero. The Teller owner can
+     *      set the premium up to 1,000 bps (10%) through `updateAssetData`. Rate drift from yield
+     *      streaming is negligible beside that haircut. A tolerance of 0.1-0.5% covers rate drift only
+     *      while the premium is zero; otherwise size this bound for the configured premium. If this
+     *      check causes a revert, no funds are lost — retry with a fresh quote.
      * @param _compliance Backend-issued compliance approval (`deadline` + `signature`) for this deposit
      * @notice Security consideration: Callable by anyone. The redelegation passed in MUST include an
      *      `ERC20TransferAmountEnforcer` as its first caveat (`caveats[0]`), capped to exactly the intended
