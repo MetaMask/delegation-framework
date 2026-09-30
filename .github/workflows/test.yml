@@ -52,4 +52,5 @@ jobs:
         env:
           LINEA_RPC_URL: ${{ secrets.LINEA_RPC_URL }}
           ARBITRUM_RPC_URL: ${{ secrets.ARBITRUM_RPC_URL }}
+          MONAD_RPC_URL: ${{ secrets.MONAD_RPC_URL }}
           RPC_API_KEY: ${{ secrets.RPC_API_KEY }}
