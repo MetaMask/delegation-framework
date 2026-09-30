@@ -37,8 +37,13 @@ import { IComplianceVedaTeller } from "./interfaces/IComplianceVedaTeller.sol";
  *      - Because this adapter is `msg.sender` on the Teller call, the signature MUST bind this adapter as
  *        the caller and the root delegator as `to` (share recipient). A signature issued for a direct user
  *        deposit cannot be reused through this adapter.
- *      - When `allowlistedRouterRole` is enabled on the Teller, this adapter must hold that role so it can
- *        mint shares to `to != msg.sender`. Withdrawals are not compliance-gated.
+ *      - Veda RolesAuthority prerequisites:
+ *        - `allowlistedRouterRole` must permit this adapter to route both deposits and withdrawals to the
+ *          root delegator, because the Teller sees `to != msg.sender` in both flows.
+ *        - When `transferAllowedRole` is enabled, withdrawals must satisfy that role during the delegated
+ *          vault-share transfer. Granting it to this adapter supports all users.
+ *        - The Teller's deposit and withdraw selectors must be public or otherwise callable by this adapter.
+ *        Withdrawals do not require a compliance signature, but these role checks still apply.
  *
  *      Delegation Flow:
  *      1. The user creates an initial delegation to an "operator" address (a DeleGator-upgraded account).
@@ -284,7 +289,8 @@ contract ComplianceVedaAdapter is Ownable2Step {
      *      The share amount is parsed from the first caveat of the leaf delegation
      *      (`_delegations[0].caveats[0].terms`), which must follow the ERC20TransferAmountEnforcer
      *      format: abi.encodePacked(address boringVault, uint256 shareAmount).
-     *      Withdrawals are not compliance-gated by the Teller.
+     *      Withdrawals do not require a compliance signature. The Teller's routing and transfer role checks
+     *      still apply; see the contract-level RolesAuthority prerequisites.
      * @param _delegations Array of Delegation objects, sorted leaf to root
      * @param _minimumAssets Minimum underlying assets the caller expects to receive, used as a
      *      sanity-check bound. The Veda vault conversion is always at fair value; rate drift from
