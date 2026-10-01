@@ -6,7 +6,6 @@
 ### Getting Started
 
 1. **Fork the repository**:
-
    - Click the "Fork" button at the top right of the repository page.
 
 2. **Clone your fork**:
@@ -65,6 +64,12 @@ A DeleGator Implementation contains the logic for a DeleGator Smart Account. Eac
 The Delegation Manager includes the logic for validating and executing Delegations.
 
 [Read more on "Delegation Manager" ->](/documents/DelegationManager.md)
+
+### MetaSwap Order Delegation Manager
+
+One manager for two MetaSwap flows: a gasless swap signed as an exact batch, and a limit order whose route is chosen at redemption inside signed bounds.
+
+[Read more on "MetaSwap Order Delegation Manager" ->](/documents/MetaSwapSpecializedDelegationManagers.md)
 
 ### Caveat Enforcers
 
