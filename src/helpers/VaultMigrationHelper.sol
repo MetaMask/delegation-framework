@@ -27,7 +27,7 @@ import { Delegation, ModeCode } from "../utils/Types.sol";
  *
  *      Destination control for `premiumTransfer` is dual, not backend-only and not user-only:
  *      - The share owner (`from`) picks the recipient and ERC-1271-signs the destination digest below.
- *        That locks `to` to this exact leaf so a caller or backend cannot redirect the second hop.
+ *        That locks `to` to the user's root delegation so a caller or backend cannot redirect the second hop.
  *      - The compliance backend still EIP-191-signs a digest that includes the same `to`, proving the
  *        recipient is premium-enabled / KYC'd. A user cannot send to an unapproved address even if they
  *        signed it.
@@ -39,10 +39,12 @@ import { Delegation, ModeCode } from "../utils/Types.sol";
  *         (`toTypedDataHash(domainHash, EncoderLib._getDelegationHash(delegation))`). The share owner
  *         signs the root; CHOMP (root `delegate`) signs the leaf.
  *      2. Destination proof (`userSignature`): EIP-191 `personal_sign`, not EIP-712. Inner hash:
- *         `keccak256(abi.encode(address(this), block.chainid, from, to, delegations[0].signature))`.
+ *         `keccak256(abi.encode(address(this), block.chainid, from, to, delegations[length - 1].signature))`.
  *         Signed payload: `keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", inner))`.
- *         Verified with ERC-1271 on `from` via SignatureChecker. `delegations[0].signature` is already
- *         in calldata; binding it ties `to` to this leaf without hashing the full delegation.
+ *         Verified with ERC-1271 on `from` via SignatureChecker. The chain is leaf-to-root, so
+ *         `delegations[length - 1].signature` is the root the share owner signed (the initial transfer
+ *         validation), not the leaf redelegation. Binding that signature ties `to` to this root without
+ *         hashing the full delegation.
  *      3. Compliance (`compliance.signature`): also EIP-191 `personal_sign`. Inner hash:
  *         `keccak256(abi.encode(address(this), teller, block.chainid, from, to, vault, amount, deadline))`.
  *         Same prefix as (2) and as Teller deposits, but the inner tuple starts with this helper so a
@@ -299,9 +301,10 @@ contract VaultMigrationHelper is Ownable2Step {
      *      format: abi.encodePacked(address token, uint256 amount).
      * @param _params From, to, chain, compliance, and user destination signature.
      * @notice Security consideration: Callable by anyone. Destination is dual-controlled: the user signature
-     *      binds `to` to this helper, chain, `from`, and this leaf; the compliance signature still includes `to`
-     *      so only a premium-enabled recipient can receive. Delegations are EIP-712; `userSignature` and
-     *      compliance are EIP-191 `personal_sign` over the exact inner hashes documented on the contract.
+     *      binds `to` to this helper, chain, `from`, and the root delegation the user signed; the compliance
+     *      signature still includes `to` so only a premium-enabled recipient can receive. Delegations are EIP-712;
+     *      `userSignature` and compliance are EIP-191 `personal_sign` over the exact inner hashes documented
+     *      on the contract.
      *      A Teller deposit signature cannot be reused because it binds the Teller address, not this helper.
      *      The redelegation MUST include an `ERC20TransferAmountEnforcer` as its first caveat (`caveats[0]`),
      *      capped to exactly the owner's full premium balance. Reverts when Teller compliance is disabled.
@@ -369,7 +372,7 @@ contract VaultMigrationHelper is Ownable2Step {
             revert InvalidTransferAmount();
         }
 
-        _verifyUserTransferSignature(from_, to_, _params.delegations[0].signature, _params.userSignature);
+        _verifyUserTransferSignature(from_, to_, _params.delegations[length_ - 1].signature, _params.userSignature);
         _verifyTransferCompliance(from_, to_, address(vault_), amount_, _params.compliance);
 
         bytes[] memory permissionContexts_ = new bytes[](1);
@@ -460,24 +463,26 @@ contract VaultMigrationHelper is Ownable2Step {
     }
 
     /**
-     * @notice Verifies that `from` authorized this exact destination for this leaf.
+     * @notice Verifies that `from` authorized this exact destination for their root delegation.
      * @dev Destination proof is EIP-191 `personal_sign`, not the EIP-712 scheme used for delegations.
-     *      Inner: `keccak256(abi.encode(address(this), block.chainid, from, to, leaf.signature))`.
+     *      Inner: `keccak256(abi.encode(address(this), block.chainid, from, to, root.signature))`.
      *      Signed: `toEthSignedMessageHash(inner)` == `"\x19Ethereum Signed Message:\n32" || inner`.
      *      Verified with ERC-1271 on `from` via SignatureChecker so a backend cannot swap `to` after
-     *      the user signed. Binding `_delegations[0].signature` (already in calldata) ties `to` to this
-     *      leaf without hashing the full delegation on-chain.
+     *      the user signed. The chain is sorted leaf to root, so the bound signature is
+     *      `delegations[length - 1].signature`: the user's initial transfer validation, not the
+     *      redelegation at `delegations[0]`. Binding that signature ties `to` to this root without
+     *      hashing the full delegation on-chain.
      */
     function _verifyUserTransferSignature(
         address _from,
         address _to,
-        bytes calldata _leafSignature,
+        bytes calldata _rootSignature,
         bytes calldata _userSignature
     )
         private
         view
     {
-        bytes32 messageHash_ = keccak256(abi.encode(address(this), block.chainid, _from, _to, _leafSignature));
+        bytes32 messageHash_ = keccak256(abi.encode(address(this), block.chainid, _from, _to, _rootSignature));
         bytes32 ethSignedHash_ = MessageHashUtils.toEthSignedMessageHash(messageHash_);
         if (!SignatureChecker.isValidSignatureNow(_from, ethSignedHash_, _userSignature)) {
             revert InvalidUserSignature();

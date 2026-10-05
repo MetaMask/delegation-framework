@@ -671,7 +671,7 @@ contract VaultMigrationHelperTest is BaseTest {
         assertEq(PREMIUM_VAULT.balanceOf(from_), shares_);
     }
 
-    function test_premiumTransfer_revertsOnUserSignatureForDifferentLeaf() public {
+    function test_premiumTransfer_revertsOnUserSignatureForDifferentRoot() public {
         uint256 shares_ = _depositToPremium(users.alice, DEPOSIT_AMOUNT, 360, block.timestamp + 30 minutes);
         address from_ = address(users.alice.deleGator);
         address to_ = address(users.carol.deleGator);
@@ -1091,7 +1091,13 @@ contract VaultMigrationHelperTest is BaseTest {
         returns (bytes memory)
     {
         bytes32 messageHash_ = keccak256(
-            abi.encode(address(migrationHelper), block.chainid, address(_delegator.deleGator), _to, _delegations[0].signature)
+            abi.encode(
+                address(migrationHelper),
+                block.chainid,
+                address(_delegator.deleGator),
+                _to,
+                _delegations[_delegations.length - 1].signature
+            )
         );
         bytes32 ethSignedMessageHash_ = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash_));
         // Destination proof is EIP-191 personal_sign (same prefix as compliance), not EIP-712 like the chain.
