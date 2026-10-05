@@ -37,6 +37,17 @@ import { IComplianceVedaTeller } from "./interfaces/IComplianceVedaTeller.sol";
  *      - Because this adapter is `msg.sender` on the Teller call, the signature MUST bind this adapter as
  *        the caller and the root delegator as `to` (share recipient). A signature issued for a direct user
  *        deposit cannot be reused through this adapter.
+ *      - `TellerWithMultiAssetSupport__ComplianceCheckFailed()` means either that `deadline` has passed
+ *        (`block.timestamp > deadline`) or, when `complianceWindow` is nonzero, that the acceptance window
+ *        has not begun (`deadline > block.timestamp + complianceWindow`). A nonzero window accepts an
+ *        approval only while `block.timestamp <= deadline <= block.timestamp + complianceWindow`, which is
+ *        from `deadline - complianceWindow` through `deadline`, inclusive. The error alone does not show
+ *        that the approval has expired. An early rejection leaves the approval unconsumed and rolls back
+ *        the leaf's transfer-allowance consumption, so the original signed delegation and approval can
+ *        still succeed once the window opens. The Teller's replay key includes `deadline`, so a replacement
+ *        approval with a different deadline is a separate key and does not cancel the original. On retry,
+ *        reuse the same amount-capped leaf, or revoke the superseded leaf before submitting a replacement.
+ *        A fresh leaf together with a new approval can both execute and spend allowance twice.
  *      - Veda RolesAuthority prerequisites:
  *        - `allowlistedRouterRole` must permit this adapter to route both deposits and withdrawals to the
  *          root delegator, because the Teller sees `to != msg.sender` in both flows.
@@ -85,7 +96,8 @@ import { IComplianceVedaTeller } from "./interfaces/IComplianceVedaTeller.sol";
  *      without this enforcer as the first caveat (or with an amount larger than intended) could be exploited by
  *      any caller to transfer more tokens than authorised. A valid compliance signature is additionally bound to
  *      this adapter, the recipient, the asset, the amount, and a deadline; it cannot be replayed after the Teller
- *      marks the digest as used.
+ *      marks the digest as used. `TellerWithMultiAssetSupport__ComplianceCheckFailed()` before the acceptance
+ *      window opens does not mark that digest used.
  */
 contract ComplianceVedaAdapter is Ownable2Step {
     using SafeERC20 for IERC20;
@@ -237,9 +249,14 @@ contract ComplianceVedaAdapter is Ownable2Step {
      *      The deposit amount is parsed from the first caveat of the leaf delegation
      *      (`_delegations[0].caveats[0].terms`), which must follow the ERC20TransferAmountEnforcer
      *      format: abi.encodePacked(address token, uint256 amount).
-     *      `_compliance` is forwarded as-is. The Teller verifies deadline, EIP-191 signature, signer role,
-     *      and unused digest. The signed `msg.sender` field must be this adapter and `to` must be the
-     *      root delegator.
+     *      `_compliance` is forwarded as-is. The Teller verifies the EIP-191 signature, signer role, and
+     *      unused digest. When `complianceWindow` is nonzero it accepts the approval only while
+     *      `block.timestamp <= deadline <= block.timestamp + complianceWindow`.
+     *      `TellerWithMultiAssetSupport__ComplianceCheckFailed()` is returned both after `deadline` and
+     *      before that window opens. An early rejection does not consume the approval or the leaf allowance,
+     *      and a replacement approval uses a different `deadline`, so it does not invalidate the original.
+     *      Retry with the same amount-capped leaf, or revoke the superseded leaf before using a replacement.
+     *      The signed `msg.sender` field must be this adapter and `to` must be the root delegator.
      * @param _delegations Array of Delegation objects, sorted leaf to root
      * @param _minimumMint Minimum vault shares the caller expects to receive, used as a sanity-check
      *      bound. Minted shares are the accountant's fair value reduced by
