@@ -41,13 +41,14 @@ contract VaultMigrationHelperTest is BaseTest {
     IERC20 internal constant MUSD = IERC20(0xacA92E438df0B2401fF60dA7E4337B687a2435DA);
     IERC20 internal constant BASE_VAULT = IERC20(0xb4563bcD3B7764CCBf497f515585f70B6C3EA5Ae);
     IVedaTeller internal constant BASE_TELLER = IVedaTeller(0x2D49EA58A4C70b62c8B56DE971310d9e999c8117);
-    IVedaAccountant internal constant ACCOUNTANT = IVedaAccountant(0x7382c5b8B51B8C4f127B3123C1039581BAA5A06B);
+    IVedaAccountant internal constant BASE_ACCOUNTANT = IVedaAccountant(0x7382c5b8B51B8C4f127B3123C1039581BAA5A06B);
     address internal constant BASE_LENS = 0xA816ECd922de94c6879AD23B9A884dB257F20947;
     address internal constant BUFFER_LENS = 0xf484d54AF87199F421967E2231Dd6dC348C7Ee6A;
     address internal constant DEPLOYED_BASE_ADAPTER = 0xaD4c09d065fDb6320FA8ADf69460CDd9d472C25A;
 
     IComplianceVedaTeller internal constant PREMIUM_TELLER = IComplianceVedaTeller(0xB0025a2eBc0474d4F28E975F0D3E70471246ebae);
     IERC20 internal constant PREMIUM_VAULT = IERC20(0xBFeC8c2b1ccea3931a1363E4CaC27352c1C908B7);
+    IVedaAccountant internal constant PREMIUM_ACCOUNTANT = IVedaAccountant(0xb4c9e25D3D6a4E42A7d52C21822D6016d29Ee0A2);
     IRolesAuthority internal constant PREMIUM_ROLES_AUTHORITY = IRolesAuthority(0x00f0CF4f540D1d47470f565Ecb11a75E073c2dd0);
     IRolesAuthority internal constant BASE_ROLES_AUTHORITY = IRolesAuthority(0x1eC540C9a4656a50F2D6DaaBd647753F97f082D1);
 
@@ -111,7 +112,8 @@ contract VaultMigrationHelperTest is BaseTest {
         vm.label(address(PREMIUM_VAULT), "Premium mUSD Vault");
         vm.label(address(BASE_TELLER), "Base Veda Teller");
         vm.label(address(PREMIUM_TELLER), "Premium Veda Teller");
-        vm.label(address(ACCOUNTANT), "Base Accountant");
+        vm.label(address(BASE_ACCOUNTANT), "Base Accountant");
+        vm.label(address(PREMIUM_ACCOUNTANT), "Premium Accountant");
         vm.label(BASE_LENS, "Base Lens");
         vm.label(BUFFER_LENS, "Buffer Lens");
         vm.label(DEPLOYED_BASE_ADAPTER, "Deployed Base Adapter");
@@ -164,7 +166,7 @@ contract VaultMigrationHelperTest is BaseTest {
         uint256 baseShares_ = _depositToBase(users.alice, DEPOSIT_AMOUNT, 10);
         vm.warp(block.timestamp + SHARE_LOCK_SECONDS);
 
-        uint256 quotedAssets_ = _quoteAssets(baseShares_);
+        uint256 quotedAssets_ = _quoteBaseAssets(baseShares_);
         uint256 musdBefore_ = MUSD.balanceOf(address(users.alice.deleGator));
         VaultMigrationHelper.ToPremiumParams memory params_ =
             _toPremiumParams(users.alice, baseShares_, quotedAssets_, 11, quotedAssets_, 12, block.timestamp + 30 minutes);
@@ -182,7 +184,7 @@ contract VaultMigrationHelperTest is BaseTest {
 
     function test_migrateToBase_movesSharesAndLeavesNoDust() public {
         uint256 premiumShares_ = _depositToPremium(users.alice, DEPOSIT_AMOUNT, 20, block.timestamp + 30 minutes);
-        uint256 quotedAssets_ = _quoteAssets(premiumShares_);
+        uint256 quotedAssets_ = _quotePremiumAssets(premiumShares_);
         uint256 musdBefore_ = MUSD.balanceOf(address(users.alice.deleGator));
         VaultMigrationHelper.ToBaseParams memory params_ = _toBaseParams(users.alice, premiumShares_, 21, quotedAssets_, 22);
 
@@ -200,7 +202,7 @@ contract VaultMigrationHelperTest is BaseTest {
     function test_migrateToPremium_isPermissionless() public {
         uint256 baseShares_ = _depositToBase(users.alice, DEPOSIT_AMOUNT, 30);
         vm.warp(block.timestamp + SHARE_LOCK_SECONDS);
-        uint256 quotedAssets_ = _quoteAssets(baseShares_);
+        uint256 quotedAssets_ = _quoteBaseAssets(baseShares_);
 
         vm.prank(address(users.carol.deleGator));
         migrationHelper.migrateToPremiumByDelegation(
@@ -216,7 +218,7 @@ contract VaultMigrationHelperTest is BaseTest {
     function test_migrateToPremium_revertsBothLegsWhenDepositFails() public {
         uint256 baseShares_ = _depositToBase(users.alice, DEPOSIT_AMOUNT, 40);
         vm.warp(block.timestamp + SHARE_LOCK_SECONDS);
-        uint256 quotedAssets_ = _quoteAssets(baseShares_);
+        uint256 quotedAssets_ = _quoteBaseAssets(baseShares_);
         uint256 musdBefore_ = MUSD.balanceOf(address(users.alice.deleGator));
         VaultMigrationHelper.ToPremiumParams memory params_ =
             _toPremiumParams(users.alice, baseShares_, quotedAssets_, 41, quotedAssets_, 42, block.timestamp + 30 minutes);
@@ -234,7 +236,7 @@ contract VaultMigrationHelperTest is BaseTest {
 
     function test_migrateToBase_revertsOnDelegatorMismatch() public {
         uint256 aliceShares_ = _depositToPremium(users.alice, DEPOSIT_AMOUNT, 50, block.timestamp + 30 minutes);
-        uint256 quotedAssets_ = _quoteAssets(aliceShares_);
+        uint256 quotedAssets_ = _quotePremiumAssets(aliceShares_);
 
         VaultMigrationHelper.ToBaseParams memory params_ = VaultMigrationHelper.ToBaseParams({
             withdrawalDelegations: _createDelegationChain(
@@ -256,7 +258,7 @@ contract VaultMigrationHelperTest is BaseTest {
     function test_migrateToPremium_revertsOnShortDelegationChain() public {
         uint256 baseShares_ = _depositToBase(users.alice, DEPOSIT_AMOUNT, 60);
         vm.warp(block.timestamp + SHARE_LOCK_SECONDS);
-        uint256 quotedAssets_ = _quoteAssets(baseShares_);
+        uint256 quotedAssets_ = _quoteBaseAssets(baseShares_);
         VaultMigrationHelper.ToPremiumParams memory params_ =
             _toPremiumParams(users.alice, baseShares_, quotedAssets_, 61, quotedAssets_, 62, block.timestamp + 30 minutes);
         params_.withdrawalDelegations = new Delegation[](1);
@@ -275,8 +277,8 @@ contract VaultMigrationHelperTest is BaseTest {
         uint256 carolShares_ = _depositToBase(users.carol, carolAmount_, 71);
         vm.warp(block.timestamp + SHARE_LOCK_SECONDS);
 
-        uint256 aliceAssets_ = _quoteAssets(aliceShares_);
-        uint256 carolAssets_ = _quoteAssets(carolShares_);
+        uint256 aliceAssets_ = _quoteBaseAssets(aliceShares_);
+        uint256 carolAssets_ = _quoteBaseAssets(carolShares_);
         VaultMigrationHelper.ToPremiumParams[] memory params_ = new VaultMigrationHelper.ToPremiumParams[](2);
         params_[0] = _toPremiumParams(users.alice, aliceShares_, aliceAssets_, 72, aliceAssets_, 73, block.timestamp + 20 minutes);
         params_[1] = _toPremiumParams(users.carol, carolShares_, carolAssets_, 74, carolAssets_, 75, block.timestamp + 21 minutes);
@@ -299,8 +301,8 @@ contract VaultMigrationHelperTest is BaseTest {
         uint256 aliceShares_ = _depositToPremium(users.alice, aliceAmount_, 80, block.timestamp + 20 minutes);
         uint256 carolShares_ = _depositToPremium(users.carol, carolAmount_, 81, block.timestamp + 21 minutes);
 
-        uint256 aliceAssets_ = _quoteAssets(aliceShares_);
-        uint256 carolAssets_ = _quoteAssets(carolShares_);
+        uint256 aliceAssets_ = _quotePremiumAssets(aliceShares_);
+        uint256 carolAssets_ = _quotePremiumAssets(carolShares_);
         VaultMigrationHelper.ToBaseParams[] memory params_ = new VaultMigrationHelper.ToBaseParams[](2);
         params_[0] = _toBaseParams(users.alice, aliceShares_, 82, aliceAssets_, 83);
         params_[1] = _toBaseParams(users.carol, carolShares_, 84, carolAssets_, 85);
@@ -322,8 +324,8 @@ contract VaultMigrationHelperTest is BaseTest {
         uint256 carolShares_ = _depositToBase(users.carol, 400e6, 91);
         vm.warp(block.timestamp + SHARE_LOCK_SECONDS);
 
-        uint256 aliceAssets_ = _quoteAssets(aliceShares_);
-        uint256 carolAssets_ = _quoteAssets(carolShares_);
+        uint256 aliceAssets_ = _quoteBaseAssets(aliceShares_);
+        uint256 carolAssets_ = _quoteBaseAssets(carolShares_);
         VaultMigrationHelper.ToPremiumParams[] memory params_ = new VaultMigrationHelper.ToPremiumParams[](2);
         params_[0] = _toPremiumParams(users.alice, aliceShares_, aliceAssets_, 92, aliceAssets_, 93, block.timestamp + 20 minutes);
         params_[1] = _toPremiumParams(users.carol, carolShares_, carolAssets_, 94, carolAssets_, 95, block.timestamp + 21 minutes);
@@ -357,7 +359,7 @@ contract VaultMigrationHelperTest is BaseTest {
     function test_migrateToPremium_revertsOnExpiredCompliance() public {
         uint256 baseShares_ = _depositToBase(users.alice, DEPOSIT_AMOUNT, 100);
         vm.warp(block.timestamp + SHARE_LOCK_SECONDS);
-        uint256 quotedAssets_ = _quoteAssets(baseShares_);
+        uint256 quotedAssets_ = _quoteBaseAssets(baseShares_);
         VaultMigrationHelper.ToPremiumParams memory params_ =
             _toPremiumParams(users.alice, baseShares_, quotedAssets_, 101, quotedAssets_, 102, block.timestamp - 1);
 
@@ -372,7 +374,7 @@ contract VaultMigrationHelperTest is BaseTest {
     function test_migrateToPremium_revertsOnWrongComplianceSigner() public {
         uint256 baseShares_ = _depositToBase(users.alice, DEPOSIT_AMOUNT, 110);
         vm.warp(block.timestamp + SHARE_LOCK_SECONDS);
-        uint256 quotedAssets_ = _quoteAssets(baseShares_);
+        uint256 quotedAssets_ = _quoteBaseAssets(baseShares_);
         VaultMigrationHelper.ToPremiumParams memory params_ =
             _toPremiumParams(users.alice, baseShares_, quotedAssets_, 111, quotedAssets_, 112, block.timestamp + 30 minutes);
         params_.compliance = IComplianceVedaTeller.ComplianceData({
@@ -390,7 +392,7 @@ contract VaultMigrationHelperTest is BaseTest {
     function test_migrateToPremium_revertsOnReplayedCompliance() public {
         uint256 firstShares_ = _depositToBase(users.alice, DEPOSIT_AMOUNT, 120);
         vm.warp(block.timestamp + SHARE_LOCK_SECONDS);
-        uint256 firstAssets_ = _quoteAssets(firstShares_);
+        uint256 firstAssets_ = _quoteBaseAssets(firstShares_);
         uint256 deadline_ = block.timestamp + 30 minutes;
         VaultMigrationHelper.ToPremiumParams memory firstParams_ =
             _toPremiumParams(users.alice, firstShares_, firstAssets_, 121, firstAssets_, 122, deadline_);
@@ -400,7 +402,7 @@ contract VaultMigrationHelperTest is BaseTest {
 
         uint256 secondShares_ = _depositToBase(users.alice, DEPOSIT_AMOUNT, 123);
         vm.warp(block.timestamp + SHARE_LOCK_SECONDS);
-        uint256 secondAssets_ = _quoteAssets(secondShares_);
+        uint256 secondAssets_ = _quoteBaseAssets(secondShares_);
         VaultMigrationHelper.ToPremiumParams memory replayParams_ =
             _toPremiumParams(users.alice, secondShares_, secondAssets_, 124, secondAssets_, 125, deadline_ + 1 hours);
         replayParams_.compliance = firstParams_.compliance;
@@ -413,7 +415,7 @@ contract VaultMigrationHelperTest is BaseTest {
     function test_migrateToPremium_revertsOnWithdrawSlippage() public {
         uint256 baseShares_ = _depositToBase(users.alice, DEPOSIT_AMOUNT, 130);
         vm.warp(block.timestamp + SHARE_LOCK_SECONDS);
-        uint256 quotedAssets_ = _quoteAssets(baseShares_);
+        uint256 quotedAssets_ = _quoteBaseAssets(baseShares_);
         VaultMigrationHelper.ToPremiumParams memory params_ =
             _toPremiumParams(users.alice, baseShares_, quotedAssets_, 131, quotedAssets_, 132, block.timestamp + 30 minutes);
         params_.minimumAssets = type(uint256).max;
@@ -428,7 +430,7 @@ contract VaultMigrationHelperTest is BaseTest {
     function test_migrateToPremium_revertsOnDelegationReplay() public {
         uint256 baseShares_ = _depositToBase(users.alice, DEPOSIT_AMOUNT, 140);
         vm.warp(block.timestamp + SHARE_LOCK_SECONDS);
-        uint256 quotedAssets_ = _quoteAssets(baseShares_);
+        uint256 quotedAssets_ = _quoteBaseAssets(baseShares_);
         VaultMigrationHelper.ToPremiumParams memory params_ =
             _toPremiumParams(users.alice, baseShares_, quotedAssets_, 141, quotedAssets_, 142, block.timestamp + 30 minutes);
 
@@ -813,8 +815,16 @@ contract VaultMigrationHelperTest is BaseTest {
         require(MUSD.transfer(address(_user.deleGator), INITIAL_MUSD_BALANCE), "mUSD funding failed");
     }
 
-    function _quoteAssets(uint256 _shares) internal view returns (uint256) {
-        return _shares * ACCOUNTANT.getRateInQuoteSafe(address(MUSD)) / (10 ** ACCOUNTANT.decimals());
+    function _quoteBaseAssets(uint256 _shares) internal view returns (uint256) {
+        return _quoteAssets(BASE_ACCOUNTANT, _shares);
+    }
+
+    function _quotePremiumAssets(uint256 _shares) internal view returns (uint256) {
+        return _quoteAssets(PREMIUM_ACCOUNTANT, _shares);
+    }
+
+    function _quoteAssets(IVedaAccountant _accountant, uint256 _shares) internal view returns (uint256) {
+        return _shares * _accountant.getRateInQuoteSafe(address(MUSD)) / (10 ** _accountant.decimals());
     }
 
     function _depositToBase(TestUser memory _delegator, uint256 _amount, uint256 _salt) internal returns (uint256 shares_) {
