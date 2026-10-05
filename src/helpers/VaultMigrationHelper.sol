@@ -21,9 +21,14 @@ import { Delegation, ModeCode } from "../utils/Types.sol";
  * @notice Atomically composes the existing base and premium Veda adapters, and moves premium shares with
  *         dual destination control (user + compliance backend).
  * @dev Vault-to-vault migrations keep delegations targeted at the adapter that redeems them. Premium share
- *      transfers are redeemed by this helper: the chain must pin `transfer` `to` to this contract and name
- *      this contract as redeemer. This helper must hold `transferAllowedRole` on the premium Teller so Veda
- *      allows the first hop (helper is `to`) and the second hop (helper is `from`/`operator`).
+ *      transfers are redeemed by this helper. The user's root must:
+ *      - pin the redeemed call with `AllowedCalldataEnforcer` terms
+ *        `abi.encodePacked(uint256(0), IERC20.transfer.selector, abi.encode(address(this)))`, so the call is
+ *        `transfer` to this helper and the amount stays unset on the root;
+ *      - name the premium vault in `AllowedTargetsEnforcer`;
+ *      - name this contract in `RedeemerEnforcer`.
+ *      The root does not use `ERC20TransferAmountEnforcer`. This helper must hold `transferAllowedRole` on the
+ *      premium Teller so Veda allows the first hop (helper is `to`) and the second hop (helper is `from`/`operator`).
  *
  *      Destination control for `premiumTransfer` is dual, not backend-only and not user-only:
  *      - The share owner (`from`) picks the recipient and ERC-1271-signs the destination digest below.
@@ -31,8 +36,10 @@ import { Delegation, ModeCode } from "../utils/Types.sol";
  *      - The compliance backend still EIP-191-signs a digest that includes the same `to`, proving the
  *        recipient is premium-enabled / KYC'd. A user cannot send to an unapproved address even if they
  *        signed it.
- *      Neither party can complete a transfer to an address the other did not attest. Amount remains the
- *      full premium balance at execution (leaf terms). First hop stays helper-only via caveats.
+ *      Neither party can complete a transfer to an address the other did not attest. The amount is the
+ *      owner's full premium balance at execution (`balanceOf`). It is not read from a leaf caveat.
+ *      The compliance digest includes that amount, so the backend still attests the quantity moved.
+ *      First hop stays helper-only via the root caveats above.
  *
  *      Signing schemes — wallets and CHOMP must implement both. They are not interchangeable:
  *      1. Delegation chain (root + leaf): EIP-712 typed data through DelegationManager
@@ -49,14 +56,6 @@ import { Delegation, ModeCode } from "../utils/Types.sol";
  *         `keccak256(abi.encode(address(this), teller, block.chainid, from, to, vault, amount, deadline))`.
  *         Same prefix as (2) and as Teller deposits, but the inner tuple starts with this helper so a
  *         Teller deposit signature cannot be reused.
- *
- *      Leaf Caveat Format:
- *      - For `premiumTransfer`, the first caveat of the leaf delegation (`_delegations[0].caveats[0]`) must
- *        follow the ERC20TransferAmountEnforcer terms format: abi.encodePacked(address token, uint256 amount)
- *        (52 bytes). This helper parses only the amount from these terms; the token address encoded in
- *        bytes 0–19 is consumed by the enforcer itself and is not read here. A delegation without this
- *        enforcer as the first caveat (or with an amount other than the owner's full premium balance)
- *        will revert.
  */
 contract VaultMigrationHelper is Ownable2Step {
     using SafeERC20 for IERC20;
@@ -179,12 +178,6 @@ contract VaultMigrationHelper is Ownable2Step {
     /// @dev Thrown when the withdrawal and deposit chains have different root delegators.
     error DelegatorMismatch();
 
-    /// @dev Thrown when the leaf caveat terms are shorter than 52 bytes.
-    error InvalidTermsLength();
-
-    /// @dev Thrown when the premium share balance is zero or does not match the leaf caveat amount.
-    error InvalidTransferAmount();
-
     /// @dev Thrown when compliance signature verification fails.
     error ComplianceCheckFailed();
 
@@ -294,20 +287,18 @@ contract VaultMigrationHelper is Ownable2Step {
 
     /**
      * @notice Moves `from`'s entire premium vault balance to `to` after user and compliance checks.
-     * @dev The delegation chain must be redeemable only by this helper and must pin `transfer` `to` to this
-     *      helper. Production must grant this helper `transferAllowedRole` on the premium Teller.
-     *      The transfer amount is parsed from the first caveat of the leaf delegation
-     *      (`delegations[0].caveats[0].terms`), which must follow the ERC20TransferAmountEnforcer
-     *      format: abi.encodePacked(address token, uint256 amount).
+     * @dev The delegation chain must be redeemable only by this helper. The root pins `transfer` to this helper
+     *      via `AllowedCalldataEnforcer` (selector plus recipient) and the premium vault via `AllowedTargetsEnforcer`.
+     *      Production must grant this helper `transferAllowedRole` on the premium Teller.
+     *      The amount is `balanceOf(from)` at execution, not a value encoded in the leaf.
      * @param _params From, to, chain, compliance, and user destination signature.
      * @notice Security consideration: Callable by anyone. Destination is dual-controlled: the user signature
      *      binds `to` to this helper, chain, `from`, and the root delegation the user signed; the compliance
-     *      signature still includes `to` so only a premium-enabled recipient can receive. Delegations are EIP-712;
-     *      `userSignature` and compliance are EIP-191 `personal_sign` over the exact inner hashes documented
-     *      on the contract.
+     *      signature still includes `to` and the full balance so only a premium-enabled recipient can receive
+     *      that exact amount. Delegations are EIP-712; `userSignature` and compliance are EIP-191 `personal_sign`
+     *      over the exact inner hashes documented on the contract.
      *      A Teller deposit signature cannot be reused because it binds the Teller address, not this helper.
-     *      The redelegation MUST include an `ERC20TransferAmountEnforcer` as its first caveat (`caveats[0]`),
-     *      capped to exactly the owner's full premium balance. Reverts when Teller compliance is disabled.
+     *      Reverts when Teller compliance is disabled.
      */
     function premiumTransfer(PremiumTransferParams calldata _params) external {
         _premiumTransfer(_params);
@@ -368,9 +359,6 @@ contract VaultMigrationHelper is Ownable2Step {
 
         IERC20 vault_ = IERC20(premiumAdapter.boringVault());
         uint256 amount_ = vault_.balanceOf(from_);
-        if (amount_ == 0 || amount_ != _parseERC20TransferTerms(_params.delegations[0].caveats[0].terms)) {
-            revert InvalidTransferAmount();
-        }
 
         _verifyUserTransferSignature(from_, to_, _params.delegations[length_ - 1].signature, _params.userSignature);
         _verifyTransferCompliance(from_, to_, address(vault_), amount_, _params.compliance);
@@ -449,17 +437,6 @@ contract VaultMigrationHelper is Ownable2Step {
 
         delegator_ = _withdrawalDelegations[withdrawalLength_ - 1].delegator;
         if (delegator_ != _depositDelegations[depositLength_ - 1].delegator) revert DelegatorMismatch();
-    }
-
-    /**
-     * @notice Parses the transfer amount from ERC20TransferAmountEnforcer terms.
-     * @dev Terms format: abi.encodePacked(address token, uint256 amount) = 52 bytes.
-     *      The token address (bytes 0–19) is validated by the enforcer itself and is not read here.
-     *      Only the amount (bytes 20–51) is returned.
-     */
-    function _parseERC20TransferTerms(bytes calldata _terms) private pure returns (uint256 amount_) {
-        if (_terms.length < 52) revert InvalidTermsLength();
-        amount_ = uint256(bytes32(_terms[20:52]));
     }
 
     /**

@@ -444,7 +444,7 @@ contract VaultMigrationHelperTest is BaseTest {
         uint256 shares_ = _depositToPremium(users.alice, DEPOSIT_AMOUNT, 200, block.timestamp + 30 minutes);
         address from_ = address(users.alice.deleGator);
         address to_ = address(users.carol.deleGator);
-        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, shares_, 201, address(migrationHelper));
+        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, 201, address(migrationHelper));
         IComplianceVedaTeller.ComplianceData memory compliance_ =
             _transferComplianceData(from_, to_, shares_, block.timestamp + 30 minutes, COMPLIANCE_SIGNER_KEY);
         bytes memory userSignature_ = _userTransferSignature(users.alice, to_, delegations_);
@@ -463,7 +463,7 @@ contract VaultMigrationHelperTest is BaseTest {
         uint256 shares_ = _depositToPremium(users.alice, DEPOSIT_AMOUNT, 210, block.timestamp + 30 minutes);
         address from_ = address(users.alice.deleGator);
         address to_ = address(users.carol.deleGator);
-        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, shares_, 211, address(migrationHelper));
+        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, 211, address(migrationHelper));
         IComplianceVedaTeller.ComplianceData memory compliance_ =
             _transferComplianceData(from_, to_, shares_, block.timestamp + 30 minutes, COMPLIANCE_SIGNER_KEY);
         bytes memory userSignature_ = _userTransferSignature(users.alice, to_, delegations_);
@@ -480,7 +480,7 @@ contract VaultMigrationHelperTest is BaseTest {
         uint256 shares_ = _depositToPremium(users.alice, DEPOSIT_AMOUNT, 220, block.timestamp + 30 minutes);
         address from_ = address(users.alice.deleGator);
         address to_ = address(users.carol.deleGator);
-        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, shares_, 221, address(migrationHelper));
+        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, 221, address(migrationHelper));
         IComplianceVedaTeller.ComplianceData memory compliance_ =
             _transferComplianceData(from_, to_, shares_, block.timestamp - 1, COMPLIANCE_SIGNER_KEY);
         bytes memory userSignature_ = _userTransferSignature(users.alice, to_, delegations_);
@@ -496,7 +496,7 @@ contract VaultMigrationHelperTest is BaseTest {
         uint256 shares_ = _depositToPremium(users.alice, DEPOSIT_AMOUNT, 230, block.timestamp + 30 minutes);
         address from_ = address(users.alice.deleGator);
         address to_ = address(users.carol.deleGator);
-        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, shares_, 231, address(migrationHelper));
+        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, 231, address(migrationHelper));
         IComplianceVedaTeller.ComplianceData memory compliance_ =
             _transferComplianceData(from_, to_, shares_, block.timestamp + 30 minutes, 0xBAD);
         bytes memory userSignature_ = _userTransferSignature(users.alice, to_, delegations_);
@@ -513,7 +513,7 @@ contract VaultMigrationHelperTest is BaseTest {
         uint256 deadline_ = block.timestamp + 30 minutes;
         IComplianceVedaTeller.ComplianceData memory compliance_ =
             _transferComplianceData(from_, to_, shares_, deadline_, COMPLIANCE_SIGNER_KEY);
-        Delegation[] memory firstDelegations_ = _createPremiumTransferChain(users.alice, shares_, 241, address(migrationHelper));
+        Delegation[] memory firstDelegations_ = _createPremiumTransferChain(users.alice, 241, address(migrationHelper));
         bytes memory firstUserSignature_ = _userTransferSignature(users.alice, to_, firstDelegations_);
 
         vm.prank(address(users.bob.deleGator));
@@ -524,7 +524,7 @@ contract VaultMigrationHelperTest is BaseTest {
         vm.stopPrank();
         vm.prank(to_);
         PREMIUM_VAULT.transfer(from_, shares_);
-        Delegation[] memory secondDelegations_ = _createPremiumTransferChain(users.alice, shares_, 243, address(migrationHelper));
+        Delegation[] memory secondDelegations_ = _createPremiumTransferChain(users.alice, 243, address(migrationHelper));
         bytes memory secondUserSignature_ = _userTransferSignature(users.alice, to_, secondDelegations_);
 
         vm.prank(address(users.bob.deleGator));
@@ -535,7 +535,7 @@ contract VaultMigrationHelperTest is BaseTest {
     function test_premiumTransfer_revertsOnFromMismatch() public {
         uint256 shares_ = _depositToPremium(users.alice, DEPOSIT_AMOUNT, 250, block.timestamp + 30 minutes);
         address to_ = address(users.carol.deleGator);
-        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, shares_, 251, address(migrationHelper));
+        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, 251, address(migrationHelper));
         IComplianceVedaTeller.ComplianceData memory compliance_ = _transferComplianceData(
             address(users.carol.deleGator), to_, shares_, block.timestamp + 30 minutes, COMPLIANCE_SIGNER_KEY
         );
@@ -544,16 +544,19 @@ contract VaultMigrationHelperTest is BaseTest {
         _callPremiumTransfer(address(users.carol.deleGator), to_, delegations_, compliance_, hex"");
     }
 
-    function test_premiumTransfer_revertsOnLeafAmountMismatch() public {
+    function test_premiumTransfer_revertsOnComplianceAmountMismatch() public {
         uint256 shares_ = _depositToPremium(users.alice, DEPOSIT_AMOUNT, 260, block.timestamp + 30 minutes);
         address from_ = address(users.alice.deleGator);
         address to_ = address(users.carol.deleGator);
-        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, shares_ - 1, 261, address(migrationHelper));
+        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, 261, address(migrationHelper));
         IComplianceVedaTeller.ComplianceData memory compliance_ =
-            _transferComplianceData(from_, to_, shares_, block.timestamp + 30 minutes, COMPLIANCE_SIGNER_KEY);
+            _transferComplianceData(from_, to_, shares_ - 1, block.timestamp + 30 minutes, COMPLIANCE_SIGNER_KEY);
+        bytes memory userSignature_ = _userTransferSignature(users.alice, to_, delegations_);
 
-        vm.expectRevert(VaultMigrationHelper.InvalidTransferAmount.selector);
-        _callPremiumTransfer(from_, to_, delegations_, compliance_, hex"");
+        vm.expectRevert(VaultMigrationHelper.ComplianceCheckFailed.selector);
+        _callPremiumTransfer(from_, to_, delegations_, compliance_, userSignature_);
+
+        assertEq(PREMIUM_VAULT.balanceOf(from_), shares_);
     }
 
     function test_premiumTransfer_revertsOnShortDelegationChain() public {
@@ -571,7 +574,7 @@ contract VaultMigrationHelperTest is BaseTest {
     function test_premiumTransfer_revertsOnZeroTo() public {
         uint256 shares_ = _depositToPremium(users.alice, DEPOSIT_AMOUNT, 280, block.timestamp + 30 minutes);
         address from_ = address(users.alice.deleGator);
-        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, shares_, 281, address(migrationHelper));
+        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, 281, address(migrationHelper));
         IComplianceVedaTeller.ComplianceData memory compliance_ =
             _transferComplianceData(from_, address(0), shares_, block.timestamp + 30 minutes, COMPLIANCE_SIGNER_KEY);
 
@@ -583,7 +586,7 @@ contract VaultMigrationHelperTest is BaseTest {
         uint256 shares_ = _depositToPremium(users.alice, DEPOSIT_AMOUNT, 290, block.timestamp + 30 minutes);
         address from_ = address(users.alice.deleGator);
         address to_ = address(users.carol.deleGator);
-        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, shares_, 291, address(migrationHelper));
+        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, 291, address(migrationHelper));
         IComplianceVedaTeller.ComplianceData memory compliance_ =
             _transferComplianceData(from_, to_, shares_, block.timestamp + 30 minutes, COMPLIANCE_SIGNER_KEY);
         bytes memory userSignature_ = _userTransferSignature(users.alice, to_, delegations_);
@@ -602,7 +605,7 @@ contract VaultMigrationHelperTest is BaseTest {
         uint256 shares_ = _depositToPremium(users.alice, DEPOSIT_AMOUNT, 300, block.timestamp + 30 minutes);
         address from_ = address(users.alice.deleGator);
         address to_ = address(users.carol.deleGator);
-        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, shares_, 301, to_);
+        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, 301, to_);
         IComplianceVedaTeller.ComplianceData memory compliance_ =
             _transferComplianceData(from_, to_, shares_, block.timestamp + 30 minutes, COMPLIANCE_SIGNER_KEY);
         bytes memory userSignature_ = _userTransferSignature(users.alice, to_, delegations_);
@@ -619,7 +622,7 @@ contract VaultMigrationHelperTest is BaseTest {
         address from_ = address(users.alice.deleGator);
         address to_ = address(users.carol.deleGator);
         uint256 deadline_ = block.timestamp + 30 minutes;
-        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, shares_, 311, address(migrationHelper));
+        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, 311, address(migrationHelper));
         IComplianceVedaTeller.ComplianceData memory depositCompliance_ = IComplianceVedaTeller.ComplianceData({
             deadline: deadline_, signature: _signCompliance(users.alice, shares_, deadline_, COMPLIANCE_SIGNER_KEY)
         });
@@ -636,7 +639,7 @@ contract VaultMigrationHelperTest is BaseTest {
         uint256 shares_ = _depositToPremium(users.alice, DEPOSIT_AMOUNT, 320, block.timestamp + 30 minutes);
         address from_ = address(users.alice.deleGator);
         address to_ = address(users.carol.deleGator);
-        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, shares_, 321, address(migrationHelper));
+        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, 321, address(migrationHelper));
         IComplianceVedaTeller.ComplianceData memory compliance_ =
             _transferComplianceData(from_, to_, shares_, block.timestamp + 30 minutes, COMPLIANCE_SIGNER_KEY);
         bytes memory userSignature_ = _userTransferSignature(users.alice, to_, delegations_);
@@ -660,7 +663,7 @@ contract VaultMigrationHelperTest is BaseTest {
         address from_ = address(users.alice.deleGator);
         address to_ = address(users.carol.deleGator);
         address otherTo_ = makeAddr("otherPremiumRecipient");
-        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, shares_, 351, address(migrationHelper));
+        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, 351, address(migrationHelper));
         IComplianceVedaTeller.ComplianceData memory compliance_ =
             _transferComplianceData(from_, to_, shares_, block.timestamp + 30 minutes, COMPLIANCE_SIGNER_KEY);
         bytes memory userSignature_ = _userTransferSignature(users.alice, otherTo_, delegations_);
@@ -675,8 +678,8 @@ contract VaultMigrationHelperTest is BaseTest {
         uint256 shares_ = _depositToPremium(users.alice, DEPOSIT_AMOUNT, 360, block.timestamp + 30 minutes);
         address from_ = address(users.alice.deleGator);
         address to_ = address(users.carol.deleGator);
-        Delegation[] memory signedDelegations_ = _createPremiumTransferChain(users.alice, shares_, 361, address(migrationHelper));
-        Delegation[] memory usedDelegations_ = _createPremiumTransferChain(users.alice, shares_, 362, address(migrationHelper));
+        Delegation[] memory signedDelegations_ = _createPremiumTransferChain(users.alice, 361, address(migrationHelper));
+        Delegation[] memory usedDelegations_ = _createPremiumTransferChain(users.alice, 362, address(migrationHelper));
         IComplianceVedaTeller.ComplianceData memory compliance_ =
             _transferComplianceData(from_, to_, shares_, block.timestamp + 30 minutes, COMPLIANCE_SIGNER_KEY);
         bytes memory userSignature_ = _userTransferSignature(users.alice, to_, signedDelegations_);
@@ -692,7 +695,7 @@ contract VaultMigrationHelperTest is BaseTest {
         address from_ = address(users.alice.deleGator);
         address to_ = address(users.carol.deleGator);
         address otherTo_ = makeAddr("unapprovedPremiumRecipient");
-        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, shares_, 371, address(migrationHelper));
+        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, 371, address(migrationHelper));
         IComplianceVedaTeller.ComplianceData memory compliance_ =
             _transferComplianceData(from_, otherTo_, shares_, block.timestamp + 30 minutes, COMPLIANCE_SIGNER_KEY);
         bytes memory userSignature_ = _userTransferSignature(users.alice, to_, delegations_);
@@ -944,7 +947,7 @@ contract VaultMigrationHelperTest is BaseTest {
         returns (VaultMigrationHelper.PremiumTransferParams memory)
     {
         address from_ = address(_delegator.deleGator);
-        Delegation[] memory delegations_ = _createPremiumTransferChain(_delegator, _amount, _salt, address(migrationHelper));
+        Delegation[] memory delegations_ = _createPremiumTransferChain(_delegator, _salt, address(migrationHelper));
         return VaultMigrationHelper.PremiumTransferParams({
             from: from_,
             to: _to,
@@ -1027,28 +1030,20 @@ contract VaultMigrationHelperTest is BaseTest {
         return signDelegation(users.bob, delegation_);
     }
 
-    function _createPremiumTransferChain(
-        TestUser memory _delegator,
-        uint256 _amount,
-        uint256 _salt,
-        address _calldataTo
-    )
+    function _createPremiumTransferChain(TestUser memory _delegator, uint256 _salt, address _calldataTo)
         internal
         view
         returns (Delegation[] memory delegations_)
     {
-        Caveat[] memory rootCaveats_ = new Caveat[](4);
-        rootCaveats_[0] = Caveat({
-            args: hex"",
-            enforcer: address(erc20TransferAmountEnforcer),
-            terms: abi.encodePacked(address(PREMIUM_VAULT), type(uint256).max)
-        });
-        rootCaveats_[1] =
+        Caveat[] memory rootCaveats_ = new Caveat[](3);
+        rootCaveats_[0] =
             Caveat({ args: hex"", enforcer: address(redeemerEnforcer), terms: abi.encodePacked(address(migrationHelper)) });
-        rootCaveats_[2] = Caveat({
-            args: hex"", enforcer: address(allowedCalldataEnforcer), terms: abi.encodePacked(uint256(4), abi.encode(_calldataTo))
+        rootCaveats_[1] = Caveat({
+            args: hex"",
+            enforcer: address(allowedCalldataEnforcer),
+            terms: abi.encodePacked(uint256(0), IERC20.transfer.selector, abi.encode(_calldataTo))
         });
-        rootCaveats_[3] =
+        rootCaveats_[2] =
             Caveat({ args: hex"", enforcer: address(allowedTargetsEnforcer), terms: abi.encodePacked(address(PREMIUM_VAULT)) });
 
         Delegation memory root_ = Delegation({
@@ -1061,11 +1056,7 @@ contract VaultMigrationHelperTest is BaseTest {
         });
         root_ = signDelegation(_delegator, root_);
 
-        Caveat[] memory leafCaveats_ = new Caveat[](1);
-        leafCaveats_[0] = Caveat({
-            args: hex"", enforcer: address(erc20TransferAmountEnforcer), terms: abi.encodePacked(address(PREMIUM_VAULT), _amount)
-        });
-
+        Caveat[] memory leafCaveats_ = new Caveat[](0);
         Delegation memory leaf_ = Delegation({
             delegate: address(migrationHelper),
             delegator: address(users.bob.deleGator),
