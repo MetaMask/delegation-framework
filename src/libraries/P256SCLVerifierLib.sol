@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
 
-import { SCL_RIP7212 } from "@SCL/lib/libSCL_RIP7212.sol";
+import { SCL_RIP7212 } from "./libSCL_RIP7212.sol";
 import { ec_isOnCurve } from "@SCL/elliptic/SCL_ecOncurve.sol";
 import { a, b, p, n } from "@SCL/fields/SCL_secp256r1.sol";
 
