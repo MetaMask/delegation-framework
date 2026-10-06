@@ -240,6 +240,22 @@ contract ERC20BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
     }
 
+    // Reverts if the initial balance is insufficient for a decrease operation
+    function test_notAllow_insufficientInitialBalance() public {
+        // Set an initial balance for the recipient that's less than the required amount
+        uint256 initialBalance_ = 50;
+        vm.prank(delegator);
+        token.mint(recipient, initialBalance_);
+
+        // Terms: flag=true (decrease expected), token, recipient, required amount = 100
+        bytes memory terms_ = abi.encodePacked(true, address(token), address(recipient), uint256(100));
+
+        // Should revert because initial balance (50) is less than required amount (100)
+        vm.prank(dm);
+        vm.expectRevert(bytes("ERC20BalanceChangeEnforcer:insufficient-initial-balance"));
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), delegator, delegate);
+    }
+
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {
         return ICaveatEnforcer(address(enforcer));
     }

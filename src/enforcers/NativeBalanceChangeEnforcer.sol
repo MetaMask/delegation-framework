@@ -62,10 +62,14 @@ contract NativeBalanceChangeEnforcer is CaveatEnforcer {
         onlyDefaultExecutionMode(_mode)
     {
         bytes32 hashKey_ = _getHashKey(msg.sender, _delegationHash);
-        (, address recipient_,) = getTermsInfo(_terms);
+        (bool enforceDecrease_, address recipient_, uint256 amount_) = getTermsInfo(_terms);
         require(!isLocked[hashKey_], "NativeBalanceChangeEnforcer:enforcer-is-locked");
         isLocked[hashKey_] = true;
-        balanceCache[hashKey_] = recipient_.balance;
+        uint256 balance_ = recipient_.balance;
+        if (enforceDecrease_) {
+            require(balance_ >= amount_, "NativeBalanceChangeEnforcer:insufficient-initial-balance");
+        }
+        balanceCache[hashKey_] = balance_;
     }
 
     /**
