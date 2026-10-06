@@ -20,6 +20,7 @@ struct TestUsers {
     TestUser dave;
     TestUser eve;
     TestUser frank;
+    TestUser grace;
 }
 
 /**
