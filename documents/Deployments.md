@@ -15,6 +15,11 @@ forge script script/DeployCaveatEnforcers.s.sol --rpc-url <your_rpc_url> --priva
 
 **MegaETH:** append `--gas-limit 300000000 --with-gas-price 2100000 --priority-gas-price 100000 --skip-simulation` to the `forge script` command (mainnet and testnet).
 
+**Monad (`DeployVedaAdapter` and `DeployComplianceVedaAdapter`):** mUSD uses post-London opcodes and this repo pins `evm_version = "london"`, so the constructor's `forceApprove` reverts in the local script run. `--skip-simulation` does not skip that local run. Pick one:
+
+1. Append `--evm-version shanghai`. Compile, broadcast, and verify with that same setting: a different compiler EVM version changes creation code and the CREATE2 address.
+2. Stay on London and uncomment the `vm.mockCall` (and `vm.clearMockedCalls`) in the script's `run()`. The mock only affects the local simulation; the real constructor still runs on-chain. Leave those lines commented when using `--evm-version shanghai`.
+
 ### Salt Value
 
 The deployment scripts use a predefined salt value, which is **"GATOR"**. This value is converted into a **`bytes32`** format.
