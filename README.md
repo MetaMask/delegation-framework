@@ -67,7 +67,7 @@ The Delegation Manager includes the logic for validating and executing Delegatio
 
 ### MetaSwap Order Delegation Manager
 
-One manager for two MetaSwap flows: a gasless swap signed as an exact batch, and a limit order whose route is chosen at redemption inside signed bounds.
+One manager for two flows: an exact batch, and a MetaSwap limit order whose route is chosen at redemption inside signed bounds.
 
 [Read more on "MetaSwap Order Delegation Manager" ->](/documents/MetaSwapSpecializedDelegationManagers.md)
 

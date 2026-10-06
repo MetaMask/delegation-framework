@@ -129,7 +129,7 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         vm.deal(address(metaSwap), 10_000 ether);
     }
 
-    // -------- Exact intent --------
+    // -------- Exact batch --------
 
     function test_exactRedeemsApproveAndSwap() public {
         Execution[] memory executions_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
@@ -141,7 +141,7 @@ contract MetaSwapOrderDelegationManagerTest is Test {
             orderAccount,
             relayer,
             orderManager.getDelegationHash(delegation_),
-            uint8(MetaSwapOrderDelegationManager.Intent.ExactCalldata)
+            uint8(MetaSwapOrderDelegationManager.Intent.ExactBatch)
         );
         _redeemIntent(delegation_, encoded_);
 
@@ -896,7 +896,7 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         uint256 gasBefore_ = gasleft();
         vm.prank(relayer);
         orderManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
-        emit log_named_uint("order ExactCalldata", gasBefore_ - gasleft());
+        emit log_named_uint("order ExactBatch", gasBefore_ - gasleft());
     }
 
     function test_gas_orderExactResetApproval() public {
@@ -909,7 +909,7 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         uint256 gasBefore_ = gasleft();
         vm.prank(relayer);
         orderManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
-        emit log_named_uint("order ExactCalldata, reset approval", gasBefore_ - gasleft());
+        emit log_named_uint("order ExactBatch, reset approval", gasBefore_ - gasleft());
     }
 
     function test_gas_orderExactNative() public {
@@ -922,7 +922,7 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         uint256 gasBefore_ = gasleft();
         vm.prank(relayer);
         orderManager.redeemDelegations(permissionContexts_, modes_, executionContexts_);
-        emit log_named_uint("order ExactCalldata, native", gasBefore_ - gasleft());
+        emit log_named_uint("order ExactBatch, native", gasBefore_ - gasleft());
     }
 
     function test_gas_orderFlexible() public {
@@ -975,7 +975,7 @@ contract MetaSwapOrderDelegationManagerTest is Test {
     }
 
     function _exactTerms(bytes32 executionHash_) private pure returns (bytes memory) {
-        return abi.encodePacked(uint8(MetaSwapOrderDelegationManager.Intent.ExactCalldata), executionHash_);
+        return abi.encodePacked(uint8(MetaSwapOrderDelegationManager.Intent.ExactBatch), executionHash_);
     }
 
     function _flexibleTerms(

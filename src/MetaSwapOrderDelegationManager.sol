@@ -12,11 +12,11 @@ import { Execution } from "./utils/Types.sol";
 
 /**
  * @title MetaSwapOrderDelegationManager
- * @notice One purpose-specific manager for exact gasless swaps and flexible MetaSwap limit orders.
+ * @notice One purpose-specific manager for exact batches and flexible MetaSwap limit orders.
  * @dev No external caveat hooks and no redelegation chains. Both intents redeem through a direct
  *      batch/default `executeFromExecutor`.
  *
- * Exact terms: `intent(1) | executionHash(32)` where `executionHash = keccak256(executionCallDatas[0])`.
+ * Exact batch terms: `intent(1) | executionHash(32)` where `executionHash = keccak256(executionCallDatas[0])`.
  * Expiry and the redeemer stay off this path: `delegate` is the redeemer (or `ANY_DELEGATE`), and
  * `disabledDelegations` is the one-shot.
  *
@@ -36,7 +36,7 @@ contract MetaSwapOrderDelegationManager is MetaSwapDelegationManagerBase {
     using ExecutionLib for bytes;
 
     enum Intent {
-        ExactCalldata,
+        ExactBatch,
         FlexibleSettlement
     }
 
@@ -89,11 +89,11 @@ contract MetaSwapOrderDelegationManager is MetaSwapDelegationManagerBase {
     constructor() MetaSwapDelegationManagerBase(NAME) { }
 
     /**
-     * @notice Decodes exact-calldata terms.
+     * @notice Decodes exact-batch terms.
      * @param terms_ Packed as `intent(1) | executionHash(32)`.
      */
     function getExactTermsInfo(bytes memory terms_) public pure returns (bytes32 executionHash_) {
-        if (terms_.length != EXACT_TERMS_LENGTH || uint8(terms_[0]) != uint8(Intent.ExactCalldata)) {
+        if (terms_.length != EXACT_TERMS_LENGTH || uint8(terms_[0]) != uint8(Intent.ExactBatch)) {
             revert InvalidTerms();
         }
         assembly ("memory-safe") {
@@ -161,7 +161,7 @@ contract MetaSwapOrderDelegationManager is MetaSwapDelegationManagerBase {
         if (terms_.length == 0) revert InvalidTerms();
 
         uint8 intent_ = uint8(terms_[0]);
-        if (intent_ == uint8(Intent.ExactCalldata)) {
+        if (intent_ == uint8(Intent.ExactBatch)) {
             _executeExact(delegator_, terms_, executionContext_);
         } else if (intent_ == uint8(Intent.FlexibleSettlement)) {
             _executeFlexible(delegator_, terms_, executionContext_);

@@ -4,9 +4,9 @@ One delegation manager for two MetaSwap flows. It redeems a single root delegati
 
 `executeFromExecutor` stays on the EIP-7702 account. An account that uses this manager cannot also redeem through `DelegationManager`.
 
-## Gasless swap
+## Exact batch
 
-The user is shown the swap batch and signs its hash. The relayer submits that same batch once. Expiry stays off-chain.
+The user signs the hash of a batch. The submitter must send that same batch. Expiry stays off-chain.
 
 ```text
 terms = intent(1) | executionHash(32)
@@ -36,6 +36,6 @@ Signatures try ECDSA first. If that misses, an account with no code reverts. An 
 ## Limitations
 
 - No delegation chains, multiple caveats, multiple batches, try mode, or generic enforcers.
-- No on-chain expiry for a gasless swap. A limit order can set a timestamp window.
+- No on-chain expiry for an exact batch. A limit order can set a timestamp window.
 - No `enableDelegation` and no pause.
 - A listed redeemer can choose any route that still pays the signed minimum to the signed recipient.
