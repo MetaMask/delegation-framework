@@ -28,8 +28,8 @@ Enforcers can target specific call type modes: **single** or **batch**, and exec
 ### MetaSwapFlexibleSettlementEnforcer
 
 MetaSwap-router caveat for **one** native or ERC-20 swap (optional `approve` / reset-approve). The redeemer picks
-the route; signed terms fix target, input, approval shape, output, recipient, min output, redeemer allowlist, and
-optional time/id policy.
+the route; signed terms fix target, input, approval shape, output, recipient, min output, redeemer allowlist, an
+optional time window, and a required order id.
 
 **Embedded behaviors**
 
@@ -39,7 +39,7 @@ optional time/id policy.
 | Min output | ERC-20 or native balance increase ≥ `tokenOutMin` (`tokenOut == address(0)` → native) |
 | Redeemer   | Packed allowlist (required, ≥1 address)                                               |
 | Timestamp  | Optional; `0` disables a bound (non-inclusive, like `TimestampEnforcer`)              |
-| Id         | Optional; `0` → hash one-shot; non-zero → IdEnforcer bitmap + mutual exclusion        |
+| Id         | Required, non-zero. Bitmap per `(manager, delegator)`; a repeated id reverts          |
 
 **Shapes**
 
@@ -57,11 +57,11 @@ timestampAfter(16) | timestampBefore(16) | id(32) | redeemers(20*N)
 `ApprovalMode`: `None=0` (native only), `SkipApproval=1`, `Approve=2`, `ResetApprove=3`. Execution count must match.
 `SkipApproval` does not read allowance. Args are unused.
 
-**Optional policies**
+**Policies**
 
 - Timestamp: both `0` → no window; otherwise same rules as `TimestampEnforcer`
-- Id: `0` → `consumedSettlements[manager, hash]`; non-zero → bitmap per `(manager, delegator)`, no hash flag;
-  failed fills roll back either write
+- Id: required and non-zero. One bitmap per `(manager, delegator)` blocks a replay and any other order that shares
+  the id. A failed fill rolls the bit back.
 
 ```solidity
 bytes memory terms = abi.encodePacked(
@@ -69,7 +69,7 @@ bytes memory terms = abi.encodePacked(
     uint8(MetaSwapFlexibleSettlementEnforcer.ApprovalMode.Approve),
     tokenOut, recipient, tokenOutMin,
     uint128(0), uint128(0), // no timestamp
-    uint256(0),             // hash one-shot
+    uint256(42),            // required order id
     redeemer
 );
 ```

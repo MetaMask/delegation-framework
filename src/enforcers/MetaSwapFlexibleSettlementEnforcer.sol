@@ -17,7 +17,7 @@ import { Execution, ModeCode } from "../utils/Types.sol";
  *      - ERC20 / native min balance increase (`tokenOut == address(0)` → native)
  *      - Redeemer allowlist (required)
  *      - Timestamp window (optional: `0` disables a bound)
- *      - Id bitmap (optional: `id == 0` → per-delegation-hash one-shot instead)
+ *      - Id bitmap (required, non-zero). Reusing an id reverts.
  *
  * Shapes:
  *      - Native: `[swap{ value: tokenInAmount }(...)]`
@@ -58,10 +58,7 @@ contract MetaSwapFlexibleSettlementEnforcer is CaveatEnforcer {
     // Selector + four-word head + two dynamic length words.
     uint256 private constant SWAP_CALL_MIN_LENGTH = 196;
 
-    /// @notice Used when `id == 0` (hash-based one-shot).
-    mapping(bytes32 settlementKey => bool isUsed) public consumedSettlements;
-
-    /// @dev Used when `id != 0` (IdEnforcer-style bitmap).
+    /// @dev One-shot and mutual exclusion. Keyed by the delegation manager and delegator.
     mapping(address delegationManager => mapping(address delegator => BitMaps.BitMap id)) private isUsedId;
 
     /// @dev Recipient output balance between before/after hooks.
@@ -102,7 +99,7 @@ contract MetaSwapFlexibleSettlementEnforcer is CaveatEnforcer {
         _validateRedeemer(termsInfo_.redeemers, redeemer_);
         _validateTimestamp(termsInfo_.timestampAfter, termsInfo_.timestampBefore);
         _validateExecutions(executionCallData_.decodeBatch(), termsInfo_);
-        _consume(termsInfo_.id, delegationHash_, delegator_, redeemer_);
+        _consume(termsInfo_.id, delegator_, redeemer_);
 
         balanceSnapshots[_getSettlementKey(msg.sender, delegationHash_)] = _balanceOf(termsInfo_.tokenOut, termsInfo_.recipient);
     }
@@ -162,7 +159,7 @@ contract MetaSwapFlexibleSettlementEnforcer is CaveatEnforcer {
 
         require(
             termsInfo_.metaSwap != address(0) && termsInfo_.tokenInAmount != 0 && termsInfo_.recipient != address(0)
-                && termsInfo_.tokenOutMin != 0 && termsInfo_.tokenIn != termsInfo_.tokenOut,
+                && termsInfo_.tokenOutMin != 0 && termsInfo_.tokenIn != termsInfo_.tokenOut && termsInfo_.id != 0,
             "MetaSwapFlexibleSettlementEnforcer:invalid-terms"
         );
 
@@ -208,19 +205,10 @@ contract MetaSwapFlexibleSettlementEnforcer is CaveatEnforcer {
     }
 
     /**
-     * @dev `id == 0`: one-shot keyed by `(manager, delegationHash)`.
-     *      `id != 0`: one-shot + mutual exclusion keyed by `(manager, delegator, id)`.
-     *      Hash consumption is skipped in the id path — replaying the same delegation reuses the same id,
-     *      so the bitmap already blocks it; the id also blocks other hashes that share that order id.
+     * @dev One-shot keyed by `(manager, delegator, id)`. A replay uses the same id, and so does a sibling
+     *      order that shares it, so both revert.
      */
-    function _consume(uint256 id_, bytes32 delegationHash_, address delegator_, address redeemer_) private {
-        if (id_ == 0) {
-            bytes32 settlementKey_ = _getSettlementKey(msg.sender, delegationHash_);
-            require(!consumedSettlements[settlementKey_], "MetaSwapFlexibleSettlementEnforcer:settlement-already-used");
-            consumedSettlements[settlementKey_] = true;
-            return;
-        }
-
+    function _consume(uint256 id_, address delegator_, address redeemer_) private {
         require(!isUsedId[msg.sender][delegator_].get(id_), "MetaSwapFlexibleSettlementEnforcer:id-already-used");
         isUsedId[msg.sender][delegator_].set(id_);
         emit UsedId(msg.sender, delegator_, redeemer_, id_);
