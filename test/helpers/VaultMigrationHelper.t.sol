@@ -15,7 +15,7 @@ import { ERC20TransferAmountEnforcer } from "../../src/enforcers/ERC20TransferAm
 import { RedeemerEnforcer } from "../../src/enforcers/RedeemerEnforcer.sol";
 import { AllowedCalldataEnforcer } from "../../src/enforcers/AllowedCalldataEnforcer.sol";
 import { AllowedTargetsEnforcer } from "../../src/enforcers/AllowedTargetsEnforcer.sol";
-import { Delegation, Caveat } from "../../src/utils/Types.sol";
+import { Delegation, Caveat, ModeCode } from "../../src/utils/Types.sol";
 import { BaseTest } from "../utils/BaseTest.t.sol";
 import { Implementation, SignatureType, TestUser } from "../utils/Types.t.sol";
 
@@ -34,6 +34,17 @@ interface ITellerConfiguration {
 interface IVedaAccountant {
     function decimals() external view returns (uint8);
     function getRateInQuoteSafe(address quote) external view returns (uint256);
+}
+
+/// @dev Accepts any ERC-1271 signature and returns from `executeFromExecutor` without moving shares.
+contract NoOpAccount {
+    function isValidSignature(bytes32, bytes calldata) external pure returns (bytes4) {
+        return 0x1626ba7e;
+    }
+
+    function executeFromExecutor(ModeCode, bytes calldata) external payable returns (bytes[] memory) {
+        return new bytes[](0);
+    }
 }
 
 /// forge-config: default.evm_version = "cancun"
@@ -708,6 +719,37 @@ contract VaultMigrationHelperTest is BaseTest {
         assertEq(PREMIUM_VAULT.balanceOf(from_), shares_);
     }
 
+    function test_premiumTransfer_revertsWhenRedemptionDoesNotDeliverShares() public {
+        uint256 strayShares_ = _depositToPremium(users.alice, DEPOSIT_AMOUNT, 800, block.timestamp + 30 minutes);
+        address victim_ = makeAddr("victimEoa");
+        vm.prank(address(users.bob.deleGator));
+        migrationHelper.premiumTransfer(
+            _premiumTransferParams(users.alice, strayShares_, 801, victim_, block.timestamp + 30 minutes)
+        );
+
+        vm.prank(victim_);
+        require(PREMIUM_VAULT.transfer(address(migrationHelper), strayShares_), "stray transfer failed");
+
+        NoOpAccount attacker_ = new NoOpAccount();
+        uint256 attackerShares_ = _depositToPremium(users.carol, 100e6, 810, block.timestamp + 30 minutes);
+        address payee_ = makeAddr("attackerPayee");
+        vm.prank(address(users.bob.deleGator));
+        migrationHelper.premiumTransfer(
+            _premiumTransferParams(users.carol, attackerShares_, 811, address(attacker_), block.timestamp + 30 minutes)
+        );
+
+        VaultMigrationHelper.PremiumTransferParams memory params_ =
+            _customRootTransferParams(address(attacker_), payee_, attackerShares_, 820);
+
+        vm.expectRevert(VaultMigrationHelper.PremiumTransferNotDelivered.selector);
+        vm.prank(makeAddr("anyone"));
+        migrationHelper.premiumTransfer(params_);
+
+        assertEq(PREMIUM_VAULT.balanceOf(address(attacker_)), attackerShares_);
+        assertEq(PREMIUM_VAULT.balanceOf(payee_), 0);
+        assertEq(PREMIUM_VAULT.balanceOf(address(migrationHelper)), strayShares_);
+    }
+
     function test_premiumTransferBatch_movesEachDelegatorToRecipient() public {
         uint256 aliceShares_ = _depositToPremium(users.alice, 300e6, 330, block.timestamp + 20 minutes);
         uint256 carolShares_ = _depositToPremium(users.carol, 400e6, 331, block.timestamp + 21 minutes);
@@ -967,6 +1009,48 @@ contract VaultMigrationHelperTest is BaseTest {
         });
     }
 
+    function _customRootTransferParams(
+        address _from,
+        address _to,
+        uint256 _amount,
+        uint256 _salt
+    )
+        internal
+        view
+        returns (VaultMigrationHelper.PremiumTransferParams memory)
+    {
+        Caveat[] memory noCaveats_ = new Caveat[](0);
+        Delegation memory root_ = Delegation({
+            delegate: address(users.bob.deleGator),
+            delegator: _from,
+            authority: ROOT_AUTHORITY,
+            caveats: noCaveats_,
+            salt: _salt,
+            signature: hex"c0ffee"
+        });
+        Delegation memory leaf_ = Delegation({
+            delegate: address(migrationHelper),
+            delegator: address(users.bob.deleGator),
+            authority: EncoderLib._getDelegationHash(root_),
+            caveats: noCaveats_,
+            salt: _salt,
+            signature: hex""
+        });
+        leaf_ = signDelegation(users.bob, leaf_);
+
+        Delegation[] memory delegations_ = new Delegation[](2);
+        delegations_[0] = leaf_;
+        delegations_[1] = root_;
+
+        return VaultMigrationHelper.PremiumTransferParams({
+            from: _from,
+            to: _to,
+            delegations: delegations_,
+            compliance: _transferComplianceData(_from, _to, _amount, block.timestamp + 30 minutes, COMPLIANCE_SIGNER_KEY),
+            userSignature: hex"01"
+        });
+    }
+
     function _createDelegationChain(
         TestUser memory _delegator,
         address _adapter,
@@ -1040,7 +1124,11 @@ contract VaultMigrationHelperTest is BaseTest {
         return signDelegation(users.bob, delegation_);
     }
 
-    function _createPremiumTransferChain(TestUser memory _delegator, uint256 _salt, address _calldataTo)
+    function _createPremiumTransferChain(
+        TestUser memory _delegator,
+        uint256 _salt,
+        address _calldataTo
+    )
         internal
         view
         returns (Delegation[] memory delegations_)

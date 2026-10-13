@@ -187,6 +187,9 @@ contract VaultMigrationHelper is Ownable2Step {
     /// @dev Thrown when the share owner's destination signature is missing or does not match from, to, and leaf.
     error InvalidUserSignature();
 
+    /// @dev Thrown when the redeemed transfer did not deliver the approved shares to this helper.
+    error PremiumTransferNotDelivered();
+
     ////////////////////////////// State //////////////////////////////
 
     /**
@@ -347,6 +350,9 @@ contract VaultMigrationHelper is Ownable2Step {
     /**
      * @notice Executes one dual-signed premium share transfer.
      * @dev User destination signature is checked before the backend compliance signature and before redeem.
+     *      The second hop may spend only shares received in this call. `redeemDelegations` does not prove the
+     *      root moved shares, so this records the helper's vault balance before redemption and reverts unless
+     *      that balance grew by at least `amount_`. Any surplus stays here for `withdrawEmergency`.
      */
     function _premiumTransfer(PremiumTransferParams calldata _params) internal {
         address from_ = _params.from;
@@ -373,7 +379,9 @@ contract VaultMigrationHelper is Ownable2Step {
         executionCallDatas_[0] =
             ExecutionLib.encodeSingle(address(vault_), 0, abi.encodeCall(IERC20.transfer, (address(this), amount_)));
 
+        uint256 helperBefore_ = vault_.balanceOf(address(this));
         premiumAdapter.delegationManager().redeemDelegations(permissionContexts_, encodedModes_, executionCallDatas_);
+        if (vault_.balanceOf(address(this)) < helperBefore_ + amount_) revert PremiumTransferNotDelivered();
         vault_.safeTransfer(to_, amount_);
 
         emit PremiumTransferExecuted(from_, to_, amount_);
