@@ -27,7 +27,9 @@ import { Delegation, ModeCode } from "../utils/Types.sol";
  *        `transfer` to this helper and the amount stays unset on the root;
  *      - name the premium vault in `AllowedTargetsEnforcer`;
  *      - name this contract in `RedeemerEnforcer`.
- *      The root does not use `ERC20TransferAmountEnforcer`. This helper must hold `transferAllowedRole` on the
+ *      The premium-transfer root does not use `ERC20TransferAmountEnforcer`. Migration leaves do; each adapter
+ *      reads its amount from that leaf's `caveats[0].terms[20:52]` (see `ToPremiumParams` and `ToBaseParams`).
+ *      This helper must hold `transferAllowedRole` on the
  *      premium Teller so Veda allows the first hop (helper is `to`) and the second hop (helper is `from`/`operator`).
  *
  *      Destination control for `premiumTransfer` is dual, not backend-only and not user-only:
@@ -69,8 +71,12 @@ contract VaultMigrationHelper is Ownable2Step {
     /**
      * @notice Parameters for one base-to-premium migration.
      * @param withdrawalDelegations Delegation chain redeemed by the base adapter to withdraw base vault shares.
+     *        The leaf's first caveat MUST be an `ERC20TransferAmountEnforcer` encoding the base vault and the
+     *        exact share amount. The base adapter reads that amount from `caveats[0].terms[20:52]`.
      * @param minimumAssets Minimum underlying assets that the base withdrawal must return.
      * @param depositDelegations Delegation chain redeemed by the premium adapter to deposit the withdrawn assets.
+     *        The same first-caveat requirement applies, encoding mUSD and the exact deposit amount. That amount
+     *        is also bound in `compliance`.
      * @param minimumMint Minimum premium vault shares that the destination deposit must mint.
      * @param compliance Compliance authorization forwarded unchanged to the premium adapter.
      */
@@ -85,8 +91,11 @@ contract VaultMigrationHelper is Ownable2Step {
     /**
      * @notice Parameters for one premium-to-base migration.
      * @param withdrawalDelegations Delegation chain redeemed by the premium adapter to withdraw premium shares.
+     *        The leaf's first caveat MUST be an `ERC20TransferAmountEnforcer` encoding the premium vault and
+     *        the exact share amount. The premium adapter reads that amount from `caveats[0].terms[20:52]`.
      * @param minimumAssets Minimum underlying assets that the premium withdrawal must return.
      * @param depositDelegations Delegation chain redeemed by the base adapter to deposit the withdrawn assets.
+     *        The same first-caveat requirement applies, encoding mUSD and the exact deposit amount.
      * @param minimumMint Minimum base vault shares that the destination deposit must mint.
      */
     struct ToBaseParams {
