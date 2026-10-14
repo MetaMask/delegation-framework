@@ -518,10 +518,33 @@ contract VaultMigrationHelperTest is BaseTest {
         bytes memory userSignature_ = _userTransferSignature(users.alice, to_, delegations_);
 
         vm.prank(address(users.bob.deleGator));
-        vm.expectRevert(VaultMigrationHelper.ComplianceCheckFailed.selector);
+        vm.expectRevert(VaultMigrationHelper.ComplianceSignatureExpired.selector);
         _callPremiumTransfer(from_, to_, delegations_, compliance_, userSignature_);
 
         assertEq(PREMIUM_VAULT.balanceOf(from_), shares_);
+    }
+
+    function test_premiumTransfer_revertsWhenComplianceDeadlineExceedsWindow() public {
+        uint256 shares_ = _depositToPremium(users.alice, DEPOSIT_AMOUNT, 225, block.timestamp + 30 minutes);
+        address from_ = address(users.alice.deleGator);
+        address to_ = address(users.carol.deleGator);
+        Delegation[] memory delegations_ = _createPremiumTransferChain(users.alice, 226, address(migrationHelper));
+        IComplianceVedaTeller.ComplianceData memory compliance_ =
+            _transferComplianceData(from_, to_, shares_, block.timestamp + 30 minutes, COMPLIANCE_SIGNER_KEY);
+        bytes memory userSignature_ = _userTransferSignature(users.alice, to_, delegations_);
+
+        vm.mockCall(
+            address(PREMIUM_TELLER),
+            abi.encodeWithSelector(IComplianceVedaTeller.complianceWindow.selector),
+            abi.encode(uint96(10 minutes))
+        );
+
+        vm.prank(address(users.bob.deleGator));
+        vm.expectRevert(VaultMigrationHelper.ComplianceDeadlineExceedsWindow.selector);
+        _callPremiumTransfer(from_, to_, delegations_, compliance_, userSignature_);
+
+        assertEq(PREMIUM_VAULT.balanceOf(from_), shares_);
+        vm.clearMockedCalls();
     }
 
     function test_premiumTransfer_revertsOnWrongComplianceSigner() public {
@@ -534,7 +557,7 @@ contract VaultMigrationHelperTest is BaseTest {
         bytes memory userSignature_ = _userTransferSignature(users.alice, to_, delegations_);
 
         vm.prank(address(users.bob.deleGator));
-        vm.expectRevert(VaultMigrationHelper.ComplianceCheckFailed.selector);
+        vm.expectRevert(VaultMigrationHelper.InvalidComplianceSigner.selector);
         _callPremiumTransfer(from_, to_, delegations_, compliance_, userSignature_);
     }
 
@@ -560,7 +583,7 @@ contract VaultMigrationHelperTest is BaseTest {
         bytes memory secondUserSignature_ = _userTransferSignature(users.alice, to_, secondDelegations_);
 
         vm.prank(address(users.bob.deleGator));
-        vm.expectRevert(VaultMigrationHelper.ComplianceCheckFailed.selector);
+        vm.expectRevert(VaultMigrationHelper.ComplianceSignatureAlreadyUsed.selector);
         _callPremiumTransfer(from_, to_, secondDelegations_, compliance_, secondUserSignature_);
     }
 
@@ -585,7 +608,7 @@ contract VaultMigrationHelperTest is BaseTest {
             _transferComplianceData(from_, to_, shares_ - 1, block.timestamp + 30 minutes, COMPLIANCE_SIGNER_KEY);
         bytes memory userSignature_ = _userTransferSignature(users.alice, to_, delegations_);
 
-        vm.expectRevert(VaultMigrationHelper.ComplianceCheckFailed.selector);
+        vm.expectRevert(VaultMigrationHelper.InvalidComplianceSigner.selector);
         _callPremiumTransfer(from_, to_, delegations_, compliance_, userSignature_);
 
         assertEq(PREMIUM_VAULT.balanceOf(from_), shares_);
@@ -661,7 +684,7 @@ contract VaultMigrationHelperTest is BaseTest {
         bytes memory userSignature_ = _userTransferSignature(users.alice, to_, delegations_);
 
         vm.prank(address(users.bob.deleGator));
-        vm.expectRevert(VaultMigrationHelper.ComplianceCheckFailed.selector);
+        vm.expectRevert(VaultMigrationHelper.InvalidComplianceSigner.selector);
         _callPremiumTransfer(from_, to_, delegations_, depositCompliance_, userSignature_);
 
         assertEq(PREMIUM_VAULT.balanceOf(from_), shares_);
@@ -763,7 +786,7 @@ contract VaultMigrationHelperTest is BaseTest {
             _transferComplianceData(from_, otherTo_, shares_, block.timestamp + 30 minutes, COMPLIANCE_SIGNER_KEY);
         bytes memory userSignature_ = _userTransferSignature(users.alice, to_, delegations_);
 
-        vm.expectRevert(VaultMigrationHelper.ComplianceCheckFailed.selector);
+        vm.expectRevert(VaultMigrationHelper.InvalidComplianceSigner.selector);
         _callPremiumTransfer(from_, to_, delegations_, compliance_, userSignature_);
 
         assertEq(PREMIUM_VAULT.balanceOf(from_), shares_);
@@ -834,7 +857,7 @@ contract VaultMigrationHelperTest is BaseTest {
         params_[1] = _premiumTransferParams(users.carol, carolShares_, 343, recipient_, block.timestamp - 1);
 
         vm.prank(address(users.bob.deleGator));
-        vm.expectRevert(VaultMigrationHelper.ComplianceCheckFailed.selector);
+        vm.expectRevert(VaultMigrationHelper.ComplianceSignatureExpired.selector);
         migrationHelper.premiumTransferBatch(params_);
 
         assertEq(PREMIUM_VAULT.balanceOf(alice_), aliceShares_);

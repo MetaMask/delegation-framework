@@ -184,8 +184,17 @@ contract VaultMigrationHelper is Ownable2Step {
     /// @dev Thrown when the withdrawal and deposit chains have different root delegators.
     error DelegatorMismatch();
 
-    /// @dev Thrown when compliance signature verification fails.
-    error ComplianceCheckFailed();
+    /// @dev Thrown when a transfer compliance approval has already been consumed.
+    error ComplianceSignatureAlreadyUsed();
+
+    /// @dev Thrown when a transfer compliance approval has expired.
+    error ComplianceSignatureExpired();
+
+    /// @dev Thrown when a transfer compliance deadline exceeds the Teller's configured compliance window.
+    error ComplianceDeadlineExceedsWindow();
+
+    /// @dev Thrown when the recovered transfer compliance signer does not hold the Teller's compliance signer role.
+    error InvalidComplianceSigner();
 
     /// @dev Thrown when the premium Teller has compliance signer checks disabled (`complianceSignerRole == 255`).
     error ComplianceDisabled();
@@ -523,18 +532,18 @@ contract VaultMigrationHelper is Ownable2Step {
         bytes32 messageHash_ = keccak256(
             abi.encode(address(this), address(teller_), block.chainid, _from, _to, _vault, _amount, _compliance.deadline)
         );
-        if (usedComplianceSignatures[messageHash_]) revert ComplianceCheckFailed();
-        if (block.timestamp > _compliance.deadline) revert ComplianceCheckFailed();
+        if (usedComplianceSignatures[messageHash_]) revert ComplianceSignatureAlreadyUsed();
+        if (block.timestamp > _compliance.deadline) revert ComplianceSignatureExpired();
 
         uint96 complianceWindow_ = teller_.complianceWindow();
         if (complianceWindow_ > 0 && _compliance.deadline > block.timestamp + complianceWindow_) {
-            revert ComplianceCheckFailed();
+            revert ComplianceDeadlineExceedsWindow();
         }
 
         bytes32 ethSignedHash_ = MessageHashUtils.toEthSignedMessageHash(messageHash_);
         address recovered_ = ECDSA.recover(ethSignedHash_, _compliance.signature);
         if (!IRolesAuthority(teller_.authority()).doesUserHaveRole(recovered_, complianceSignerRole_)) {
-            revert ComplianceCheckFailed();
+            revert InvalidComplianceSigner();
         }
 
         usedComplianceSignatures[messageHash_] = true;
