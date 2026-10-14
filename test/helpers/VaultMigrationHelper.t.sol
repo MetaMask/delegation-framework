@@ -3,6 +3,7 @@ pragma solidity 0.8.23;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import { EncoderLib } from "../../src/libraries/EncoderLib.sol";
 import { BasicERC20 } from "../utils/BasicERC20.t.sol";
@@ -40,6 +41,24 @@ interface IVedaAccountant {
 contract NoOpAccount {
     function isValidSignature(bytes32, bytes calldata) external pure returns (bytes4) {
         return 0x1626ba7e;
+    }
+
+    function executeFromExecutor(ModeCode, bytes calldata) external payable returns (bytes[] memory) {
+        return new bytes[](0);
+    }
+}
+
+/// @dev Accepts an empty signature for every hash it has approved, and does not move shares.
+contract ApprovedHashAccount {
+    mapping(bytes32 hash => bool approved) public approvedHashes;
+
+    function approveHash(bytes32 _hash) external {
+        approvedHashes[_hash] = true;
+    }
+
+    function isValidSignature(bytes32 _hash, bytes calldata _signature) external view returns (bytes4) {
+        if (_signature.length == 0 && approvedHashes[_hash]) return 0x1626ba7e;
+        return 0xffffffff;
     }
 
     function executeFromExecutor(ModeCode, bytes calldata) external payable returns (bytes[] memory) {
@@ -703,6 +722,37 @@ contract VaultMigrationHelperTest is BaseTest {
         assertEq(PREMIUM_VAULT.balanceOf(from_), shares_);
     }
 
+    function test_premiumTransfer_revertsWhenEmptySignatureIsReusedOnAnotherRoot() public {
+        ApprovedHashAccount account_ = new ApprovedHashAccount();
+        uint256 shares_ = _depositToPremium(users.carol, 100e6, 900, block.timestamp + 30 minutes);
+        address payee_ = makeAddr("approvedHashPayee");
+
+        vm.prank(address(users.bob.deleGator));
+        migrationHelper.premiumTransfer(
+            _premiumTransferParams(users.carol, shares_, 901, address(account_), block.timestamp + 30 minutes)
+        );
+        assertEq(PREMIUM_VAULT.balanceOf(address(account_)), shares_);
+
+        Delegation[] memory rootA_ = _createEmptySignatureTransferChain(address(account_), 902);
+        Delegation[] memory rootB_ = _createEmptySignatureTransferChain(address(account_), 903);
+        bytes32 domainHash_ = delegationManager.getDomainHash();
+        account_.approveHash(MessageHashUtils.toTypedDataHash(domainHash_, EncoderLib._getDelegationHash(rootA_[1])));
+        account_.approveHash(MessageHashUtils.toTypedDataHash(domainHash_, EncoderLib._getDelegationHash(rootB_[1])));
+        account_.approveHash(_destinationEthSignedHash(address(account_), payee_, rootA_[0].authority));
+
+        IComplianceVedaTeller.ComplianceData memory compliance_ =
+            _transferComplianceData(address(account_), payee_, shares_, block.timestamp + 30 minutes, COMPLIANCE_SIGNER_KEY);
+
+        vm.expectRevert(VaultMigrationHelper.InvalidUserSignature.selector);
+        _callPremiumTransfer(address(account_), payee_, rootB_, compliance_, hex"");
+
+        vm.expectRevert(VaultMigrationHelper.PremiumTransferNotDelivered.selector);
+        _callPremiumTransfer(address(account_), payee_, rootA_, compliance_, hex"");
+
+        assertEq(PREMIUM_VAULT.balanceOf(address(account_)), shares_);
+        assertEq(PREMIUM_VAULT.balanceOf(payee_), 0);
+    }
+
     function test_premiumTransfer_revertsOnComplianceSignatureForDifferentTo() public {
         uint256 shares_ = _depositToPremium(users.alice, DEPOSIT_AMOUNT, 370, block.timestamp + 30 minutes);
         address from_ = address(users.alice.deleGator);
@@ -1170,6 +1220,55 @@ contract VaultMigrationHelperTest is BaseTest {
         delegations_[1] = root_;
     }
 
+    function _createEmptySignatureTransferChain(
+        address _delegator,
+        uint256 _salt
+    )
+        internal
+        view
+        returns (Delegation[] memory delegations_)
+    {
+        Caveat[] memory rootCaveats_ = new Caveat[](3);
+        rootCaveats_[0] =
+            Caveat({ args: hex"", enforcer: address(redeemerEnforcer), terms: abi.encodePacked(address(migrationHelper)) });
+        rootCaveats_[1] = Caveat({
+            args: hex"",
+            enforcer: address(allowedCalldataEnforcer),
+            terms: abi.encodePacked(uint256(0), IERC20.transfer.selector, abi.encode(address(migrationHelper)))
+        });
+        rootCaveats_[2] =
+            Caveat({ args: hex"", enforcer: address(allowedTargetsEnforcer), terms: abi.encodePacked(address(PREMIUM_VAULT)) });
+
+        Delegation memory root_ = Delegation({
+            delegate: address(users.bob.deleGator),
+            delegator: _delegator,
+            authority: ROOT_AUTHORITY,
+            caveats: rootCaveats_,
+            salt: _salt,
+            signature: hex""
+        });
+
+        Caveat[] memory leafCaveats_ = new Caveat[](0);
+        Delegation memory leaf_ = Delegation({
+            delegate: address(migrationHelper),
+            delegator: address(users.bob.deleGator),
+            authority: EncoderLib._getDelegationHash(root_),
+            caveats: leafCaveats_,
+            salt: _salt,
+            signature: hex""
+        });
+        leaf_ = signDelegation(users.bob, leaf_);
+
+        delegations_ = new Delegation[](2);
+        delegations_[0] = leaf_;
+        delegations_[1] = root_;
+    }
+
+    function _destinationEthSignedHash(address _from, address _to, bytes32 _rootDelegationHash) internal view returns (bytes32) {
+        bytes32 messageHash_ = keccak256(abi.encode(address(migrationHelper), block.chainid, _from, _to, _rootDelegationHash));
+        return MessageHashUtils.toEthSignedMessageHash(messageHash_);
+    }
+
     function _userTransferSignature(
         TestUser memory _delegator,
         address _to,
@@ -1185,7 +1284,7 @@ contract VaultMigrationHelperTest is BaseTest {
                 block.chainid,
                 address(_delegator.deleGator),
                 _to,
-                _delegations[_delegations.length - 1].signature
+                _delegations[_delegations.length - 2].authority
             )
         );
         bytes32 ethSignedMessageHash_ = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash_));
