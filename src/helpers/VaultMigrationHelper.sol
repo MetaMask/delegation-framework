@@ -40,6 +40,11 @@ import { Delegation, ModeCode } from "../utils/Types.sol";
  *      owner's full premium balance at execution (`balanceOf`). It is not read from a leaf caveat.
  *      The compliance digest includes that amount, so the backend still attests the quantity moved.
  *      First hop stays helper-only via the root caveats above.
+ *      `premiumTransfer` and `premiumTransferBatch` move premium vault shares and do not update the Teller's
+ *      per-user principal history. `getPrincipalHistoryPaginated` must not be used alone as a per-holder
+ *      principal record. A complete record requires reconciling Teller deposits and withdrawals with vault
+ *      `Transfer` events under an explicit rule for allocating principal when shares move. Transfer events
+ *      alone do not establish that basis.
  *
  *      Signing schemes — wallets and CHOMP must implement both. They are not interchangeable:
  *      1. Delegation chain (root + leaf): EIP-712 typed data through DelegationManager
@@ -294,6 +299,11 @@ contract VaultMigrationHelper is Ownable2Step {
      *      via `AllowedCalldataEnforcer` (selector plus recipient) and the premium vault via `AllowedTargetsEnforcer`.
      *      Production must grant this helper `transferAllowedRole` on the premium Teller.
      *      The amount is `balanceOf(from)` at execution, not a value encoded in the leaf.
+     *      This moves premium vault shares and does not update the Teller's per-user principal history.
+     *      `getPrincipalHistoryPaginated` must not be used alone as a per-holder principal record. A complete
+     *      record requires reconciling Teller deposits and withdrawals with vault `Transfer` events under an
+     *      explicit rule for allocating principal when shares move. Transfer events alone do not establish
+     *      that basis.
      * @param _params From, to, chain, compliance, and user destination signature.
      * @notice Security consideration: Callable by anyone. Destination is dual-controlled: the user signature
      *      binds `to` to this helper, chain, `from`, and the root delegation the user signed; the compliance
@@ -311,6 +321,11 @@ contract VaultMigrationHelper is Ownable2Step {
      * @notice Moves multiple delegators' entire premium vault balances sequentially in one atomic transaction.
      * @dev A revert from any transfer rolls back the entire batch. Each stream needs its own user signature
      *      (destination) and compliance signature (premium-enabled `to`) because both digests include `from`/`to`.
+     *      Every stream moves premium vault shares and does not update the Teller's per-user principal history.
+     *      `getPrincipalHistoryPaginated` must not be used alone as a per-holder principal record. A complete
+     *      record requires reconciling Teller deposits and withdrawals with vault `Transfer` events under an
+     *      explicit rule for allocating principal when shares move. Transfer events alone do not establish
+     *      that basis.
      * @param _params Transfer parameters for each stream.
      * @notice Security consideration: Callable by anyone. Every delegation chain, user destination signature,
      *      and compliance signature remains independently enforced.
@@ -353,6 +368,11 @@ contract VaultMigrationHelper is Ownable2Step {
      *      The second hop may spend only shares received in this call. `redeemDelegations` does not prove the
      *      root moved shares, so this records the helper's vault balance before redemption and reverts unless
      *      that balance grew by at least `amount_`. Any surplus stays here for `withdrawEmergency`.
+     *      The share move does not update the Teller's per-user principal history.
+     *      `getPrincipalHistoryPaginated` must not be used alone as a per-holder principal record. A complete
+     *      record requires reconciling Teller deposits and withdrawals with vault `Transfer` events under an
+     *      explicit rule for allocating principal when shares move. Transfer events alone do not establish
+     *      that basis.
      */
     function _premiumTransfer(PremiumTransferParams calldata _params) internal {
         address from_ = _params.from;
