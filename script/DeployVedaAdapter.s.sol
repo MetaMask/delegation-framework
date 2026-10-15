@@ -12,7 +12,12 @@ import { VedaAdapter } from "../src/helpers/VedaAdapter.sol";
  * @dev Fill the required variables in the .env file
  * @dev run the script with:
  * forge script script/DeployVedaAdapter.s.sol --rpc-url <your_rpc_url> --private-key $PRIVATE_KEY --broadcast
- * For deploying on monad add --skip-simulation, because of how monad works the simulation fails because the token is not activated.
+ * On Monad, mUSD uses post-London opcodes and this repo pins London, so the constructor's forceApprove
+ * reverts in the local script run. Pick one:
+ * 1. Append --evm-version shanghai. Compile, broadcast, and verify with that same setting: a different
+ *    compiler EVM version changes creation code and the CREATE2 address.
+ * 2. Stay on London and uncomment the vm.mockCall (and vm.clearMockedCalls) in run(). The mock only
+ *    affects the local simulation; the real constructor still runs on-chain.
  */
 contract DeployVedaAdapter is Script {
     bytes32 salt;
@@ -45,9 +50,9 @@ contract DeployVedaAdapter is Script {
     function run() public {
         console2.log("~~~");
 
-        // Foundry's fork mode cannot interact with mUSD on Monad (NotActivated in revm).
-        // Mock the approve call so simulation passes; the real broadcast executes the
-        // actual constructor on-chain where the token works correctly.
+        // London only. Foundry's fork mode cannot interact with mUSD on Monad (NotActivated in revm).
+        // Uncomment so the local simulation passes. Leave commented when using --evm-version shanghai.
+        // The mock only affects the local simulation; the real constructor still runs on-chain.
         // vm.mockCall(depositToken, abi.encodeWithSelector(bytes4(keccak256("approve(address,uint256)"))), abi.encode(true));
 
         vm.startBroadcast();
@@ -58,6 +63,7 @@ contract DeployVedaAdapter is Script {
 
         vm.stopBroadcast();
 
+        // Uncomment together with vm.mockCall above when deploying on London.
         // vm.clearMockedCalls();
     }
 }
