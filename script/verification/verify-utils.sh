@@ -56,6 +56,7 @@ CHAIN_IDS=(
   46630      # robinhood testnet
   4663       # robinhood
   5042002    # arc testnet
+  1243       # arc
 )
 
 ##########################################
@@ -119,6 +120,7 @@ get_chain_config() {
         46630) config=("key" "blockscout" "$ROBINHOOD_TESTNET_RPC_URL" "https://explorer.testnet.chain.robinhood.com/api/") ;; # robinhood testnet
         4663) config=("key" "blockscout" "$ROBINHOOD_RPC_URL" "https://robinhoodchain.blockscout.com/api/") ;; # robinhood
         5042002) config=("key" "blockscout" "$ARC_TESTNET_RPC_URL" "https://testnet.arcscan.app/api/") ;; # arc testnet
+        1243) config=("key" "blockscout" "$ARC_RPC_URL" "https://explorer.arc.io/api/") ;; # arc
         *)
             echo "Unknown chain ID: $chain_id" >&2
             return 1

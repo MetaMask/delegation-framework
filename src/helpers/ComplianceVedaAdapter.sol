@@ -37,8 +37,24 @@ import { IComplianceVedaTeller } from "./interfaces/IComplianceVedaTeller.sol";
  *      - Because this adapter is `msg.sender` on the Teller call, the signature MUST bind this adapter as
  *        the caller and the root delegator as `to` (share recipient). A signature issued for a direct user
  *        deposit cannot be reused through this adapter.
- *      - When `allowlistedRouterRole` is enabled on the Teller, this adapter must hold that role so it can
- *        mint shares to `to != msg.sender`. Withdrawals are not compliance-gated.
+ *      - `TellerWithMultiAssetSupport__ComplianceCheckFailed()` means either that `deadline` has passed
+ *        (`block.timestamp > deadline`) or, when `complianceWindow` is nonzero, that the acceptance window
+ *        has not begun (`deadline > block.timestamp + complianceWindow`). A nonzero window accepts an
+ *        approval only while `block.timestamp <= deadline <= block.timestamp + complianceWindow`, which is
+ *        from `deadline - complianceWindow` through `deadline`, inclusive. The error alone does not show
+ *        that the approval has expired. An early rejection leaves the approval unconsumed and rolls back
+ *        the leaf's transfer-allowance consumption, so the original signed delegation and approval can
+ *        still succeed once the window opens. The Teller's replay key includes `deadline`, so a replacement
+ *        approval with a different deadline is a separate key and does not cancel the original. On retry,
+ *        reuse the same amount-capped leaf, or revoke the superseded leaf before submitting a replacement.
+ *        A fresh leaf together with a new approval can both execute and spend allowance twice.
+ *      - Veda RolesAuthority prerequisites:
+ *        - `allowlistedRouterRole` must permit this adapter to route both deposits and withdrawals to the
+ *          root delegator, because the Teller sees `to != msg.sender` in both flows.
+ *        - When `transferAllowedRole` is enabled, withdrawals must satisfy that role during the delegated
+ *          vault-share transfer. Granting it to this adapter supports all users.
+ *        - The Teller's deposit and withdraw selectors must be public or otherwise callable by this adapter.
+ *        Withdrawals do not require a compliance signature, but these role checks still apply.
  *
  *      Delegation Flow:
  *      1. The user creates an initial delegation to an "operator" address (a DeleGator-upgraded account).
@@ -46,9 +62,11 @@ import { IComplianceVedaTeller } from "./interfaces/IComplianceVedaTeller.sol";
  *         - A transfer enforcer to control which tokens/shares and amounts can be transferred
  *         - A redeemer enforcer that restricts redemption to only the ComplianceVedaAdapter contract
  *
- *      2. The operator then redelegates to this ComplianceVedaAdapter contract with additional constraints:
- *         - Allowed methods enforcer limiting which functions can be called
- *         - Limited calls enforcer restricting the delegation to a single execution
+ *      2. The operator then redelegates to this ComplianceVedaAdapter contract. The leaf caveat is an
+ *         `ERC20TransferAmountEnforcer` capped to the exact amount. That enforcer already requires
+ *         `IERC20.transfer` (`0xa9059cbb`) and the token target — `depositToken` for deposits,
+ *         `boringVault` for withdrawals — so a separate allowed-methods caveat is not used. A limited-calls
+ *         enforcer can further restrict the redelegation to a single execution.
  *
  *      3. For deposits: the adapter redeems the delegation chain, transfers tokens from the user to itself,
  *         and calls `teller.deposit(...)` with the caller-supplied `ComplianceData` to mint shares to the user.
@@ -64,7 +82,9 @@ import { IComplianceVedaTeller } from "./interfaces/IComplianceVedaTeller.sol";
  *      - The first caveat of the leaf delegation (`_delegations[0].caveats[0]`) must follow the
  *        ERC20TransferAmountEnforcer terms format: abi.encodePacked(address token, uint256 amount) (52 bytes).
  *        The adapter parses only the amount from these terms; the token address encoded in bytes 0–19 is
- *        consumed by the enforcer itself and is not read by this adapter.
+ *        consumed by the enforcer itself and is not read by this adapter. The enforcer evaluates the
+ *        preliminary token transfer redeemed through `DelegationManager`, not the adapter entry point or
+ *        the subsequent Teller call.
  *
  * @notice Security consideration: Anyone can call `depositByDelegation` and `withdrawByDelegation` — there is no
  *      caller restriction. Security is enforced entirely through the delegation chain and, for deposits, the
@@ -76,7 +96,8 @@ import { IComplianceVedaTeller } from "./interfaces/IComplianceVedaTeller.sol";
  *      without this enforcer as the first caveat (or with an amount larger than intended) could be exploited by
  *      any caller to transfer more tokens than authorised. A valid compliance signature is additionally bound to
  *      this adapter, the recipient, the asset, the amount, and a deadline; it cannot be replayed after the Teller
- *      marks the digest as used.
+ *      marks the digest as used. `TellerWithMultiAssetSupport__ComplianceCheckFailed()` before the acceptance
+ *      window opens does not mark that digest used.
  */
 contract ComplianceVedaAdapter is Ownable2Step {
     using SafeERC20 for IERC20;
@@ -228,14 +249,22 @@ contract ComplianceVedaAdapter is Ownable2Step {
      *      The deposit amount is parsed from the first caveat of the leaf delegation
      *      (`_delegations[0].caveats[0].terms`), which must follow the ERC20TransferAmountEnforcer
      *      format: abi.encodePacked(address token, uint256 amount).
-     *      `_compliance` is forwarded as-is. The Teller verifies deadline, EIP-191 signature, signer role,
-     *      and unused digest. The signed `msg.sender` field must be this adapter and `to` must be the
-     *      root delegator.
+     *      `_compliance` is forwarded as-is. The Teller verifies the EIP-191 signature, signer role, and
+     *      unused digest. When `complianceWindow` is nonzero it accepts the approval only while
+     *      `block.timestamp <= deadline <= block.timestamp + complianceWindow`.
+     *      `TellerWithMultiAssetSupport__ComplianceCheckFailed()` is returned both after `deadline` and
+     *      before that window opens. An early rejection does not consume the approval or the leaf allowance,
+     *      and a replacement approval uses a different `deadline`, so it does not invalidate the original.
+     *      Retry with the same amount-capped leaf, or revoke the superseded leaf before using a replacement.
+     *      The signed `msg.sender` field must be this adapter and `to` must be the root delegator.
      * @param _delegations Array of Delegation objects, sorted leaf to root
      * @param _minimumMint Minimum vault shares the caller expects to receive, used as a sanity-check
-     *      bound. The Veda vault conversion is always at fair value; rate drift from yield streaming
-     *      is negligible. A tolerance of 0.1-0.5% is recommended. If this check causes a revert,
-     *      no funds are lost — retry with a fresh quote.
+     *      bound. Minted shares are the accountant's fair value reduced by
+     *      `assetData(depositToken).sharePremium` when that premium is non-zero. The Teller owner can
+     *      set the premium up to 1,000 bps (10%) through `updateAssetData`. Rate drift from yield
+     *      streaming is negligible beside that haircut. A tolerance of 0.1-0.5% covers rate drift only
+     *      while the premium is zero; otherwise size this bound for the configured premium. If this
+     *      check causes a revert, no funds are lost — retry with a fresh quote.
      * @param _compliance Backend-issued compliance approval (`deadline` + `signature`) for this deposit
      * @notice Security consideration: Callable by anyone. The redelegation passed in MUST include an
      *      `ERC20TransferAmountEnforcer` as its first caveat (`caveats[0]`), capped to exactly the intended
@@ -284,7 +313,8 @@ contract ComplianceVedaAdapter is Ownable2Step {
      *      The share amount is parsed from the first caveat of the leaf delegation
      *      (`_delegations[0].caveats[0].terms`), which must follow the ERC20TransferAmountEnforcer
      *      format: abi.encodePacked(address boringVault, uint256 shareAmount).
-     *      Withdrawals are not compliance-gated by the Teller.
+     *      Withdrawals do not require a compliance signature. The Teller's routing and transfer role checks
+     *      still apply; see the contract-level RolesAuthority prerequisites.
      * @param _delegations Array of Delegation objects, sorted leaf to root
      * @param _minimumAssets Minimum underlying assets the caller expects to receive, used as a
      *      sanity-check bound. The Veda vault conversion is always at fair value; rate drift from
