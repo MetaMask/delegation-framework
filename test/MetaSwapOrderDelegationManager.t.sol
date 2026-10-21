@@ -352,19 +352,24 @@ contract MetaSwapOrderDelegationManagerTest is Test {
     }
 
     function test_flexibleAllowsDifferentRouteData() public {
-        bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount);
+        address[] memory redeemers_ = _relayerRedeemers();
+        // Distinct ids: both fills share the signed settlement bounds, but id 0 is one-shot now.
+        bytes memory firstTerms_ =
+            _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount, 0, 0, 1, redeemers_);
+        bytes memory secondTerms_ =
+            _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount, 0, 0, 2, redeemers_);
 
         Execution[] memory first_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
         first_[1].callData = abi.encodeCall(
             IMetaSwap.swap, ("route-a", IERC20(address(tokenIn)), TOKEN_IN_AMOUNT, abi.encode(tokenOut, TOKEN_OUT_AMOUNT))
         );
-        _redeemIntent(_signIntent(terms_, 14), ExecutionLib.encodeBatch(first_));
+        _redeemIntent(_signIntent(firstTerms_, 14), ExecutionLib.encodeBatch(first_));
 
         Execution[] memory second_ = _erc20Executions(1, TOKEN_OUT_AMOUNT);
         second_[1].callData = abi.encodeCall(
             IMetaSwap.swap, ("route-b", IERC20(address(tokenIn)), TOKEN_IN_AMOUNT, abi.encode(tokenOut, TOKEN_OUT_AMOUNT))
         );
-        _redeemIntent(_signIntent(terms_, 15), ExecutionLib.encodeBatch(second_));
+        _redeemIntent(_signIntent(secondTerms_, 15), ExecutionLib.encodeBatch(second_));
 
         assertEq(tokenOut.balanceOf(orderAccount), TOKEN_OUT_AMOUNT * 2);
     }
@@ -498,15 +503,22 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         _redeemIntent(expired_, encoded_);
     }
 
-    function test_flexibleIdZeroSkipsBitmap() public {
+    function test_flexibleIdZeroBurnsBitmapAndExcludesSiblings() public {
         bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount);
         bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT));
+        Delegation memory first_ = _signIntent(terms_, 87);
+        Delegation memory second_ = _signIntent(terms_, 88);
 
-        _redeemIntent(_signIntent(terms_, 87), encoded_);
-        _redeemIntent(_signIntent(terms_, 88), encoded_);
+        vm.expectEmit(true, true, false, true, address(orderManager));
+        emit MetaSwapOrderDelegationManager.UsedId(orderAccount, relayer, 0);
+        _redeemIntent(first_, encoded_);
 
-        assertFalse(orderManager.getIsUsed(orderAccount, 0));
-        assertEq(tokenOut.balanceOf(orderAccount), TOKEN_OUT_AMOUNT * 2);
+        vm.expectRevert(MetaSwapOrderDelegationManager.IdAlreadyUsed.selector);
+        _redeemIntent(second_, encoded_);
+
+        assertTrue(orderManager.getIsUsed(orderAccount, 0));
+        assertFalse(orderManager.disabledDelegations(orderManager.getDelegationHash(second_)));
+        assertEq(tokenOut.balanceOf(orderAccount), TOKEN_OUT_AMOUNT);
     }
 
     function test_flexibleIdExcludesSiblingOrders() public {
@@ -926,7 +938,9 @@ contract MetaSwapOrderDelegationManagerTest is Test {
     }
 
     function test_gas_orderFlexible() public {
-        bytes memory terms_ = _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount);
+        // Nonzero id: matches comparison harness; keeps the flexible gas row free of the id-0 special case.
+        bytes memory terms_ =
+            _flexibleTerms(address(tokenIn), _approveMode(), address(tokenOut), orderAccount, 0, 0, 1, _relayerRedeemers());
         Delegation memory delegation_ = _signIntent(terms_, 104);
         bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT));
 
@@ -940,7 +954,8 @@ contract MetaSwapOrderDelegationManagerTest is Test {
     }
 
     function test_gas_orderFlexibleResetApproval() public {
-        bytes memory terms_ = _flexibleTerms(address(tokenIn), _resetApproveMode(), address(tokenOut), orderAccount);
+        bytes memory terms_ =
+            _flexibleTerms(address(tokenIn), _resetApproveMode(), address(tokenOut), orderAccount, 0, 0, 1, _relayerRedeemers());
         Delegation memory delegation_ = _signIntent(terms_, 111);
         bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(2, TOKEN_OUT_AMOUNT));
 
@@ -954,7 +969,8 @@ contract MetaSwapOrderDelegationManagerTest is Test {
     }
 
     function test_gas_orderFlexibleNative() public {
-        bytes memory terms_ = _flexibleTerms(address(0), _noneMode(), address(tokenOut), orderAccount);
+        bytes memory terms_ =
+            _flexibleTerms(address(0), _noneMode(), address(tokenOut), orderAccount, 0, 0, 1, _relayerRedeemers());
         Delegation memory delegation_ = _signIntent(terms_, 112);
         bytes memory encoded_ = ExecutionLib.encodeBatch(_nativeExecutions(TOKEN_OUT_AMOUNT));
 

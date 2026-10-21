@@ -27,7 +27,7 @@ terms = intent(1) | metaSwap(20) | tokenIn(20) | tokenInAmount(32) | approvalMod
 
 - Redeemers are required (`N >= 1`). `address(0)` is a normal allowlist entry for Sentinel pre-sign simulation. A multi-signer order sets `delegate` to `ANY_DELEGATE` and lists the stations.
 - Timestamp bounds are optional. `0` disables that bound. A set bound is exclusive (`timestamp > after` and `timestamp < before`).
-- `id == 0` skips the bitmap. The delegation hash is still one-shot. `id != 0` also burns that id for the delegator, so a sibling order that shares it cannot fill. `disableDelegation` does not burn the id.
+- Every id, including `0`, burns that id for the delegator, so a sibling order that shares it cannot fill. The delegation hash is still one-shot as well. `disableDelegation` does not burn the id.
 
 Approval shapes are native swap, skip approval, approve then swap, and reset-approve then swap.
 
