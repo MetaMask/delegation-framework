@@ -28,8 +28,8 @@ import { Execution } from "./utils/Types.sol";
  * - Redeemers are required. `address(0)` is a normal allowlist entry, so a Sentinel pre-sign (`from = 0x0`)
  *   can be included without authorizing every caller.
  * - Timestamp bounds are optional. `0` disables that bound. Bounds are exclusive, matching `TimestampEnforcer`.
- * - `id == 0` skips the bitmap. One-shot is still the delegation hash. `id != 0` also burns that id for the
- *   delegator, so sibling orders that share it cannot fill. `disableDelegation` does not burn the id.
+ * - Every id, including `0`, burns that id for the delegator, so sibling orders that share it cannot fill.
+ *   One-shot is still the delegation hash as well. `disableDelegation` does not burn the id.
  */
 contract MetaSwapOrderDelegationManager is MetaSwapDelegationManagerBase {
     using BitMaps for BitMaps.BitMap;
@@ -69,7 +69,7 @@ contract MetaSwapOrderDelegationManager is MetaSwapDelegationManagerBase {
     uint256 private constant APPROVE_CALL_LENGTH = 68;
     uint256 private constant SWAP_CALL_MIN_LENGTH = 196;
 
-    /// @dev IdEnforcer bitmap. Unused when `id == 0`.
+    /// @dev IdEnforcer-style bitmap. Every id, including `0`, is one-shot per delegator.
     mapping(address delegator => BitMaps.BitMap ids) private isUsedId;
 
     event UsedId(address indexed delegator, address indexed redeemer, uint256 id);
@@ -151,7 +151,7 @@ contract MetaSwapOrderDelegationManager is MetaSwapDelegationManagerBase {
 
     /**
      * @notice Returns whether a limit-order id has been filled for this delegator.
-     * @dev `id == 0` is never recorded. Hash one-shot for that order lives in `disabledDelegations`.
+     * @dev Includes id `0`. Hash one-shot for each order still lives in `disabledDelegations`.
      */
     function getIsUsed(address delegator_, uint256 id_) external view returns (bool) {
         return isUsedId[delegator_].get(id_);
@@ -209,9 +209,8 @@ contract MetaSwapOrderDelegationManager is MetaSwapDelegationManagerBase {
         if (timestampBefore_ != 0 && block.timestamp >= timestampBefore_) revert ExpiredDelegation();
     }
 
-    /// @dev `id == 0` keeps the delegation-hash one-shot only. A non-zero id also excludes sibling orders.
+    /// @dev Burns the id for this delegator, including `0`, so sibling orders that share it cannot fill.
     function _consumeId(address delegator_, uint256 id_) private {
-        if (id_ == 0) return;
         if (isUsedId[delegator_].get(id_)) revert IdAlreadyUsed();
         isUsedId[delegator_].set(id_);
         emit UsedId(delegator_, msg.sender, id_);
