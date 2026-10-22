@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
-pragma solidity 0.8.23;
+pragma solidity ^0.8.23;
 
 import { PackedUserOperation } from "@account-abstraction/interfaces/PackedUserOperation.sol";
 import { Execution } from "@erc7579/interfaces/IERC7579Account.sol";

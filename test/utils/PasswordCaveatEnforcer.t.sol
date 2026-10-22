@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
-pragma solidity 0.8.23;
+pragma solidity ^0.8.23;
 
 import { CaveatEnforcer } from "../../src/enforcers/CaveatEnforcer.sol";
 import { Execution, ModeCode } from "../../src/utils/Types.sol";
