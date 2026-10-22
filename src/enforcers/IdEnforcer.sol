@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
-pragma solidity 0.8.23;
+pragma solidity ^0.8.23;
 
 import { BitMaps } from "@openzeppelin/contracts/utils/structs/BitMaps.sol";
 
