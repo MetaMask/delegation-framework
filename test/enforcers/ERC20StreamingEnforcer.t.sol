@@ -63,6 +63,17 @@ contract ERC20StreamingEnforcerTest is CaveatEnforcerBaseTest {
     }
 
     //////////////////// Error / Revert Tests //////////////////////
+
+    /// @notice Reverts if a streaming ERC20 transfer execution carries non-zero native value.
+    function test_revertOnNonZeroValue() public {
+        bytes memory terms_ = _encodeTerms(address(basicERC20), 10 ether, 100 ether, 1 ether, block.timestamp);
+        bytes memory callData_ = _encodeERC20Transfer(bob, 1 ether);
+        bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 1, callData_);
+
+        vm.expectRevert(bytes("ERC20StreamingEnforcer:invalid-value"));
+        erc20StreamingEnforcer.beforeHook(terms_, bytes(""), singleDefaultMode, execData_, bytes32(0), address(0), alice);
+    }
+
     /**
      * @notice Ensures it reverts if `_terms.length != 148`.
      */
