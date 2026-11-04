@@ -215,6 +215,15 @@ contract ERC20PeriodTransferEnforcerTest is CaveatEnforcerBaseTest {
         assertEq(availableAfter2, periodAmount - 600);
     }
 
+    /// @notice Reverts if the execution value is not zero.
+    function test_invalidValue() public {
+        bytes memory terms_ = abi.encodePacked(address(basicERC20), periodAmount, periodDuration, startDate);
+        bytes memory callData_ = _encodeERC20Transfer(bob, 100);
+        bytes memory execData_ = _encodeSingleExecution(address(basicERC20), 1 ether, callData_);
+        vm.expectRevert("ERC20PeriodTransferEnforcer:invalid-value");
+        erc20PeriodTransferEnforcer.beforeHook(terms_, "", singleDefaultMode, execData_, dummyDelegationHash, address(0), redeemer);
+    }
+
     // should fail with invalid call type mode (batch instead of single mode)
     function test_revertWithInvalidCallTypeMode() public {
         bytes memory executionCallData_ = ExecutionLib.encodeBatch(new Execution[](2));
