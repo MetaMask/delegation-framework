@@ -64,11 +64,14 @@ contract ERC20BalanceChangeEnforcer is CaveatEnforcer {
         override
         onlyDefaultExecutionMode(_mode)
     {
-        (, address token_, address recipient_,) = getTermsInfo(_terms);
+        (bool enforceDecrease_, address token_, address recipient_, uint256 amount_) = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, token_, _delegationHash);
         require(!isLocked[hashKey_], "ERC20BalanceChangeEnforcer:enforcer-is-locked");
         isLocked[hashKey_] = true;
         uint256 balance_ = IERC20(token_).balanceOf(recipient_);
+        if (enforceDecrease_) {
+            require(balance_ >= amount_, "ERC20BalanceChangeEnforcer:insufficient-initial-balance");
+        }
         balanceCache[hashKey_] = balance_;
     }
 

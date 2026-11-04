@@ -306,6 +306,17 @@ contract ERC721BalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
     }
 
+    // Reverts if the initial balance is insufficient for a decrease operation
+    function test_notAllow_insufficientInitialBalance() public {
+        // Terms: flag=true (decrease expected), token, recipient, required amount = 2
+        bytes memory terms_ = abi.encodePacked(true, address(token), address(delegator), uint256(2));
+
+        // Should revert because initial balance (0) is less than required amount (2)
+        vm.prank(dm);
+        vm.expectRevert(bytes("ERC721BalanceChangeEnforcer:insufficient-initial-balance"));
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, mintExecutionCallData, bytes32(0), address(0), delegate);
+    }
+
     function _getEnforcer() internal view override returns (ICaveatEnforcer) {
         return ICaveatEnforcer(address(enforcer));
     }

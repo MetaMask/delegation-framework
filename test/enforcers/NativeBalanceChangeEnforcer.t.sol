@@ -173,6 +173,17 @@ contract NativeBalanceChangeEnforcerTest is CaveatEnforcerBaseTest {
         enforcer.beforeHook(hex"", hex"", singleTryMode, hex"", bytes32(0), address(0), address(0));
     }
 
+    // Reverts if the initial balance is insufficient for a decrease operation
+    function test_notAllow_insufficientInitialBalance() public {
+        // Terms: flag=true (decrease expected), recipient, required amount = 1000 ether
+        bytes memory terms_ = abi.encodePacked(true, address(delegator), uint256(1000 ether));
+
+        // Should revert because initial balance is less than required amount (1000 ether)
+        vm.prank(dm);
+        vm.expectRevert(bytes("NativeBalanceChangeEnforcer:insufficient-initial-balance"));
+        enforcer.beforeHook(terms_, hex"", singleDefaultMode, executionCallData, bytes32(0), address(0), delegate);
+    }
+
     function _increaseBalance(address _recipient, uint256 _amount) internal {
         vm.deal(_recipient, _recipient.balance + _amount);
     }

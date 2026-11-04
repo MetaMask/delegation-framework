@@ -75,11 +75,14 @@ contract ERC721BalanceChangeEnforcer is CaveatEnforcer {
         override
         onlyDefaultExecutionMode(_mode)
     {
-        (, address token_, address recipient_,) = getTermsInfo(_terms);
+        (bool enforceDecrease_, address token_, address recipient_, uint256 amount_) = getTermsInfo(_terms);
         bytes32 hashKey_ = _getHashKey(msg.sender, token_, recipient_, _delegationHash);
         require(!isLocked[hashKey_], "ERC721BalanceChangeEnforcer:enforcer-is-locked");
         isLocked[hashKey_] = true;
         uint256 balance_ = IERC721(token_).balanceOf(recipient_);
+        if (enforceDecrease_) {
+            require(balance_ >= amount_, "ERC721BalanceChangeEnforcer:insufficient-initial-balance");
+        }
         balanceCache[hashKey_] = balance_;
     }
 
