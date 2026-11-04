@@ -12,7 +12,7 @@ jobs:
       should_skip: ${{ steps.skip_check.outputs.should_skip }}
     steps:
       - id: skip_check
-        uses: MetaMask/skip-duplicate-actions@v5
+        uses: MetaMask/skip-duplicate-actions@12aca0a884f6137d619d6a8a09fcc3406ced5281 # v5.3.0
         with:
           concurrent_skipping: same_content_newer
 
@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository code
-        uses: actions/checkout@v2
+        uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e # v2.8.0
 
       - name: Search for 'ffi' in foundry.toml
         run: |
@@ -34,10 +34,10 @@ jobs:
     if: needs.pre_job.outputs.should_skip != 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e # v2.8.0
 
       - name: Install Foundry
-        uses: MetaMask/foundry-toolchain@v1
+        uses: MetaMask/foundry-toolchain@cb603ca0abb544f301eaed59ac0baf579aa6aecf # v1.0.10
         with:
           version: stable
 
