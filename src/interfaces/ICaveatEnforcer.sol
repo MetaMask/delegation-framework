@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
+
+import { ReadableTerm, Caveat } from "../utils/Types.sol";
 pragma solidity 0.8.23;
 
 import { ModeCode } from "../utils/Types.sol";
@@ -100,4 +102,11 @@ interface ICaveatEnforcer {
         address _redeemer
     )
         external;
+
+    /**
+     * @notice Converts readable terms into caveats
+     * @param _readableTerms Array of readable terms to convert
+     * @return Array of converted caveats
+     */
+    function _convertReadableTermsToCaveats(ReadableTerm[] memory _readableTerms) internal view virtual returns (Caveat[] memory);
 }
