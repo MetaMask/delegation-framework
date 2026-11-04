@@ -307,6 +307,18 @@ Neither case is an authority escalation (the structural constraints above still 
 
 If a redelegator needs a root-scoped guarantee (e.g. "Carol may only revoke one of Alice's specific approvals"), they should rely on structural caveats that compose cleanly across links, such as `AllowedTargetsEnforcer`, `AllowedCalldataEnforcer`, or `ExactCalldataEnforcer`. Placing `ApprovalRevocationEnforcer` on an intermediate link in the hope of validating the root's approval state does not achieve that.
 
+### AllowedTargetsEnforcer and AllowedMethodsEnforcer
+
+`AllowedTargetsEnforcer` restricts a delegation to call only a specified set of target addresses. `AllowedMethodsEnforcer` restricts a delegation to call only a specified set of function selectors. Both are simple, composable guards that inspect the outer execution — they do **not** inspect nested calldata inside the execution payload.
+
+> ⚠️ **Security Notice**: These enforcers are safe in all typical combinations. The one exception: if `AllowedMethodsEnforcer` permits `redeemDelegations` **and** the delegation targets the delegator's own account (e.g. via `AllowedTargetsEnforcer`), the delegate gains unrestricted execution authority despite the seemingly narrow permission. Never permit `redeemDelegations` as an allowed method in that context. See [Security.md](./Security.md#allowedmethodsenforcer-with-redeemdelegations-on-a-self-targeted-delegation-arbitrary-execution-escalation) for details.
+
+### ERC20PeriodTransferEnforcer
+
+`ERC20PeriodTransferEnforcer` enforces a rolling per-period ERC-20 transfer cap on a delegation, initializing its state on first use and resetting it each time a new period begins.
+
+> ⚠️ **Security Notice**: Attaching more than one `ERC20PeriodTransferEnforcer` caveat to the **same delegation** (e.g. a daily cap and a monthly cap) causes state collision — only the first instance in the caveats array initializes the shared storage slot, and subsequent instances silently reuse it, making their own terms ineffective. Do not attach multiple instances to a single delegation. See [Security.md — ERC20PeriodTransferEnforcer: multiple instances on the same delegation](./Security.md#erc20periodtransferenforcer-multiple-instances-on-the-same-delegation) for details.
+
 ## LogicalOrWrapperEnforcer Context Switching
 
 The `LogicalOrWrapperEnforcer` enables logical OR functionality between groups of enforcers, allowing flexibility in delegation constraints. This enforcer is designed for a narrow set of use cases, and careful attention must be given when constructing caveats. The enforcer introduces an important architectural consideration: **context switching**.
