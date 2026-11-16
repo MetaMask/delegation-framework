@@ -59,9 +59,15 @@ Estimated transaction gas is `21,000 + calldata gas + execution gas`.
 
 ### Cold and later
 
-**Cold** is the first fill of that shape. The nonce or id word and the ERC-20 balance slots have not been written yet, so those writes pay the full cost.
+**Cold** is the first fill of that shape on that delegator. The nonce or id word is still zero, and the ERC-20 balance slots this fill writes are still zero. Creating a slot costs more than updating one.
 
-**Later** is a second fill of the same shape, in its own transaction, with a new signed permission. The first fill already wrote those slots, so updating them costs less. Storage reads are still cold, because every transaction starts cold.
+**Later** is another fill of the same shape, in its own transaction, with a new signed permission. A previous fill on the same delegator has already written the storage this fill updates, so those stores cost less. Reads are still cold, because every transaction starts cold.
+
+What that previous fill leaves behind:
+
+- **Nonce.** `FinalManager`, `DirectRouteManager`, `Eip7710FinalManager`, and `Eip7710DirectRouteManager` keep a nonce bitmap per delegator, one word for gasless batches and one for limit orders. The first nonce in a word creates that word. A later nonce on the same delegator only flips another bit in the word, which is cheaper. The later rows measure nonce 1 after another bit in that word is already set.
+- **Order id.** `LimitOrderBaseline`, `OrderDelegationManager` limit orders, and `FlexibleSettlementEnforcer` burn an id in a bitmap instead of a nonce. A later fill uses an id in a word that already has another id burned, so that write is cheaper too. The gasless `OrderDelegationManager` path has no nonce and no id, so it does not get this saving.
+- **Token balances.** Every version, including the ones with no nonce, leaves the ERC-20 balances it touched nonzero: the input token, the output token, and on gasless fills the fee recipient. Updating a nonzero balance costs less than creating it. That is why a version with no nonce still costs less on a later fill.
 
 Each cell reads `estimated gas (saving vs baseline)`. A saving is `(baseline − version) / baseline`. The three average columns are unweighted means of the cells they cover:
 
