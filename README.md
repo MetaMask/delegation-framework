@@ -71,7 +71,7 @@ One manager for two flows: an exact batch, and a MetaSwap limit order whose rout
 
 [Read more on "MetaSwap Order Delegation Manager" ->](/documents/MetaSwapSpecializedDelegationManagers.md)
 
-The gas-comparison suite, its baselines, and the manager versions are listed in [MetaSwap gas comparisons](/documents/MetaSwapGasComparisons.md).
+The gas-comparison suite, its baselines, and the manager versions are listed in [MetaSwap gas comparisons](/documents/MetaSwapGasComparisons.md). The same tables without the direct-route managers are in [MetaSwap gas comparisons, without direct route](/documents/MetaSwapGasComparisonsNoDirectRoute.md).
 
 ### Caveat Enforcers
 
