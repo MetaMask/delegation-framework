@@ -4,11 +4,13 @@ pragma solidity 0.8.23;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
 
+import { AllowedCalldataEnforcer } from "../../../src/enforcers/AllowedCalldataEnforcer.sol";
 import { AllowedMethodsEnforcer } from "../../../src/enforcers/AllowedMethodsEnforcer.sol";
 import { AllowedTargetsEnforcer } from "../../../src/enforcers/AllowedTargetsEnforcer.sol";
 import { ERC20BalanceChangeEnforcer } from "../../../src/enforcers/ERC20BalanceChangeEnforcer.sol";
 import { ExactExecutionEnforcer } from "../../../src/enforcers/ExactExecutionEnforcer.sol";
 import { IdEnforcer } from "../../../src/enforcers/IdEnforcer.sol";
+import { LimitedCallsEnforcer } from "../../../src/enforcers/LimitedCallsEnforcer.sol";
 import { NativeBalanceChangeEnforcer } from "../../../src/enforcers/NativeBalanceChangeEnforcer.sol";
 import { NativeTokenTransferAmountEnforcer } from "../../../src/enforcers/NativeTokenTransferAmountEnforcer.sol";
 import { RedeemerEnforcer } from "../../../src/enforcers/RedeemerEnforcer.sol";
@@ -19,15 +21,19 @@ import { Caveat, Delegation, Execution, ModeCode } from "../../../src/utils/Type
 import { GasComparisonFixture, LimitGasComparison } from "./GasComparisonFixture.t.sol";
 
 /**
- * @notice Two delegations. An ERC-20 swap requires the user's `tokenIn` balance to fall by the signed amount.
- * @dev Native pays with `msg.value`, so that swap has no `tokenIn` balance check. Approve id is 2 and swap id is 1.
+ * @notice Limit-order baseline. One root delegation per leg, single mode, in delegation order.
+ * @dev Approval, when present, is pinned by `ExactExecutionEnforcer` and single-use via `LimitedCallsEnforcer`.
+ *      The swap leg bounds the call instead of pinning it. `AllowedCalldataEnforcer` fixes `tokenFrom` and
+ *      `amount` at byte 36 of `MetaSwap.swap`. Swap id is 1.
  */
-contract TokenInBalanceDropGasTest is LimitGasComparison {
+contract LimitOrderBaselineGasTest is LimitGasComparison {
     uint256 private constant SWAP_ID = 1;
-    uint256 private constant APPROVAL_ID = 2;
+    /// @dev `tokenFrom` and `amount` are the two static words after the selector and the dynamic-string offset.
+    uint256 private constant SWAP_TOKEN_AND_AMOUNT_OFFSET = 36;
 
     AllowedTargetsEnforcer private allowedTargets;
     AllowedMethodsEnforcer private allowedMethods;
+    AllowedCalldataEnforcer private allowedCalldata;
     ExactExecutionEnforcer private exactExecution;
     ValueLteEnforcer private valueLte;
     NativeTokenTransferAmountEnforcer private nativeTransferAmount;
@@ -35,15 +41,17 @@ contract TokenInBalanceDropGasTest is LimitGasComparison {
     NativeBalanceChangeEnforcer private nativeBalanceChange;
     TimestampEnforcer private timestampEnforcer;
     IdEnforcer private idEnforcer;
+    LimitedCallsEnforcer private limitedCalls;
     RedeemerEnforcer private redeemerEnforcer;
 
     function _comparisonName() internal pure override returns (string memory) {
-        return "TokenInBalanceDrop";
+        return "LimitOrderBaseline";
     }
 
     function _installComparison() internal override {
         allowedTargets = new AllowedTargetsEnforcer();
         allowedMethods = new AllowedMethodsEnforcer();
+        allowedCalldata = new AllowedCalldataEnforcer();
         exactExecution = new ExactExecutionEnforcer();
         valueLte = new ValueLteEnforcer();
         nativeTransferAmount = new NativeTokenTransferAmountEnforcer();
@@ -51,6 +59,7 @@ contract TokenInBalanceDropGasTest is LimitGasComparison {
         nativeBalanceChange = new NativeBalanceChangeEnforcer();
         timestampEnforcer = new TimestampEnforcer();
         idEnforcer = new IdEnforcer();
+        limitedCalls = new LimitedCallsEnforcer();
         redeemerEnforcer = new RedeemerEnforcer();
         _installUser(address(delegationManager));
     }
@@ -100,16 +109,22 @@ contract TokenInBalanceDropGasTest is LimitGasComparison {
         caveats_ = new Caveat[](4);
         caveats_[0] = Caveat({ enforcer: address(exactExecution), terms: executionTerms_, args: hex"" });
         caveats_[1] = Caveat({ enforcer: address(timestampEnforcer), terms: _timestampTerms(), args: hex"" });
-        caveats_[2] = Caveat({ enforcer: address(idEnforcer), terms: abi.encode(APPROVAL_ID), args: hex"" });
+        caveats_[2] = Caveat({ enforcer: address(limitedCalls), terms: abi.encode(uint256(1)), args: hex"" });
         caveats_[3] = Caveat({ enforcer: address(redeemerEnforcer), terms: _redeemerTerms(), args: hex"" });
     }
 
     function _swapCaveats(Shape shape_) private view returns (Caveat[] memory caveats_) {
-        uint256 n_ = shape_ == Shape.NativeToErc20 ? 7 : 8;
+        uint256 n_ = shape_ == Shape.NativeToErc20 ? 8 : 9;
         caveats_ = new Caveat[](n_);
         caveats_[0] = Caveat({ enforcer: address(allowedTargets), terms: abi.encodePacked(address(metaSwap)), args: hex"" });
         caveats_[1] = Caveat({ enforcer: address(allowedMethods), terms: abi.encodePacked(IMetaSwap.swap.selector), args: hex"" });
-        uint256 i_ = 2;
+        address tokenFrom_ = shape_ == Shape.NativeToErc20 ? address(0) : address(tokenIn);
+        caveats_[2] = Caveat({
+            enforcer: address(allowedCalldata),
+            terms: abi.encodePacked(SWAP_TOKEN_AND_AMOUNT_OFFSET, abi.encode(tokenFrom_, TOKEN_IN_AMOUNT)),
+            args: hex""
+        });
+        uint256 i_ = 3;
         if (shape_ == Shape.NativeToErc20) {
             caveats_[i_++] = Caveat({ enforcer: address(nativeTransferAmount), terms: abi.encode(TOKEN_IN_AMOUNT), args: hex"" });
             caveats_[i_++] = Caveat({

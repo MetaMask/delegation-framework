@@ -144,8 +144,19 @@ abstract contract OptimizedSecuritySuite is OptimizedHarness {
         if (openExactSubmission) {
             _redeemOkAs(signerA, data_);
         } else {
-            _redeemFailsAs(signerA, data_);
+            _redeemFailsAs(makeAddr("outsider"), data_);
         }
+    }
+
+    function test_exact_rejectsOutsideTimestamp() public onlyExact {
+        ExactOrder memory expired_ = _defaultExact(Shape.Erc20ToErc20);
+        expired_.validUntil = uint128(block.timestamp);
+        _redeemFails(_exactCall(expired_));
+
+        ExactOrder memory early_ = _defaultExact(Shape.Erc20ToErc20);
+        early_.nonce = 8;
+        early_.validAfter = uint128(block.timestamp);
+        _redeemFails(_exactCall(early_));
     }
 
     function test_exact_anyDelegateAllowsAnyCaller() public onlyExact {
@@ -244,6 +255,8 @@ abstract contract OptimizedSecuritySuite is OptimizedHarness {
         ExactOrder memory inner_ = _defaultExact(Shape.NativeToErc20);
         inner_.delegate = ANY;
         inner_.nonce = 2;
+        inner_.redeemers = new address[](1);
+        inner_.redeemers[0] = address(reentrantMetaSwap);
         reentrantMetaSwap.setReentry(manager, _exactCall(inner_));
 
         (bool success_,) = _callAs(relayer, _limitCall(_unpaidLimitOrderOnReentrantMock()));
@@ -626,8 +639,8 @@ abstract contract OptimizedSecuritySuite is OptimizedHarness {
  * @notice Bounds checks for packed calldata entries (Optimized manager).
  */
 abstract contract OptimizedPackedParsingSuite is OptimizedHarness {
-    /// @dev Absolute calldata offset where the signature starts in an exact batch (`SIGNATURE_EXACT_OFFSET`).
-    uint256 internal constant EXACT_SIGNATURE_OFFSET = 56;
+    /// @dev Signature start for a default exact batch: auth plus four 20-byte redeemers.
+    uint256 internal constant EXACT_SIGNATURE_OFFSET = 169;
     /// @dev When true, wire is `sigLength(2) | sig`. Optimized / DirectRoute use a fixed 65-byte ECDSA signature.
     bool internal usesLengthPrefixedSignature = true;
 

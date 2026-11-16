@@ -26,7 +26,17 @@ struct PackedLimitOrder {
 
 interface IPackedHashes {
     function getDomainHash() external view returns (bytes32);
-    function hashExactBatch(address delegator, uint256 nonce, bytes32 executionHash) external view returns (bytes32);
+    function hashExactBatch(
+        address delegator,
+        uint256 nonce,
+        uint128 validAfter,
+        uint128 validUntil,
+        address[] calldata redeemers,
+        bytes32 executionHash
+    )
+        external
+        view
+        returns (bytes32);
     function hashLimitOrder(PackedLimitOrder calldata order) external view returns (bytes32);
     function SIMPLE_BATCH_MODE() external view returns (ModeCode);
 }
@@ -69,22 +79,26 @@ abstract contract PackedManagerGasTest is LimitGasComparison, ExactGasComparison
 
     function _exactCall(Shape shape_) private view returns (bytes memory) {
         bytes memory batch_ = ExecutionLib.encodeBatch(_gaslessExecutions(shape_));
+        address[] memory redeemers_ = _redeemers();
+        bytes memory head_ =
+            abi.encodePacked(user, MEASURED_NONCE, uint128(0), expiresAt, uint8(redeemers_.length), _packRedeemers(redeemers_));
         bytes memory signature_ = _sign(
             USER_KEY,
             MessageHashUtils.toTypedDataHash(
-                IPackedHashes(mgr).getDomainHash(), IPackedHashes(mgr).hashExactBatch(user, MEASURED_NONCE, keccak256(batch_))
+                IPackedHashes(mgr).getDomainHash(),
+                IPackedHashes(mgr).hashExactBatch(user, MEASURED_NONCE, 0, expiresAt, redeemers_, keccak256(batch_))
             )
         );
         if (_usesRedeemDelegations()) {
             bytes[] memory contexts_ = new bytes[](1);
-            contexts_[0] = abi.encodePacked(bytes1(uint8(0)), user, MEASURED_NONCE, signature_);
+            contexts_[0] = abi.encodePacked(bytes1(uint8(0)), head_, signature_);
             ModeCode[] memory modes_ = new ModeCode[](1);
             modes_[0] = IPackedHashes(mgr).SIMPLE_BATCH_MODE();
             bytes[] memory executionCallDatas_ = new bytes[](1);
             executionCallDatas_[0] = batch_;
             return abi.encodeCall(Eip7710FinalManager.redeemDelegations, (contexts_, modes_, executionCallDatas_));
         }
-        return abi.encodePacked(FinalManager.redeemExactBatch.selector, user, MEASURED_NONCE, signature_, batch_);
+        return bytes.concat(abi.encodePacked(FinalManager.redeemExactBatch.selector), head_, signature_, batch_);
     }
 
     function _limitCall(Shape shape_) private view returns (bytes memory) {

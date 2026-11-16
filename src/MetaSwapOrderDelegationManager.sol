@@ -16,9 +16,9 @@ import { Execution } from "./utils/Types.sol";
  * @dev No external caveat hooks and no redelegation chains. Both intents redeem through a direct
  *      batch/default `executeFromExecutor`.
  *
- * Exact batch terms: `intent(1) | executionHash(32)` where `executionHash = keccak256(executionCallDatas[0])`.
- * Expiry and the redeemer stay off this path: `delegate` is the redeemer (or `ANY_DELEGATE`), and
- * `disabledDelegations` is the one-shot.
+ * Exact batch terms: `intent(1) | validAfter(16) | validUntil(16) | executionHash(32) | redeemers(20*N)`.
+ * `executionHash = keccak256(executionCallDatas[0])`. The batch stays exact. `0` disables a timestamp
+ * bound. Redeemers are required. `disabledDelegations` is still the one-shot.
  *
  * Flexible terms: `intent(1) | metaSwap(20) | tokenIn(20) | tokenInAmount(32) | approvalMode(1) |
  * tokenOut(20) | recipient(20) | tokenOutMin(32) | timestampAfter(16) | timestampBefore(16) | id(32) |
@@ -47,6 +47,13 @@ contract MetaSwapOrderDelegationManager is MetaSwapDelegationManagerBase {
         ResetApprove
     }
 
+    struct ExactTerms {
+        uint128 validAfter;
+        uint128 validUntil;
+        bytes32 executionHash;
+        address[] redeemers;
+    }
+
     struct FlexibleTerms {
         address metaSwap;
         address tokenIn;
@@ -63,7 +70,8 @@ contract MetaSwapOrderDelegationManager is MetaSwapDelegationManagerBase {
 
     string public constant NAME = "MetaSwapOrderDelegationManager";
 
-    uint256 private constant EXACT_TERMS_LENGTH = 33;
+    /// @dev Intent, both timestamp bounds, and the execution hash. Redeemers are a non-empty 20-byte tail.
+    uint256 private constant EXACT_FIXED_TERMS_LENGTH = 65;
     /// @dev Intent through id. Redeemers are a non-empty 20-byte tail.
     uint256 private constant FLEXIBLE_FIXED_TERMS_LENGTH = 210;
     uint256 private constant APPROVE_CALL_LENGTH = 68;
@@ -90,15 +98,30 @@ contract MetaSwapOrderDelegationManager is MetaSwapDelegationManagerBase {
 
     /**
      * @notice Decodes exact-batch terms.
-     * @param terms_ Packed as `intent(1) | executionHash(32)`.
+     * @param terms_ Packed as `intent(1) | validAfter(16) | validUntil(16) | executionHash(32) | redeemers(20*N)`.
      */
-    function getExactTermsInfo(bytes memory terms_) public pure returns (bytes32 executionHash_) {
-        if (terms_.length != EXACT_TERMS_LENGTH || uint8(terms_[0]) != uint8(Intent.ExactBatch)) {
+    function getExactTermsInfo(bytes memory terms_) public pure returns (ExactTerms memory info_) {
+        uint256 termsLength_ = terms_.length;
+        uint256 redeemerBytes_ = termsLength_ < EXACT_FIXED_TERMS_LENGTH ? 0 : termsLength_ - EXACT_FIXED_TERMS_LENGTH;
+        if (
+            termsLength_ < EXACT_FIXED_TERMS_LENGTH + 20 || redeemerBytes_ % 20 != 0 || uint8(terms_[0]) != uint8(Intent.ExactBatch)
+        ) {
             revert InvalidTerms();
         }
+
         assembly ("memory-safe") {
-            executionHash_ := mload(add(terms_, 33))
+            let termsData_ := add(terms_, 0x21)
+            mstore(info_, shr(128, mload(termsData_)))
+            mstore(add(info_, 0x20), shr(128, mload(add(termsData_, 16))))
+            mstore(add(info_, 0x40), mload(add(termsData_, 32)))
         }
+
+        uint256 redeemerCount_ = redeemerBytes_ / 20;
+        address[] memory redeemers_ = new address[](redeemerCount_);
+        for (uint256 i_; i_ < redeemerCount_; ++i_) {
+            redeemers_[i_] = address(bytes20(_loadWord(terms_, EXACT_FIXED_TERMS_LENGTH + (i_ * 20))));
+        }
+        info_.redeemers = redeemers_;
     }
 
     /**
@@ -171,8 +194,10 @@ contract MetaSwapOrderDelegationManager is MetaSwapDelegationManagerBase {
     }
 
     function _executeExact(address delegator_, bytes memory terms_, bytes calldata executionContext_) private {
-        bytes32 expectedHash_ = getExactTermsInfo(terms_);
-        if (keccak256(executionContext_) != expectedHash_) revert InvalidExecutionHash();
+        ExactTerms memory termsInfo_ = getExactTermsInfo(terms_);
+        _validateRedeemer(termsInfo_.redeemers);
+        _validateTimestamp(termsInfo_.validAfter, termsInfo_.validUntil);
+        if (keccak256(executionContext_) != termsInfo_.executionHash) revert InvalidExecutionHash();
 
         IDeleGatorCore(delegator_).executeFromExecutor(SIMPLE_BATCH_MODE, executionContext_);
     }

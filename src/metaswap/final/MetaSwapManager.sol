@@ -25,7 +25,9 @@ contract MetaSwapManager is EIP712, NonceBitmap {
     string public constant DOMAIN_VERSION = "1";
     ModeCode public constant SIMPLE_BATCH_MODE = ModeCode.wrap(0x0100000000000000000000000000000000000000000000000000000000000000);
 
-    bytes32 public constant EXACT_BATCH_TYPEHASH = keccak256("ExactBatch(address delegator,uint256 nonce,bytes32 executionHash)");
+    bytes32 public constant EXACT_BATCH_TYPEHASH = keccak256(
+        "ExactBatch(address delegator,uint256 nonce,uint128 validAfter,uint128 validUntil,address[] redeemers,bytes32 executionHash)"
+    );
 
     bytes32 public constant LIMIT_ORDER_TYPEHASH = keccak256(
         "LimitOrder(address delegator,uint256 nonce,address metaSwap,address tokenIn,uint256 tokenInAmount,uint8 approvalMode,address tokenOut,address recipient,uint256 tokenOutMin,uint128 validAfter,uint128 validUntil,address[] redeemers)"
@@ -62,8 +64,43 @@ contract MetaSwapManager is EIP712, NonceBitmap {
     }
 
     /// @notice EIP-712 struct hash for Exact. `batchHash_` is `keccak256` of the ERC-7579 batch bytes.
-    function hashExactBatch(address delegator_, uint256 nonce_, bytes32 batchHash_) public pure returns (bytes32) {
-        return keccak256(abi.encode(EXACT_BATCH_TYPEHASH, delegator_, nonce_, batchHash_));
+    function hashExactBatch(
+        address delegator_,
+        uint256 nonce_,
+        uint128 validAfter_,
+        uint128 validUntil_,
+        address[] memory redeemers_,
+        bytes32 batchHash_
+    )
+        public
+        pure
+        returns (bytes32)
+    {
+        return keccak256(
+            abi.encode(
+                EXACT_BATCH_TYPEHASH,
+                delegator_,
+                nonce_,
+                validAfter_,
+                validUntil_,
+                keccak256(abi.encodePacked(redeemers_)),
+                batchHash_
+            )
+        );
+    }
+
+    function _exactStructHash(MetaSwapPackedLib.ExactAuth memory auth_, bytes32 batchHash_) private pure returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                EXACT_BATCH_TYPEHASH,
+                auth_.delegator,
+                auth_.nonce,
+                auth_.validAfter,
+                auth_.validUntil,
+                auth_.redeemersHash,
+                batchHash_
+            )
+        );
     }
 
     /**
@@ -90,15 +127,17 @@ contract MetaSwapManager is EIP712, NonceBitmap {
 
     /**
      * @notice Redeem a signed Exact batch packed into `msg.data` (no ABI args).
-     * @dev Anyone may submit. Decode → EIP-712 Exact → ECDSA → burn exact nonce → execute batch.
+     * @dev Listed redeemer, inside the signed window. The batch itself stays exact.
      */
     function redeemExactBatch() external {
-        (address delegator_, uint256 nonce_, bytes calldata signature_, bytes calldata batch_) =
+        (MetaSwapPackedLib.ExactAuth memory auth_, bytes calldata signature_, bytes calldata batch_) =
             MetaSwapPackedLib.decodeExact(msg.data);
 
-        _authorizeExactBatch(delegator_, nonce_, hashExactBatch(delegator_, nonce_, keccak256(batch_)), signature_);
-        _executeOnDelegator(delegator_, batch_);
-        emit ExactBatchRedeemed(delegator_, nonce_);
+        _authorizeExactBatch(auth_.delegator, auth_.nonce, _exactStructHash(auth_, keccak256(batch_)), signature_);
+        MetaSwapPackedLib.requireRedeemer(msg.data, msg.sender, auth_.redeemersOffset, auth_.signatureOffset);
+        MetaSwapOrderLib.validateTimestamp(auth_.validAfter, auth_.validUntil);
+        _executeOnDelegator(auth_.delegator, batch_);
+        emit ExactBatchRedeemed(auth_.delegator, auth_.nonce);
     }
 
     /**

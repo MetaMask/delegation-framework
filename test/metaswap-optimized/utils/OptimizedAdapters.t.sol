@@ -32,7 +32,13 @@ abstract contract DelegationStyleAdapter is OptimizedHarness {
 
     function _exactDelegation(address manager_, ExactOrder memory order_) internal pure returns (Delegation memory) {
         return _delegation(
-            manager_, order_.delegate, order_.delegator, order_.nonce, abi.encodePacked(uint8(0), keccak256(order_.batch))
+            manager_,
+            order_.delegate,
+            order_.delegator,
+            order_.nonce,
+            abi.encodePacked(
+                uint8(0), order_.validAfter, order_.validUntil, keccak256(order_.batch), _packAddresses(order_.redeemers)
+            )
         );
     }
 
@@ -169,7 +175,7 @@ abstract contract FinalAdapterBase is OptimizedHarness {
     constructor() {
         hasBitmap = true;
         supportsErc1271 = false;
-        openExactSubmission = true;
+        openExactSubmission = false;
         signsDelegate = false;
         hasLock = false;
     }
@@ -183,8 +189,10 @@ abstract contract FinalAdapterBase is OptimizedHarness {
     }
 
     function _exactDigest(address manager_, ExactOrder memory order_) internal view override returns (bytes32) {
-        bytes32 structHash_ =
-            MetaSwapManager(manager_).hashExactBatch(order_.delegator, order_.nonce, keccak256(order_.batch));
+        bytes32 structHash_ = MetaSwapManager(manager_)
+            .hashExactBatch(
+                order_.delegator, order_.nonce, order_.validAfter, order_.validUntil, order_.redeemers, keccak256(order_.batch)
+            );
         return MessageHashUtils.toTypedDataHash(IDomainHash(manager_).getDomainHash(), structHash_);
     }
 
@@ -198,9 +206,8 @@ abstract contract FinalAdapterBase is OptimizedHarness {
         override
         returns (bytes memory)
     {
-        return abi.encodePacked(
-            MetaSwapManager.redeemExactBatch.selector, order_.delegator, order_.nonce, signature_, order_.batch
-        );
+        return
+            bytes.concat(abi.encodePacked(MetaSwapManager.redeemExactBatch.selector), _exactHead(order_), signature_, order_.batch);
     }
 
     function _limitDigest(address manager_, LimitParams memory params_) internal view override returns (bytes32) {
@@ -218,9 +225,10 @@ abstract contract FinalAdapterBase is OptimizedHarness {
             validUntil: params_.validUntil,
             redeemers: params_.redeemers
         });
-        return MessageHashUtils.toTypedDataHash(
-            IDomainHash(manager_).getDomainHash(), MetaSwapManager(manager_).hashLimitOrder(order_)
-        );
+        return
+            MessageHashUtils.toTypedDataHash(
+                IDomainHash(manager_).getDomainHash(), MetaSwapManager(manager_).hashLimitOrder(order_)
+            );
     }
 
     function _limitCalldata(

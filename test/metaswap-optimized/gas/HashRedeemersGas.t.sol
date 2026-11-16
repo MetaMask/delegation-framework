@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
-import {Test, console2} from "forge-std/Test.sol";
+import { Test, console2 } from "forge-std/Test.sol";
 
 contract HashRedeemersGas is Test {
     uint256 constant REDEEMERS_OFFSET = 234;
@@ -8,9 +8,7 @@ contract HashRedeemersGas is Test {
     function test_compare() public {
         address a = makeAddr("a");
         address b = makeAddr("b");
-        bytes memory wire = bytes.concat(
-            new bytes(234), bytes20(a), bytes20(b), bytes20(a), bytes20(b), new bytes(10)
-        );
+        bytes memory wire = bytes.concat(new bytes(234), bytes20(a), bytes20(b), bytes20(a), bytes20(b), new bytes(10));
         T t = new T();
         (uint256 c1,) = t.measureCompact(wire, 4);
         (uint256 r1,) = t.measureReadable(wire, 4);
@@ -27,19 +25,33 @@ contract HashRedeemersGas is Test {
 
 contract T {
     uint256 constant REDEEMERS_OFFSET = 234;
-    address d; uint256 c; uint8 op;
+    address d;
+    uint256 c;
+    uint8 op;
+
     function measureCompact(bytes calldata w, uint256 count) external returns (uint256, bytes32) {
-        op = 1; c = count; (bool ok, bytes memory ret) = address(this).call(w); require(ok); return abi.decode(ret, (uint256, bytes32));
+        op = 1;
+        c = count;
+        (bool ok, bytes memory ret) = address(this).call(w);
+        require(ok);
+        return abi.decode(ret, (uint256, bytes32));
     }
+
     function measureReadable(bytes calldata w, uint256 count) external returns (uint256, bytes32) {
-        op = 2; c = count; (bool ok, bytes memory ret) = address(this).call(w); require(ok); return abi.decode(ret, (uint256, bytes32));
+        op = 2;
+        c = count;
+        (bool ok, bytes memory ret) = address(this).call(w);
+        require(ok);
+        return abi.decode(ret, (uint256, bytes32));
     }
+
     fallback() external {
         uint256 g0 = gasleft();
         bytes32 h = op == 1 ? _compact(c) : _readable(c);
         bytes memory out = abi.encode(g0 - gasleft(), h);
         assembly { return(add(out, 0x20), mload(out)) }
     }
+
     function _compact(uint256 redeemerCount_) private pure returns (bytes32 hash_) {
         assembly ("memory-safe") {
             let words := mload(0x40)
@@ -50,6 +62,7 @@ contract T {
             hash_ := keccak256(words, shl(5, redeemerCount_))
         }
     }
+
     function _readable(uint256 redeemerCount_) private pure returns (bytes32 redeemersHash_) {
         assembly ("memory-safe") {
             let packedRedeemers := mload(0x40)

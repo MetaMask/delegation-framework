@@ -22,7 +22,9 @@ contract ClarityDropProbe is Test {
     uint256 private constant VALID_UNTIL_OFFSET = 217;
     uint256 private constant REDEEMERS_OFFSET = 234;
 
-    bytes32 private constant EXACT_BATCH_TYPEHASH = keccak256("ExactBatch(address delegator,uint256 nonce,bytes32 executionHash)");
+    bytes32 private constant EXACT_BATCH_TYPEHASH = keccak256(
+        "ExactBatch(address delegator,uint256 nonce,uint128 validAfter,uint128 validUntil,address[] redeemers,bytes32 executionHash)"
+    );
 
     MetaSwapManager internal mgr;
     address internal alice;
@@ -56,20 +58,24 @@ contract ClarityDropProbe is Test {
 
     function test_probe_exactStructHash() public {
         bytes32 executionHash_ = keccak256("batch");
+        address[] memory redeemers_ = new address[](2);
+        redeemers_[0] = bob;
+        redeemers_[1] = alice;
+        bytes32 redeemersHash_ = keccak256(abi.encodePacked(redeemers_));
         // Warm both pure paths (no external CALL overhead).
-        _exactAsm(alice, 7, executionHash_);
-        _exactSol(alice, 7, executionHash_);
+        _exactAsm(alice, 7, 1, 9, redeemersHash_, executionHash_);
+        _exactSol(alice, 7, 1, 9, redeemersHash_, executionHash_);
 
         uint256 g0_ = gasleft();
-        bytes32 asmHash_ = _exactAsm(alice, 7, executionHash_);
+        bytes32 asmHash_ = _exactAsm(alice, 7, 1, 9, redeemersHash_, executionHash_);
         uint256 asmGas_ = g0_ - gasleft();
 
         g0_ = gasleft();
-        bytes32 solHash_ = _exactSol(alice, 7, executionHash_);
+        bytes32 solHash_ = _exactSol(alice, 7, 1, 9, redeemersHash_, executionHash_);
         uint256 solGas_ = g0_ - gasleft();
 
         assertEq(asmHash_, solHash_);
-        assertEq(asmHash_, mgr.hashExactBatch(alice, 7, executionHash_));
+        assertEq(asmHash_, _managerExactHash(redeemers_, executionHash_));
         _log("exactStructHash", asmGas_, solGas_);
     }
 
@@ -100,21 +106,53 @@ contract ClarityDropProbe is Test {
         console2.log(string.concat("CLARITY|", name_, "|delta|"), int256(solGas_) - int256(asmGas_));
     }
 
-    function _exactAsm(address delegator_, uint256 nonce_, bytes32 executionHash_) private pure returns (bytes32 structHash_) {
+    function _managerExactHash(address[] memory redeemers_, bytes32 executionHash_) private view returns (bytes32) {
+        return mgr.hashExactBatch(alice, 7, 1, 9, redeemers_, executionHash_);
+    }
+
+    function _exactAsm(
+        address delegator_,
+        uint256 nonce_,
+        uint128 validAfter_,
+        uint128 validUntil_,
+        bytes32 redeemersHash_,
+        bytes32 executionHash_
+    )
+        private
+        pure
+        returns (bytes32 structHash_)
+    {
         bytes32 typehash_ = EXACT_BATCH_TYPEHASH;
         assembly ("memory-safe") {
             let ptr_ := mload(0x40)
             mstore(ptr_, typehash_)
             mstore(add(ptr_, 0x20), delegator_)
             mstore(add(ptr_, 0x40), nonce_)
-            mstore(add(ptr_, 0x60), executionHash_)
-            structHash_ := keccak256(ptr_, 0x80)
+            mstore(add(ptr_, 0x60), validAfter_)
+            mstore(add(ptr_, 0x80), validUntil_)
+            mstore(add(ptr_, 0xa0), redeemersHash_)
+            mstore(add(ptr_, 0xc0), executionHash_)
+            structHash_ := keccak256(ptr_, 0xe0)
         }
     }
 
-    /// @dev Same body as `MetaSwapManager.hashExactBatch` (proposed in-redeem call).
-    function _exactSol(address delegator_, uint256 nonce_, bytes32 executionHash_) private pure returns (bytes32) {
-        return keccak256(abi.encode(EXACT_BATCH_TYPEHASH, delegator_, nonce_, executionHash_));
+    /// @dev Same body as `MetaSwapManager._exactStructHash`.
+    function _exactSol(
+        address delegator_,
+        uint256 nonce_,
+        uint128 validAfter_,
+        uint128 validUntil_,
+        bytes32 redeemersHash_,
+        bytes32 executionHash_
+    )
+        private
+        pure
+        returns (bytes32)
+    {
+        return
+            keccak256(
+                abi.encode(EXACT_BATCH_TYPEHASH, delegator_, nonce_, validAfter_, validUntil_, redeemersHash_, executionHash_)
+            );
     }
 
     function _buildLimitFromWire(

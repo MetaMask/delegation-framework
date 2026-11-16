@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT AND Apache-2.0
 pragma solidity 0.8.23;
-import {Test, console2} from "forge-std/Test.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ExecutionLib} from "@erc7579/lib/ExecutionLib.sol";
-import {IMetaSwap} from "../../../src/helpers/interfaces/IMetaSwap.sol";
-import {Execution} from "../../../src/utils/Types.sol";
-import {RouteRebuildLib} from "../../../src/metaswap/direct-route/RouteRebuildLib.sol";
+import { Test, console2 } from "forge-std/Test.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { ExecutionLib } from "@erc7579/lib/ExecutionLib.sol";
+import { IMetaSwap } from "../../../src/helpers/interfaces/IMetaSwap.sol";
+import { Execution } from "../../../src/utils/Types.sol";
+import { RouteRebuildLib } from "../../../src/metaswap/direct-route/RouteRebuildLib.sol";
 
 contract RouteRebuildClarityProbe is Test {
     using ExecutionLib for Execution[];
@@ -76,22 +76,55 @@ contract RouteRebuildClarityProbe is Test {
     function asmBuild(address m, address t, uint256 a, uint256 mode, bytes calldata route) external pure returns (bytes memory) {
         return RouteRebuildLib.buildBatch(m, t, a, mode, route);
     }
-    function solBuild(address m, address t, uint256 a, string calldata agg, bytes calldata data) external pure returns (bytes memory) {
+
+    function solBuild(
+        address m,
+        address t,
+        uint256 a,
+        string calldata agg,
+        bytes calldata data
+    )
+        external
+        pure
+        returns (bytes memory)
+    {
         Execution[] memory e = new Execution[](2);
-        e[0] = Execution({target: t, value: 0, callData: abi.encodeWithSelector(IERC20.approve.selector, m, a)});
-        e[1] = Execution({target: m, value: 0, callData: abi.encodeCall(IMetaSwap.swap, (agg, IERC20(t), a, data))});
+        e[0] = Execution({ target: t, value: 0, callData: abi.encodeWithSelector(IERC20.approve.selector, m, a) });
+        e[1] = Execution({ target: m, value: 0, callData: abi.encodeCall(IMetaSwap.swap, (agg, IERC20(t), a, data)) });
         return e.encodeBatch();
     }
-    function solSwapOnly(address m, address t, uint256 a, string calldata agg, bytes calldata data) external pure returns (bytes memory) {
+
+    function solSwapOnly(
+        address m,
+        address t,
+        uint256 a,
+        string calldata agg,
+        bytes calldata data
+    )
+        external
+        pure
+        returns (bytes memory)
+    {
         Execution[] memory e = new Execution[](1);
-        e[0] = Execution({target: m, value: 0, callData: abi.encodeCall(IMetaSwap.swap, (agg, IERC20(t), a, data))});
+        e[0] = Execution({ target: m, value: 0, callData: abi.encodeCall(IMetaSwap.swap, (agg, IERC20(t), a, data)) });
         return e.encodeBatch();
     }
-    function solReset(address m, address t, uint256 a, string calldata agg, bytes calldata data) external pure returns (bytes memory) {
+
+    function solReset(
+        address m,
+        address t,
+        uint256 a,
+        string calldata agg,
+        bytes calldata data
+    )
+        external
+        pure
+        returns (bytes memory)
+    {
         Execution[] memory e = new Execution[](3);
-        e[0] = Execution({target: t, value: 0, callData: abi.encodeWithSelector(IERC20.approve.selector, m, 0)});
-        e[1] = Execution({target: t, value: 0, callData: abi.encodeWithSelector(IERC20.approve.selector, m, a)});
-        e[2] = Execution({target: m, value: 0, callData: abi.encodeCall(IMetaSwap.swap, (agg, IERC20(t), a, data))});
+        e[0] = Execution({ target: t, value: 0, callData: abi.encodeWithSelector(IERC20.approve.selector, m, 0) });
+        e[1] = Execution({ target: t, value: 0, callData: abi.encodeWithSelector(IERC20.approve.selector, m, a) });
+        e[2] = Execution({ target: m, value: 0, callData: abi.encodeCall(IMetaSwap.swap, (agg, IERC20(t), a, data)) });
         return e.encodeBatch();
     }
 
@@ -112,29 +145,39 @@ contract RouteRebuildClarityProbe is Test {
         console2.log("approveSwap_fair|delta", int256(solG) - int256(asmG));
     }
 
-    function solBuildFromRoute(address m, address t, uint256 a, uint256 mode, bytes calldata route) external pure returns (bytes memory) {
+    function solBuildFromRoute(
+        address m,
+        address t,
+        uint256 a,
+        uint256 mode,
+        bytes calldata route
+    )
+        external
+        pure
+        returns (bytes memory)
+    {
         uint256 aggLen = uint8(route[0]);
         require(aggLen != 0 && route.length >= 1 + aggLen + 2, "route");
         uint256 dataLenPos = 1 + aggLen;
-        uint256 dataLen = uint16(bytes2(route[dataLenPos:dataLenPos+2]));
+        uint256 dataLen = uint16(bytes2(route[dataLenPos:dataLenPos + 2]));
         require(dataLen >= 64 && route.length == dataLenPos + 2 + dataLen, "route2");
-        string memory agg = string(route[1:1+aggLen]);
-        bytes memory data = route[dataLenPos+2:];
+        string memory agg = string(route[1:1 + aggLen]);
+        bytes memory data = route[dataLenPos + 2:];
         if (mode == 1) {
             Execution[] memory e1 = new Execution[](1);
-            e1[0] = Execution({target: m, value: 0, callData: abi.encodeCall(IMetaSwap.swap, (agg, IERC20(t), a, data))});
+            e1[0] = Execution({ target: m, value: 0, callData: abi.encodeCall(IMetaSwap.swap, (agg, IERC20(t), a, data)) });
             return e1.encodeBatch();
         }
         if (mode == 2) {
             Execution[] memory e2 = new Execution[](2);
-            e2[0] = Execution({target: t, value: 0, callData: abi.encodeWithSelector(IERC20.approve.selector, m, a)});
-            e2[1] = Execution({target: m, value: 0, callData: abi.encodeCall(IMetaSwap.swap, (agg, IERC20(t), a, data))});
+            e2[0] = Execution({ target: t, value: 0, callData: abi.encodeWithSelector(IERC20.approve.selector, m, a) });
+            e2[1] = Execution({ target: m, value: 0, callData: abi.encodeCall(IMetaSwap.swap, (agg, IERC20(t), a, data)) });
             return e2.encodeBatch();
         }
         Execution[] memory e3 = new Execution[](3);
-        e3[0] = Execution({target: t, value: 0, callData: abi.encodeWithSelector(IERC20.approve.selector, m, 0)});
-        e3[1] = Execution({target: t, value: 0, callData: abi.encodeWithSelector(IERC20.approve.selector, m, a)});
-        e3[2] = Execution({target: m, value: 0, callData: abi.encodeCall(IMetaSwap.swap, (agg, IERC20(t), a, data))});
+        e3[0] = Execution({ target: t, value: 0, callData: abi.encodeWithSelector(IERC20.approve.selector, m, 0) });
+        e3[1] = Execution({ target: t, value: 0, callData: abi.encodeWithSelector(IERC20.approve.selector, m, a) });
+        e3[2] = Execution({ target: m, value: 0, callData: abi.encodeCall(IMetaSwap.swap, (agg, IERC20(t), a, data)) });
         return e3.encodeBatch();
     }
 }

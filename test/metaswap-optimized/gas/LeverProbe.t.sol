@@ -33,7 +33,10 @@ contract LeverProbeTest is OptimizedHarness {
     function _exactDigest(address manager_, ExactOrder memory order_) internal view override returns (bytes32) {
         return MessageHashUtils.toTypedDataHash(
             FinalManager(manager_).getDomainHash(),
-            FinalManager(manager_).hashExactBatch(order_.delegator, order_.nonce, keccak256(order_.batch))
+            FinalManager(manager_)
+                .hashExactBatch(
+                    order_.delegator, order_.nonce, order_.validAfter, order_.validUntil, order_.redeemers, keccak256(order_.batch)
+                )
         );
     }
 
@@ -47,9 +50,7 @@ contract LeverProbeTest is OptimizedHarness {
         override
         returns (bytes memory)
     {
-        return abi.encodePacked(
-            FinalManager.redeemExactBatch.selector, order_.delegator, order_.nonce, signature_, order_.batch
-        );
+        return bytes.concat(abi.encodePacked(FinalManager.redeemExactBatch.selector), _exactHead(order_), signature_, order_.batch);
     }
 
     function _limitDigest(address manager_, LimitParams memory params_) internal view override returns (bytes32) {
@@ -67,9 +68,8 @@ contract LeverProbeTest is OptimizedHarness {
             validUntil: params_.validUntil,
             redeemers: params_.redeemers
         });
-        return MessageHashUtils.toTypedDataHash(
-            FinalManager(manager_).getDomainHash(), FinalManager(manager_).hashLimitOrder(order_)
-        );
+        return
+            MessageHashUtils.toTypedDataHash(FinalManager(manager_).getDomainHash(), FinalManager(manager_).hashLimitOrder(order_));
     }
 
     function _limitCalldata(
@@ -215,7 +215,7 @@ contract LeverProbeTest is OptimizedHarness {
         ExactOrder memory o_ = _defaultExact(Shape.Erc20ToErc20);
         _calldataOnly(
             "exact-header+batch",
-            abi.encodePacked(FinalManager.redeemExactBatch.selector, o_.delegator, o_.nonce, sig_, o_.batch)
+            bytes.concat(abi.encodePacked(FinalManager.redeemExactBatch.selector), _exactHead(o_), sig_, o_.batch)
         );
     }
 
@@ -249,15 +249,7 @@ contract LeverProbeTest is OptimizedHarness {
         return bytes.concat(head_, mid_, _packAddresses(p_.redeemers), _sign(p_.key, digest_), _routeBytes());
     }
 
-    function _packLimit(
-        bool withRecipient_,
-        bytes memory sig_,
-        bytes memory tail_
-    )
-        private
-        view
-        returns (bytes memory)
-    {
+    function _packLimit(bool withRecipient_, bytes memory sig_, bytes memory tail_) private view returns (bytes memory) {
         LimitParams memory p_ = _defaultLimit(Shape.Erc20ToErc20);
         bytes memory head_ = abi.encodePacked(
             FinalManager.redeemLimitOrder.selector,

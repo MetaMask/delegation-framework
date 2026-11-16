@@ -137,31 +137,19 @@ contract RouteRebuildInputStyleProbe is Test {
     {
         if (mode_ == 1) {
             Execution[] memory e1_ = new Execution[](1);
-            e1_[0] = Execution({
-                target: m_, value: 0, callData: abi.encodeCall(IMetaSwap.swap, (agg_, IERC20(t_), a_, data_))
-            });
+            e1_[0] = Execution({ target: m_, value: 0, callData: abi.encodeCall(IMetaSwap.swap, (agg_, IERC20(t_), a_, data_)) });
             return e1_.encodeBatch();
         }
         if (mode_ == 2) {
             Execution[] memory e2_ = new Execution[](2);
-            e2_[0] = Execution({
-                target: t_, value: 0, callData: abi.encodeWithSelector(IERC20.approve.selector, m_, a_)
-            });
-            e2_[1] = Execution({
-                target: m_, value: 0, callData: abi.encodeCall(IMetaSwap.swap, (agg_, IERC20(t_), a_, data_))
-            });
+            e2_[0] = Execution({ target: t_, value: 0, callData: abi.encodeWithSelector(IERC20.approve.selector, m_, a_) });
+            e2_[1] = Execution({ target: m_, value: 0, callData: abi.encodeCall(IMetaSwap.swap, (agg_, IERC20(t_), a_, data_)) });
             return e2_.encodeBatch();
         }
         Execution[] memory e3_ = new Execution[](3);
-        e3_[0] = Execution({
-            target: t_, value: 0, callData: abi.encodeWithSelector(IERC20.approve.selector, m_, 0)
-        });
-        e3_[1] = Execution({
-            target: t_, value: 0, callData: abi.encodeWithSelector(IERC20.approve.selector, m_, a_)
-        });
-        e3_[2] = Execution({
-            target: m_, value: 0, callData: abi.encodeCall(IMetaSwap.swap, (agg_, IERC20(t_), a_, data_))
-        });
+        e3_[0] = Execution({ target: t_, value: 0, callData: abi.encodeWithSelector(IERC20.approve.selector, m_, 0) });
+        e3_[1] = Execution({ target: t_, value: 0, callData: abi.encodeWithSelector(IERC20.approve.selector, m_, a_) });
+        e3_[2] = Execution({ target: m_, value: 0, callData: abi.encodeCall(IMetaSwap.swap, (agg_, IERC20(t_), a_, data_)) });
         return e3_.encodeBatch();
     }
 }

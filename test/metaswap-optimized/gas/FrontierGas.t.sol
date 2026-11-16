@@ -34,7 +34,10 @@ contract FrontierGasTest is OptimizedHarness {
     function _exactDigest(address manager_, ExactOrder memory order_) internal view override returns (bytes32) {
         return MessageHashUtils.toTypedDataHash(
             FinalManager(manager_).getDomainHash(),
-            FinalManager(manager_).hashExactBatch(order_.delegator, order_.nonce, keccak256(order_.batch))
+            FinalManager(manager_)
+                .hashExactBatch(
+                    order_.delegator, order_.nonce, order_.validAfter, order_.validUntil, order_.redeemers, keccak256(order_.batch)
+                )
         );
     }
 
@@ -48,9 +51,7 @@ contract FrontierGasTest is OptimizedHarness {
         override
         returns (bytes memory)
     {
-        return abi.encodePacked(
-            FinalManager.redeemExactBatch.selector, order_.delegator, order_.nonce, signature_, order_.batch
-        );
+        return bytes.concat(abi.encodePacked(FinalManager.redeemExactBatch.selector), _exactHead(order_), signature_, order_.batch);
     }
 
     function _limitDigest(address manager_, LimitParams memory params_) internal view override returns (bytes32) {
@@ -68,9 +69,8 @@ contract FrontierGasTest is OptimizedHarness {
             validUntil: params_.validUntil,
             redeemers: params_.redeemers
         });
-        return MessageHashUtils.toTypedDataHash(
-            FinalManager(manager_).getDomainHash(), FinalManager(manager_).hashLimitOrder(order_)
-        );
+        return
+            MessageHashUtils.toTypedDataHash(FinalManager(manager_).getDomainHash(), FinalManager(manager_).hashLimitOrder(order_));
     }
 
     function _limitCalldata(

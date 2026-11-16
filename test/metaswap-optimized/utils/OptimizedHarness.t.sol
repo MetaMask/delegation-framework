@@ -157,6 +157,9 @@ abstract contract OptimizedHarness is BaseTest {
         address delegate;
         address delegator;
         uint256 nonce;
+        uint128 validAfter;
+        uint128 validUntil;
+        address[] redeemers;
         bytes batch;
     }
 
@@ -196,7 +199,7 @@ abstract contract OptimizedHarness is BaseTest {
     bool internal supportsLimit = true;
     /// @dev False for Optimized / DirectRoute (ECDSA / 7702 EOA only). True for `MetaSwapOrderDelegationManager`.
     bool internal supportsErc1271 = true;
-    /// @dev True when ExactBatch has no signed delegate (any submitter). False for Order manager.
+    /// @dev True when ExactBatch accepts any submitter. False when a delegate or redeemer list gates it.
     bool internal openExactSubmission;
     /// @dev True when LimitOrder / ExactBatch still sign a delegate field (Order manager).
     bool internal signsDelegate = true;
@@ -279,22 +282,36 @@ abstract contract OptimizedHarness is BaseTest {
         vm.etch(account_, bytes.concat(hex"ef0100", abi.encodePacked(implementation_)));
     }
 
-    function _defaultExact(Shape shape_) internal view returns (ExactOrder memory) {
-        return ExactOrder({
-            key: ORDER_ALICE_KEY,
-            delegate: relayer,
-            delegator: orderAlice,
-            nonce: DEFAULT_NONCE,
-            batch: ExecutionLib.encodeBatch(_executions(shape_, address(metaSwap), TOKEN_OUT_AMOUNT))
-        });
+    function _defaultExact(Shape shape_) internal view returns (ExactOrder memory order_) {
+        order_.key = ORDER_ALICE_KEY;
+        order_.delegate = relayer;
+        order_.delegator = orderAlice;
+        order_.nonce = DEFAULT_NONCE;
+        order_.validUntil = expiresAt;
+        order_.redeemers = _defaultRedeemers();
+        order_.batch = ExecutionLib.encodeBatch(_executions(shape_, address(metaSwap), TOKEN_OUT_AMOUNT));
     }
 
-    function _defaultLimit(Shape shape_) internal view returns (LimitParams memory params_) {
-        address[] memory redeemers_ = new address[](4);
+    function _defaultRedeemers() internal view returns (address[] memory redeemers_) {
+        redeemers_ = new address[](4);
         redeemers_[1] = signerA;
         redeemers_[2] = signerB;
         redeemers_[3] = relayer;
+    }
 
+    /// @dev Packed exact auth: delegator, nonce, timestamp, redeemer count, redeemers.
+    function _exactHead(ExactOrder memory order_) internal pure returns (bytes memory) {
+        return abi.encodePacked(
+            order_.delegator,
+            order_.nonce,
+            order_.validAfter,
+            order_.validUntil,
+            uint8(order_.redeemers.length),
+            _packAddresses(order_.redeemers)
+        );
+    }
+
+    function _defaultLimit(Shape shape_) internal view returns (LimitParams memory params_) {
         params_.key = ORDER_ALICE_KEY;
         params_.delegate = ANY;
         params_.delegator = orderAlice;
@@ -304,7 +321,7 @@ abstract contract OptimizedHarness is BaseTest {
         params_.recipient = orderAlice;
         params_.tokenOutMin = TOKEN_OUT_MIN;
         params_.validUntil = expiresAt;
-        params_.redeemers = redeemers_;
+        params_.redeemers = _defaultRedeemers();
         if (shape_ == Shape.NativeToErc20) {
             params_.tokenOut = address(tokenOut);
         } else {

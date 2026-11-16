@@ -17,7 +17,9 @@ import { BasicERC20 } from "../../utils/BasicERC20.t.sol";
 import { BaseTest } from "../../utils/BaseTest.t.sol";
 import { Implementation, SignatureType } from "../../utils/Types.t.sol";
 
-/// @dev Same swap body for every comparison. Output is paid to `msg.sender`, the 7702 user.
+/// @dev Output is paid to `msg.sender`, the 7702 user.
+///      A quote encodes `(tokenOut, amountOut, route)`. A gasless quote appends
+///      `(fee, feeWallet, feeFromSource)` and the fee is settled inside this call.
 contract GasComparisonMetaSwapMock is IMetaSwap {
     using SafeERC20 for IERC20;
 
@@ -25,18 +27,33 @@ contract GasComparisonMetaSwapMock is IMetaSwap {
 
     function swap(string calldata, IERC20 tokenFrom_, uint256 amount_, bytes calldata data_) external payable {
         (IERC20 tokenOut_, uint256 amountOut_) = abi.decode(data_, (IERC20, uint256));
+        (uint256 fee_, address feeWallet_, bool feeFromSource_) = _embeddedFee(data_);
         if (address(tokenFrom_) == address(0)) {
             require(msg.value == amount_, "invalid-native-value");
+            require(!feeFromSource_, "native-source-fee");
         } else {
             require(msg.value == 0, "unexpected-native-value");
             tokenFrom_.safeTransferFrom(msg.sender, address(this), amount_);
+            if (feeFromSource_) tokenFrom_.safeTransfer(feeWallet_, fee_);
         }
         if (address(tokenOut_) == address(0)) {
             (bool success_,) = msg.sender.call{ value: amountOut_ }("");
             require(success_, "native-transfer-failed");
         } else {
-            tokenOut_.safeTransfer(msg.sender, amountOut_);
+            uint256 toUser_ = amountOut_;
+            if (fee_ > 0 && !feeFromSource_) {
+                tokenOut_.safeTransfer(feeWallet_, fee_);
+                toUser_ = amountOut_ - fee_;
+            }
+            tokenOut_.safeTransfer(msg.sender, toUser_);
         }
+    }
+
+    /// @dev `(address, uint256, bytes)` puts the bytes offset at `0x60`. A gasless payload
+    ///      has three more head words, so that offset is `0xc0`.
+    function _embeddedFee(bytes calldata data_) private pure returns (uint256 fee_, address feeWallet_, bool feeFromSource_) {
+        if (data_.length < 96 || uint256(bytes32(data_[64:96])) == 96) return (0, address(0), false);
+        (,,, fee_, feeWallet_, feeFromSource_) = abi.decode(data_, (IERC20, uint256, bytes, uint256, address, bool));
     }
 
     function setAdapter(string calldata, address, bytes4, bytes calldata) external { }
@@ -222,6 +239,28 @@ abstract contract GasComparisonFixture is BaseTest {
                 IMetaSwap.swap,
                 (AGGREGATOR_ID, IERC20(tokenFrom_), amount_, abi.encode(IERC20(tokenOut_), TOKEN_OUT_AMOUNT, routeData))
             )
+        });
+    }
+
+    /// @dev One MetaSwap call. The gas fee is the tail of the adapter payload, not its own execution.
+    ///      A source fee is pulled as part of `amount_`; a destination fee is split from the output.
+    function _swapExecutionWithFee(
+        address tokenFrom_,
+        uint256 amount_,
+        uint256 value_,
+        address tokenOut_,
+        bool feeFromSource_
+    )
+        internal
+        view
+        returns (Execution memory)
+    {
+        bytes memory adapterData_ =
+            abi.encode(IERC20(tokenOut_), TOKEN_OUT_AMOUNT, routeData, GASLESS_FEE_AMOUNT, feeRecipient, feeFromSource_);
+        return Execution({
+            target: address(metaSwap),
+            value: value_,
+            callData: abi.encodeCall(IMetaSwap.swap, (AGGREGATOR_ID, IERC20(tokenFrom_), amount_, adapterData_))
         });
     }
 
@@ -441,7 +480,7 @@ abstract contract LimitGasComparison is GasComparisonFixture {
     }
 }
 
-/// @notice The six gasless exact rows. The self-call baseline, the order manager, and the packed managers use these names.
+/// @notice The six gasless exact rows. The exact-batch baseline, the order manager, and the packed managers use these names.
 abstract contract ExactGasComparison is GasComparisonFixture {
     function _runExact(Shape shape_) internal virtual returns (uint256);
     function _armLaterExact(Shape shape_) internal virtual;

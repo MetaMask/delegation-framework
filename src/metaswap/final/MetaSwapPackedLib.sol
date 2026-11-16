@@ -9,11 +9,23 @@ import { MetaSwapOrderLib } from "./MetaSwapOrderLib.sol";
  * @dev All offsets / shifts live here so the manager stays focused on auth, policy, and execute.
  *
  * Layout (byte offsets include the 4-byte selector):
- *   Exact:  sel | delegator(20) offset 4 | nonce(32) offset 24 | signature(65) offset 56 | batch offset 121…
+ *   Exact:  sel | delegator(20) offset 4 | nonce(32) offset 24 | validAfter(16) offset 56 | validUntil(16) offset 72 |
+ *           redeemerCount(1) offset 88 | redeemers(20*n) offset 89 | signature(65) | batch…
  *   Limit:  sel | delegator(20) offset 4 | nonce(32) offset 24 | terms offsets 56..232 | redeemerCount(1) offset 233 |
  *           redeemers(20*n) offset 234 | signature(65) | batch…
  */
 library MetaSwapPackedLib {
+    /// @dev Exact auth loaded once for the hash, the redeemer scan, and the timestamp check.
+    struct ExactAuth {
+        address delegator;
+        uint256 nonce;
+        uint128 validAfter;
+        uint128 validUntil;
+        bytes32 redeemersHash;
+        uint256 redeemersOffset;
+        uint256 signatureOffset;
+    }
+
     /// @dev Limit terms loaded once for hash / validate / min-out (value types only).
     struct LimitTerms {
         address metaSwap;
@@ -32,7 +44,12 @@ library MetaSwapPackedLib {
 
     uint256 private constant DELEGATOR_OFFSET = 4;
     uint256 private constant NONCE_OFFSET = 24;
-    uint256 private constant SIGNATURE_EXACT_OFFSET = 56;
+    /// @dev End of `delegator | nonce`. Both flows start their own fields here.
+    uint256 private constant AUTH_LENGTH = 56;
+    uint256 private constant EXACT_VALID_AFTER_OFFSET = 56;
+    uint256 private constant EXACT_VALID_UNTIL_OFFSET = 72;
+    uint256 private constant EXACT_REDEEMER_COUNT_OFFSET = 88;
+    uint256 private constant EXACT_REDEEMERS_OFFSET = 89;
     uint256 private constant METASWAP_OFFSET = 56;
     uint256 private constant TOKEN_IN_OFFSET = 76;
     uint256 private constant TOKEN_IN_AMOUNT_OFFSET = 96;
@@ -58,10 +75,23 @@ library MetaSwapPackedLib {
     function decodeExact(bytes calldata data_)
         internal
         pure
-        returns (address delegator_, uint256 nonce_, bytes calldata signature_, bytes calldata batch_)
+        returns (ExactAuth memory auth_, bytes calldata signature_, bytes calldata batch_)
     {
-        (delegator_, nonce_) = _auth(data_);
-        (signature_, batch_) = _sliceSignatureAndPayload(data_, SIGNATURE_EXACT_OFFSET);
+        (auth_.delegator, auth_.nonce) = _auth(data_);
+        if (data_.length < EXACT_REDEEMERS_OFFSET) revert InvalidCalldata();
+
+        uint256 redeemerCount_;
+        assembly ("memory-safe") {
+            redeemerCount_ := byte(0, calldataload(add(data_.offset, EXACT_REDEEMER_COUNT_OFFSET)))
+        }
+        if (redeemerCount_ == 0) revert MetaSwapOrderLib.InvalidTerms();
+
+        auth_.validAfter = uint128(_loadUint128(data_, EXACT_VALID_AFTER_OFFSET));
+        auth_.validUntil = uint128(_loadUint128(data_, EXACT_VALID_UNTIL_OFFSET));
+        auth_.redeemersOffset = EXACT_REDEEMERS_OFFSET;
+        auth_.signatureOffset = EXACT_REDEEMERS_OFFSET + redeemerCount_ * ADDRESS_LENGTH;
+        auth_.redeemersHash = _hashRedeemers(data_, auth_.redeemersOffset, redeemerCount_);
+        (signature_, batch_) = _sliceSignatureAndPayload(data_, auth_.signatureOffset);
     }
 
     function decodeLimit(bytes calldata data_)
@@ -88,25 +118,38 @@ library MetaSwapPackedLib {
 
         terms_ = _loadLimitTerms(data_);
         signatureOffset_ = REDEEMERS_OFFSET + redeemerCount_ * ADDRESS_LENGTH;
-        redeemersHash_ = _hashRedeemers(data_, redeemerCount_);
+        redeemersHash_ = _hashRedeemers(data_, REDEEMERS_OFFSET, redeemerCount_);
         (signature_, batch_) = _sliceSignatureAndPayload(data_, signatureOffset_);
     }
 
-    /// @dev Require `who_` appears in packed redeemers `[REDEEMERS_OFFSET, signatureOffset_)`.
+    /// @dev Require `who_` appears in the Limit redeemer list.
     function requireRedeemer(bytes calldata data_, address who_, uint256 signatureOffset_) internal pure {
-        for (uint256 offset_ = REDEEMERS_OFFSET;; offset_ += ADDRESS_LENGTH) {
+        requireRedeemer(data_, who_, REDEEMERS_OFFSET, signatureOffset_);
+    }
+
+    /// @dev Require `who_` appears in packed redeemers `[redeemersOffset_, signatureOffset_)`.
+    function requireRedeemer(bytes calldata data_, address who_, uint256 redeemersOffset_, uint256 signatureOffset_) internal pure {
+        for (uint256 offset_ = redeemersOffset_;; offset_ += ADDRESS_LENGTH) {
             if (offset_ == signatureOffset_) revert UnauthorizedRedeemer();
             if (_loadAddress(data_, offset_) == who_) return;
         }
     }
 
     /// @dev `keccak256(abi.encodePacked(redeemers))` without building a memory address[].
-    function _hashRedeemers(bytes calldata data_, uint256 redeemerCount_) private pure returns (bytes32 redeemersHash_) {
+    function _hashRedeemers(
+        bytes calldata data_,
+        uint256 redeemersOffset_,
+        uint256 redeemerCount_
+    )
+        private
+        pure
+        returns (bytes32 redeemersHash_)
+    {
         assembly ("memory-safe") {
             let packedRedeemers := mload(0x40)
             let dataStart := data_.offset
             for { let index := 0 } lt(index, redeemerCount_) { index := add(index, 1) } {
-                let calldataOffset := add(dataStart, add(REDEEMERS_OFFSET, mul(index, ADDRESS_LENGTH)))
+                let calldataOffset := add(dataStart, add(redeemersOffset_, mul(index, ADDRESS_LENGTH)))
                 let addressWord := calldataload(calldataOffset)
                 let redeemer := shr(ADDRESS_RSHIFT, addressWord)
                 mstore(add(packedRedeemers, mul(index, WORD_SIZE)), redeemer)
@@ -116,7 +159,7 @@ library MetaSwapPackedLib {
     }
 
     function _auth(bytes calldata data_) private pure returns (address delegator_, uint256 nonce_) {
-        if (data_.length < SIGNATURE_EXACT_OFFSET) revert InvalidCalldata();
+        if (data_.length < AUTH_LENGTH) revert InvalidCalldata();
         assembly ("memory-safe") {
             let dataStart := data_.offset
             let delegatorWord := calldataload(add(dataStart, DELEGATOR_OFFSET))

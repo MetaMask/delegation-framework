@@ -71,6 +71,8 @@ One manager for two flows: an exact batch, and a MetaSwap limit order whose rout
 
 [Read more on "MetaSwap Order Delegation Manager" ->](/documents/MetaSwapSpecializedDelegationManagers.md)
 
+The gas-comparison suite, its baselines, and the manager versions are listed in [MetaSwap gas comparisons](/documents/MetaSwapGasComparisons.md).
+
 ### Caveat Enforcers
 
 Caveats are used to add restrictions and rules for Delegations. By default, a Delegation allows the delegate to make **any** onchain action so caveats are strongly recommended. They are managed by Caveat Enforcer contracts.

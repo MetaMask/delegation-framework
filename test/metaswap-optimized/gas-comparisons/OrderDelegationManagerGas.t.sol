@@ -70,14 +70,16 @@ contract OrderDelegationManagerGasTest is LimitGasComparison, ExactGasComparison
         _prepareLaterGaslessBalances(shape_);
     }
 
-    /// @dev Terms are `intent | keccak256(batch)`. `ANY_DELEGATE` matches open gasless submission.
-    ///      A later order is a new delegation hash, so no id or nonce word carries over.
+    /// @dev Terms are `intent | validAfter | validUntil | keccak256(batch) | four redeemers`.
+    ///      `ANY_DELEGATE` leaves the redeemer list as the caller check. A later order is a new delegation hash.
     function _runExact(Shape shape_) internal override returns (uint256) {
         bytes memory batch_ = ExecutionLib.encodeBatch(_gaslessExecutions(shape_));
         Caveat[] memory caveats_ = new Caveat[](1);
         caveats_[0] = Caveat({
             enforcer: address(orderManager),
-            terms: abi.encodePacked(uint8(MetaSwapOrderDelegationManager.Intent.ExactBatch), keccak256(batch_)),
+            terms: abi.encodePacked(
+                uint8(MetaSwapOrderDelegationManager.Intent.ExactBatch), uint128(0), expiresAt, keccak256(batch_), _redeemerTerms()
+            ),
             args: hex""
         });
         Delegation[] memory chains_ = new Delegation[](1);

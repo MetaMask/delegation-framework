@@ -36,7 +36,10 @@ contract FrontierSecurityTest is OptimizedHarness {
     function _exactDigest(address manager_, ExactOrder memory order_) internal view override returns (bytes32) {
         return MessageHashUtils.toTypedDataHash(
             FinalManager(manager_).getDomainHash(),
-            FinalManager(manager_).hashExactBatch(order_.delegator, order_.nonce, keccak256(order_.batch))
+            FinalManager(manager_)
+                .hashExactBatch(
+                    order_.delegator, order_.nonce, order_.validAfter, order_.validUntil, order_.redeemers, keccak256(order_.batch)
+                )
         );
     }
 
@@ -50,7 +53,7 @@ contract FrontierSecurityTest is OptimizedHarness {
         override
         returns (bytes memory)
     {
-        return abi.encodePacked(FinalManager.redeemExactBatch.selector, order_.delegator, order_.nonce, signature_, order_.batch);
+        return bytes.concat(abi.encodePacked(FinalManager.redeemExactBatch.selector), _exactHead(order_), signature_, order_.batch);
     }
 
     function _limitDigest(address, LimitParams memory) internal pure override returns (bytes32) {
@@ -140,8 +143,13 @@ contract FrontierSecurityTest is OptimizedHarness {
         ExactOrder memory o_ = _defaultExact(Shape.Erc20ToErc20);
         bytes memory data_ = _exactCalldata(address(directMgr), o_, _sign(o_.key, _exactDigest(address(directMgr), o_)));
         _installAccount(orderAlice, address(directMgr));
+        _failAs(makeAddr("outsider"), address(directMgr), data_);
         _ok(address(directMgr), data_);
         _fail(address(directMgr), data_);
+
+        o_.nonce = 4;
+        o_.validUntil = uint128(block.timestamp);
+        _fail(address(directMgr), _exactCalldata(address(directMgr), o_, _sign(o_.key, _exactDigest(address(directMgr), o_))));
     }
 
     function test_direct_limit_redeemsShapesAndRejectsReplay() public {
@@ -241,6 +249,8 @@ contract FrontierSecurityTest is OptimizedHarness {
     function test_direct_nestedExactInsideLimitDocumentsTrustGap() public {
         ExactOrder memory inner_ = _defaultExact(Shape.NativeToErc20);
         inner_.nonce = 2;
+        inner_.redeemers = new address[](1);
+        inner_.redeemers[0] = address(reentrantMetaSwap);
         bytes memory innerData_ =
             _exactCalldata(address(directMgr), inner_, _sign(inner_.key, _exactDigest(address(directMgr), inner_)));
         reentrantMetaSwap.setReentry(address(directMgr), innerData_);

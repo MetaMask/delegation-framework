@@ -769,7 +769,12 @@ contract MetaSwapOrderDelegationManagerTest is Test {
     function test_exactTermsInfo() public {
         bytes memory encoded_ = ExecutionLib.encodeBatch(_erc20Executions(1, TOKEN_OUT_AMOUNT));
         bytes memory terms_ = _exactTerms(keccak256(encoded_));
-        assertEq(orderManager.getExactTermsInfo(terms_), keccak256(encoded_));
+        MetaSwapOrderDelegationManager.ExactTerms memory info_ = orderManager.getExactTermsInfo(terms_);
+        assertEq(info_.executionHash, keccak256(encoded_));
+        assertEq(info_.validAfter, 0);
+        assertEq(info_.validUntil, 0);
+        assertEq(info_.redeemers.length, 1);
+        assertEq(info_.redeemers[0], relayer);
 
         vm.expectRevert(MetaSwapDelegationManagerBase.InvalidTerms.selector);
         orderManager.getExactTermsInfo(hex"00");
@@ -969,8 +974,7 @@ contract MetaSwapOrderDelegationManagerTest is Test {
     }
 
     function test_gas_orderFlexibleNative() public {
-        bytes memory terms_ =
-            _flexibleTerms(address(0), _noneMode(), address(tokenOut), orderAccount, 0, 0, 1, _relayerRedeemers());
+        bytes memory terms_ = _flexibleTerms(address(0), _noneMode(), address(tokenOut), orderAccount, 0, 0, 1, _relayerRedeemers());
         Delegation memory delegation_ = _signIntent(terms_, 112);
         bytes memory encoded_ = ExecutionLib.encodeBatch(_nativeExecutions(TOKEN_OUT_AMOUNT));
 
@@ -990,8 +994,10 @@ contract MetaSwapOrderDelegationManagerTest is Test {
         vm.etch(account_, bytes.concat(hex"ef0100", abi.encodePacked(implementation_)));
     }
 
-    function _exactTerms(bytes32 executionHash_) private pure returns (bytes memory) {
-        return abi.encodePacked(uint8(MetaSwapOrderDelegationManager.Intent.ExactBatch), executionHash_);
+    function _exactTerms(bytes32 executionHash_) private view returns (bytes memory) {
+        return abi.encodePacked(
+            uint8(MetaSwapOrderDelegationManager.Intent.ExactBatch), uint128(0), uint128(0), executionHash_, relayer
+        );
     }
 
     function _flexibleTerms(
