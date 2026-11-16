@@ -67,14 +67,6 @@ What that previous fill leaves behind:
 - **Order id.** `LimitOrderBaseline`, `OrderDelegationManager` limit orders, and `FlexibleSettlementEnforcer` burn an id in a bitmap instead of a nonce. A later fill uses an id in a word that already has another id burned, so that write is cheaper too. The gasless `OrderDelegationManager` path has no nonce and no id, so it does not get this saving.
 - **Token balances.** Every version, including the ones with no nonce, leaves the ERC-20 balances it touched nonzero: the input token, the output token, and on gasless fills the fee recipient. Updating a nonzero balance costs less than creating it. That is why a version with no nonce still costs less on a later fill.
 
-Each cell reads `estimated gas (saving vs baseline)`. A saving is `(baseline − version) / baseline`. The three average columns are unweighted means of the cells they cover:
-
-- **Cold average**: the three cold cells (native, token→ETH, token→token).
-- **Later average**: the three later cells.
-- **Overall**: all six cells. It is the mean of cold and later.
-
-The baseline row has no saving, because it is the reference.
-
 ### Gasless, against `GaslessExecute`
 
 | Version                     |         Native cold |        Native later |      Token→ETH cold |     Token→ETH later |    Token→token cold |   Token→token later |        Cold average |       Later average |             Overall |
