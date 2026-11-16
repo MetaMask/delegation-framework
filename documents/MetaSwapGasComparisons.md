@@ -57,7 +57,11 @@ Re-measured 14 Nov 2026 with `forge test --match-path test/metaswap-optimized/ga
 
 Estimated transaction gas is `21,000 + calldata gas + execution gas`.
 
-**Cold** is the first fill. Nothing from that shape has been written yet. **Later** is a second fill, in its own transaction, with a new signed permission. The first fill has already written the nonce or id word and the ERC-20 balances, so the later fill pays less for those writes. Storage reads are cold in both, because every transaction starts cold.
+### Cold and later
+
+**Cold** is the first fill of that shape. The nonce or id word and the ERC-20 balance slots have not been written yet, so those writes pay the full cost.
+
+**Later** is a second fill of the same shape, in its own transaction, with a new signed permission. The first fill already wrote those slots, so updating them costs less. Storage reads are still cold, because every transaction starts cold.
 
 Each cell reads `estimated gas (saving vs baseline)`. A saving is `(baseline − version) / baseline`. The three average columns are unweighted means of the cells they cover:
 
