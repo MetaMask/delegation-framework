@@ -18,6 +18,17 @@ These redeem through `DelegationManager` with the production caveats.
 
 `LimitOrderBaseline` is the limit-order baseline.
 
+### Where the baselines come from
+
+Each baseline copies the code path below. The links are pinned to the commit I read, so they won't drift when `main` changes.
+
+- **`GaslessExecute`** and **`GaslessFeeTransfer`**: MetaMask mobile, [`delegation-7702-publish.ts`](https://github.com/MetaMask/metamask-mobile/blob/14dfef4a66d835933517f31b38844cc07278cc0d/app/util/transactions/hooks/delegation-7702-publish.ts#L338-L354). Line 339 returns the single execution that `GaslessExecute` uses. Line 354 returns the fee-transfer pair.
+- **Caveats** for those delegations (`LimitedCalls`, `Timestamp`, `Redeemer`, `ExactExecution`): MetaMask mobile, [`caveats.ts`](https://github.com/MetaMask/metamask-mobile/blob/14dfef4a66d835933517f31b38844cc07278cc0d/app/util/transactions/caveats.ts#L67), with the exact-execution caveat at [line 109](https://github.com/MetaMask/metamask-mobile/blob/14dfef4a66d835933517f31b38844cc07278cc0d/app/util/transactions/caveats.ts#L109).
+- **`LimitOrderBaseline`**: bridge-api, [`limit-order-delegation.policy.ts`](https://github.com/consensys-vertical-apps/va-mmcx-bridge-api/blob/685e036057c09484ef4bc0af9e64be91159a8df3/src/modules/orders/limit/delegation/limit-order-delegation.policy.ts#L170-L251). Lines 170–194 are the approval, and lines 196–251 are the swap.
+- **Redeemer list** (sponsor signers): bridge-api, [`delegation-framework.constants.ts`](https://github.com/consensys-vertical-apps/va-mmcx-bridge-api/blob/685e036057c09484ef4bc0af9e64be91159a8df3/src/modules/delegation-framework/delegation-framework.constants.ts#L58).
+
+The bridge-api repo is private, so those links need access to `consensys-vertical-apps/va-mmcx-bridge-api`.
+
 ## Solutions
 
 Each of these runs the gasless rows and the limit rows.
@@ -40,7 +51,9 @@ Each of these runs the gasless rows and the limit rows.
 
 Re-measured 14 Nov 2026 with `forge test --match-path test/metaswap-optimized/gas-comparisons/*.sol -vv`.
 
-Estimated transaction gas is `21,000 + calldata gas + execution gas`. Cold is the first fill. Later is a second fill after the nonce or id word and the token slots from that shape have been written; the signed permission is new.
+Estimated transaction gas is `21,000 + calldata gas + execution gas`.
+
+**Cold** is the first fill. Nothing from that shape has been written yet. **Later** is a second fill, in its own transaction, with a new signed permission. The first fill has already written the nonce or id word and the ERC-20 balances, so the later fill pays less for those writes. Storage reads are cold in both, because every transaction starts cold.
 
 Each cell reads `estimated gas (saving vs baseline)`. A saving is `(baseline − version) / baseline`. The three average columns are unweighted means of the cells they cover:
 
