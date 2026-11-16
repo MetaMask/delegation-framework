@@ -65,12 +65,35 @@ contract GasComparisonMetaSwapMock is IMetaSwap {
     }
 }
 
+interface IVmGas {
+    struct Gas {
+        uint256 gasLimit;
+        uint256 gasTotalUsed;
+        uint256 gasMemoryUsed;
+        uint256 gasRefunded;
+        uint256 gasRemaining;
+    }
+
+    function lastCallGas() external view returns (Gas memory);
+}
+
+/// @dev One storage write. Used to tell a second transaction from a second call in the same transaction.
+contract IsolationProbe {
+    uint256 private slot;
+
+    function write(uint256 value_) external {
+        slot = value_;
+    }
+}
+
 /**
  * @notice Shared gas-comparison fixture.
  * @dev One user (`USER_KEY`) is etched with `EIP7702StatelessDeleGator` bound to the manager that file redeems
  *      through. The account has to name that manager. Installation, funding, route, and redeemers are the same.
- *      A later transaction signs a new permission. `vm.store` leaves the id or nonce word and the token slots
- *      that shape writes non-zero, and those slots stay cold.
+ *      Cold is the first fill. Later is the next fill, sent as its own transaction, with a new signature.
+ *      Run with `--isolate`: each external call is a transaction, state persists, and storage reads start
+ *      cold again. Without it these tests skip. The logged gas is the receipt. Foundry has already
+ *      subtracted the refund, and that refund cannot exceed one fifth of the gas spent.
  */
 abstract contract GasComparisonFixture is BaseTest {
     uint256 internal constant USER_KEY = 0x0D1;
@@ -78,8 +101,8 @@ abstract contract GasComparisonFixture is BaseTest {
     uint256 internal constant TOKEN_OUT_MIN = 190 ether;
     uint256 internal constant TOKEN_OUT_AMOUNT = 200 ether;
     uint256 internal constant GASLESS_FEE_AMOUNT = 10 ether;
-    uint256 internal constant INTRINSIC_GAS = 21_000;
-    uint256 internal constant MEASURED_NONCE = 1;
+    /// @dev A live quote's route bytes are nonzero. Zero bytes would undercharge the calldata.
+    uint256 internal constant ROUTE_DATA_LENGTH = 512;
     string internal constant AGGREGATOR_ID = "actual-aggregator-with-different-length";
 
     enum Shape {
@@ -87,6 +110,9 @@ abstract contract GasComparisonFixture is BaseTest {
         Erc20ToNative,
         Erc20ToErc20
     }
+
+    /// @dev Refund applied to the last measured call. The log reads it after that call.
+    uint256 internal lastRefund;
 
     address internal user;
     address internal relayer;
@@ -112,7 +138,10 @@ abstract contract GasComparisonFixture is BaseTest {
         signerB = makeAddr("SignerB");
         feeRecipient = makeAddr("GaslessFeeRecipient");
         expiresAt = uint128(block.timestamp + 1 days);
-        routeData = new bytes(160);
+        routeData = new bytes(ROUTE_DATA_LENGTH);
+        for (uint256 i_; i_ < ROUTE_DATA_LENGTH; ++i_) {
+            routeData[i_] = bytes1(uint8((i_ % 251) + 1));
+        }
 
         tokenIn = new BasicERC20(address(this), "Token In", "TIN", 0);
         tokenOut = new BasicERC20(address(this), "Token Out", "TOUT", 0);
@@ -120,6 +149,10 @@ abstract contract GasComparisonFixture is BaseTest {
 
         tokenIn.mint(user, 100_000 ether);
         tokenOut.mint(address(metaSwap), 100_000 ether);
+        // The router already holds the input token, and the fee wallet already holds both tokens.
+        tokenIn.mint(address(metaSwap), 1);
+        tokenIn.mint(feeRecipient, 1);
+        tokenOut.mint(feeRecipient, 1);
         vm.deal(user, 100_000 ether);
         vm.deal(address(metaSwap), 100_000 ether);
         _installComparison();
@@ -135,9 +168,23 @@ abstract contract GasComparisonFixture is BaseTest {
 
     function _comparisonName() internal pure virtual returns (string memory);
 
-    function _log(string memory label_, uint256 estimatedTransactionGas_) internal pure {
+    function _log(string memory label_, uint256 charged_) internal view {
         console2.log(string.concat(_comparisonName(), " / ", label_));
-        console2.log("  estimated tx", estimatedTransactionGas_);
+        console2.log("  charged", charged_);
+        console2.log("  refund", lastRefund);
+    }
+
+    /// @dev A same-transaction second fill updates slots that are already dirty, so the receipt would be wrong.
+    ///      Returns false, and skips the test, unless this run used `--isolate`.
+    function _requireIsolatedTransactions() internal returns (bool) {
+        IsolationProbe probe_ = new IsolationProbe();
+        probe_.write(1);
+        probe_.write(2);
+        if (IVmGas(address(vm)).lastCallGas().gasTotalUsed <= 20_000) {
+            vm.skip(true);
+            return false;
+        }
+        return true;
     }
 
     function _redeemers() internal view returns (address[] memory redeemers_) {
@@ -276,19 +323,17 @@ abstract contract GasComparisonFixture is BaseTest {
         uint256 tokenInBefore_ = tokenIn.balanceOf(user);
         uint256 tokenOutBefore_ = tokenOut.balanceOf(user);
         uint256 nativeBefore_ = user.balance;
-        uint256 calldataGas_ = _calldataGas(data_);
 
         vm.prank(relayer);
-        uint256 gasBefore_ = gasleft();
         (bool success_, bytes memory result_) = target_.call(data_);
-        uint256 executionGas_ = gasBefore_ - gasleft();
+        uint256 charged_ = _chargedGas();
         if (!success_) {
             assembly {
                 revert(add(result_, 0x20), mload(result_))
             }
         }
         _assertFilled(shape_, tokenInBefore_, tokenOutBefore_, nativeBefore_);
-        return INTRINSIC_GAS + calldataGas_ + executionGas_;
+        return charged_;
     }
 
     function _measureGasless(address target_, bytes memory data_, Shape shape_) internal returns (uint256) {
@@ -296,19 +341,26 @@ abstract contract GasComparisonFixture is BaseTest {
         uint256 tokenOutBefore_ = tokenOut.balanceOf(user);
         uint256 nativeBefore_ = user.balance;
         uint256 feeBefore_ = _gaslessFeeToken(shape_).balanceOf(feeRecipient);
-        uint256 calldataGas_ = _calldataGas(data_);
 
         vm.prank(relayer);
-        uint256 gasBefore_ = gasleft();
         (bool success_, bytes memory result_) = target_.call(data_);
-        uint256 executionGas_ = gasBefore_ - gasleft();
+        uint256 charged_ = _chargedGas();
         if (!success_) {
             assembly {
                 revert(add(result_, 0x20), mload(result_))
             }
         }
         _assertGaslessFilled(shape_, tokenInBefore_, tokenOutBefore_, nativeBefore_, feeBefore_);
-        return INTRINSIC_GAS + calldataGas_ + executionGas_;
+        return charged_;
+    }
+
+    /// @dev Receipt gas of the last call. `gasTotalUsed` is gas spent minus the applied refund, and
+    ///      `gasRefunded` is that applied refund, already capped at one fifth of gas spent. Subtracting it
+    ///      again would undercharge the receipt.
+    function _chargedGas() internal returns (uint256 charged_) {
+        IVmGas.Gas memory gas_ = IVmGas(address(vm)).lastCallGas();
+        lastRefund = gas_.gasRefunded;
+        charged_ = gas_.gasTotalUsed;
     }
 
     function _redeemDelegations(
@@ -353,46 +405,6 @@ abstract contract GasComparisonFixture is BaseTest {
         return _measureGasless(manager_, data_, shape_);
     }
 
-    /// @dev Token slots a previous fill of this shape leaves behind. Slots stay cold.
-    function _prepareLaterBalances(Shape shape_) internal {
-        if (shape_ != Shape.NativeToErc20) {
-            vm.store(address(tokenIn), keccak256(abi.encode(address(metaSwap), uint256(0))), bytes32(uint256(1)));
-        }
-        if (shape_ != Shape.Erc20ToNative) {
-            vm.store(address(tokenOut), keccak256(abi.encode(user, uint256(0))), bytes32(uint256(1)));
-        }
-    }
-
-    /// @dev Token slots a previous gasless exact fill leaves behind. Slots stay cold.
-    function _prepareLaterGaslessBalances(Shape shape_) internal {
-        _prepareLaterBalances(shape_);
-        IERC20 feeToken_ = _gaslessFeeToken(shape_);
-        vm.store(address(feeToken_), keccak256(abi.encode(feeRecipient, uint256(0))), bytes32(uint256(1)));
-    }
-
-    /**
-     * @dev Balances plus bit 200 of an id or nonce word. Bit 1 stays free.
-     *      `throughDelegationManager_` is the IdEnforcer / FlexibleSettlement bitmap, keyed by manager then user.
-     */
-    function _prepareLaterFill(Shape shape_, address bitmapContract_, uint256 mapSlot_, bool throughDelegationManager_) internal {
-        _prepareLaterBalances(shape_);
-
-        bytes32 innerSlot_;
-        if (throughDelegationManager_) {
-            bytes32 managerSlot_ = keccak256(abi.encode(address(delegationManager), mapSlot_));
-            innerSlot_ = keccak256(abi.encode(user, managerSlot_));
-        } else {
-            innerSlot_ = keccak256(abi.encode(user, mapSlot_));
-        }
-        vm.store(bitmapContract_, keccak256(abi.encode(uint256(0), innerSlot_)), bytes32(uint256(1) << 200));
-    }
-
-    function _prepareLaterGaslessFill(Shape shape_, address bitmapContract_, uint256 mapSlot_) internal {
-        _prepareLaterGaslessBalances(shape_);
-        bytes32 innerSlot_ = keccak256(abi.encode(user, mapSlot_));
-        vm.store(bitmapContract_, keccak256(abi.encode(uint256(0), innerSlot_)), bytes32(uint256(1) << 200));
-    }
-
     function _assertFilled(Shape shape_, uint256 tokenInBefore_, uint256 tokenOutBefore_, uint256 nativeBefore_) private {
         if (shape_ == Shape.NativeToErc20) {
             assertEq(user.balance, nativeBefore_ - TOKEN_IN_AMOUNT);
@@ -432,12 +444,6 @@ abstract contract GasComparisonFixture is BaseTest {
         return shape_ == Shape.Erc20ToNative ? IERC20(address(tokenIn)) : IERC20(address(tokenOut));
     }
 
-    function _calldataGas(bytes memory data_) private pure returns (uint256 gas_) {
-        for (uint256 i_; i_ < data_.length; ++i_) {
-            gas_ += data_[i_] == 0 ? 4 : 16;
-        }
-    }
-
     function _singleMode() internal pure returns (ModeCode) {
         return ModeLib.encodeSimpleSingle();
     }
@@ -447,68 +453,78 @@ abstract contract GasComparisonFixture is BaseTest {
     }
 }
 
-/// @notice The six limit rows. Every limit baseline and every packed manager's limit flow uses these names.
+/// @notice The six limit rows. Fill 1 is cold. The later test fills 1, then measures fill 2 as the next transaction.
 abstract contract LimitGasComparison is GasComparisonFixture {
-    function _run(Shape shape_) internal virtual returns (uint256);
-    function _armLater(Shape shape_) internal virtual;
+    function _run(Shape shape_, uint256 fill_) internal virtual returns (uint256);
 
     function test_gas_nativeToErc20() public {
-        _log("native to erc20", _run(Shape.NativeToErc20));
+        if (!_requireIsolatedTransactions()) return;
+        _log("native to erc20", _run(Shape.NativeToErc20, 1));
     }
 
     function test_gas_nativeToErc20_laterTransaction() public {
-        _armLater(Shape.NativeToErc20);
-        _log("native to erc20 / later tx", _run(Shape.NativeToErc20));
+        if (!_requireIsolatedTransactions()) return;
+        _run(Shape.NativeToErc20, 1);
+        _log("native to erc20 / later tx", _run(Shape.NativeToErc20, 2));
     }
 
     function test_gas_erc20ToNative() public {
-        _log("erc20 to native", _run(Shape.Erc20ToNative));
+        if (!_requireIsolatedTransactions()) return;
+        _log("erc20 to native", _run(Shape.Erc20ToNative, 1));
     }
 
     function test_gas_erc20ToNative_laterTransaction() public {
-        _armLater(Shape.Erc20ToNative);
-        _log("erc20 to native / later tx", _run(Shape.Erc20ToNative));
+        if (!_requireIsolatedTransactions()) return;
+        _run(Shape.Erc20ToNative, 1);
+        _log("erc20 to native / later tx", _run(Shape.Erc20ToNative, 2));
     }
 
     function test_gas_erc20ToErc20() public {
-        _log("erc20 to erc20", _run(Shape.Erc20ToErc20));
+        if (!_requireIsolatedTransactions()) return;
+        _log("erc20 to erc20", _run(Shape.Erc20ToErc20, 1));
     }
 
     function test_gas_erc20ToErc20_laterTransaction() public {
-        _armLater(Shape.Erc20ToErc20);
-        _log("erc20 to erc20 / later tx", _run(Shape.Erc20ToErc20));
+        if (!_requireIsolatedTransactions()) return;
+        _run(Shape.Erc20ToErc20, 1);
+        _log("erc20 to erc20 / later tx", _run(Shape.Erc20ToErc20, 2));
     }
 }
 
-/// @notice The six gasless exact rows. The exact-batch baseline, the order manager, and the packed managers use these names.
+/// @notice The six gasless exact rows. Fill 1 is cold. The later test fills 1, then measures fill 2 as the next transaction.
 abstract contract ExactGasComparison is GasComparisonFixture {
-    function _runExact(Shape shape_) internal virtual returns (uint256);
-    function _armLaterExact(Shape shape_) internal virtual;
+    function _runExact(Shape shape_, uint256 fill_) internal virtual returns (uint256);
 
     function test_gas_exact_nativeToErc20() public {
-        _log("exact / native to erc20", _runExact(Shape.NativeToErc20));
+        if (!_requireIsolatedTransactions()) return;
+        _log("exact / native to erc20", _runExact(Shape.NativeToErc20, 1));
     }
 
     function test_gas_exact_nativeToErc20_laterTransaction() public {
-        _armLaterExact(Shape.NativeToErc20);
-        _log("exact / native to erc20 / later tx", _runExact(Shape.NativeToErc20));
+        if (!_requireIsolatedTransactions()) return;
+        _runExact(Shape.NativeToErc20, 1);
+        _log("exact / native to erc20 / later tx", _runExact(Shape.NativeToErc20, 2));
     }
 
     function test_gas_exact_erc20ToNative() public {
-        _log("exact / erc20 to native", _runExact(Shape.Erc20ToNative));
+        if (!_requireIsolatedTransactions()) return;
+        _log("exact / erc20 to native", _runExact(Shape.Erc20ToNative, 1));
     }
 
     function test_gas_exact_erc20ToNative_laterTransaction() public {
-        _armLaterExact(Shape.Erc20ToNative);
-        _log("exact / erc20 to native / later tx", _runExact(Shape.Erc20ToNative));
+        if (!_requireIsolatedTransactions()) return;
+        _runExact(Shape.Erc20ToNative, 1);
+        _log("exact / erc20 to native / later tx", _runExact(Shape.Erc20ToNative, 2));
     }
 
     function test_gas_exact_erc20ToErc20() public {
-        _log("exact / erc20 to erc20", _runExact(Shape.Erc20ToErc20));
+        if (!_requireIsolatedTransactions()) return;
+        _log("exact / erc20 to erc20", _runExact(Shape.Erc20ToErc20, 1));
     }
 
     function test_gas_exact_erc20ToErc20_laterTransaction() public {
-        _armLaterExact(Shape.Erc20ToErc20);
-        _log("exact / erc20 to erc20 / later tx", _runExact(Shape.Erc20ToErc20));
+        if (!_requireIsolatedTransactions()) return;
+        _runExact(Shape.Erc20ToErc20, 1);
+        _log("exact / erc20 to erc20 / later tx", _runExact(Shape.Erc20ToErc20, 2));
     }
 }

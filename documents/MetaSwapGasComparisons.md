@@ -16,7 +16,7 @@ These redeem through `DelegationManager` with the production caveats.
 | `GaslessFeeTransfer` | `GaslessFeeTransferGas.t.sol` | Gasless swap | One root, batch mode. `ExactExecutionBatch` of `[user.execute(swap), feeToken.transfer]`. The fee is its own transfer. |
 | `LimitOrderBaseline` | `LimitOrderBaselineGas.t.sol` | Limit order  | One root per leg. The approval is `ExactExecution` plus `LimitedCalls(1)`. The swap uses the bridge-api caveat set.    |
 
-`GaslessExecute` is the gasless baseline. It is the signed MetaSwap gasless swap: one `user.execute` call, with the fee inside the swap. `GaslessFeeTransfer` is a real wallet path too, the generic relay that pays the gas station with its own transfer. It is kept so that path stays measured, and it is not the baseline the managers are compared with. On this run it costs 6.7% more than `GaslessExecute` on average.
+`GaslessExecute` is the gasless baseline. It is the signed MetaSwap gasless swap: one `user.execute` call, with the fee inside the swap. `GaslessFeeTransfer` is a real wallet path too, the generic relay that pays the gas station with its own transfer. It is kept so that path stays measured, and it is not the baseline the managers are compared with. On this run it costs 6.4% more than `GaslessExecute` on average.
 
 `LimitOrderBaseline` is the limit-order baseline.
 
@@ -53,41 +53,45 @@ Final and direct route are the two packed layouts. Each has a calldata version a
 
 ## Measured gas
 
-Re-measured 14 Nov 2026 with `forge test --match-path test/metaswap-optimized/gas-comparisons/*.sol -vv`.
+Re-measured 16 Nov 2026 with `forge test --isolate --match-path 'test/metaswap-optimized/gas-comparisons/*.sol' -vv`. The swap route is 512 nonzero bytes. The router already holds the input token, and the fee wallet already holds both tokens.
 
-Estimated transaction gas is `21,000 + calldata gas + execution gas`.
+The number in each cell is the gas the receipt charges: gas spent, minus the refund. The refund cannot be more than one fifth of the gas spent. A fill that approves an ERC-20 and then spends that exact amount clears the allowance in the same transaction, which refunds 19,900. That refund comes off the first fill and the second fill. Native fills that do not approve have no allowance refund. `LimitOrderBaseline` and `FlexibleSettlementEnforcer` can refund more, because their enforcers write a slot and clear it before the transaction ends.
+
+`--isolate` makes each external call its own transaction. Without it the tests skip, because a second fill in the same transaction is not a later fill.
 
 ### Cold and later
 
-**Cold** is the first fill of that shape on that delegator. The nonce or id word is still zero, and the ERC-20 balance slots this fill writes are still zero. Creating a slot costs more than updating one.
+**Cold** is the first fill of that shape on that delegator. It is its own transaction. The nonce or id word is still zero, and the user's output-token balance is still zero. The router already holds the input token, and the fee wallet already holds both tokens. Creating a slot costs more than updating one.
 
-**Later** is another fill of the same shape, in its own transaction, with a new signed permission. A previous fill on the same delegator has already written the storage this fill updates, so those stores cost less. Reads are still cold, because every transaction starts cold.
+**Later** is the second fill of the same shape, sent as the next transaction, with a new signature. The first fill has already landed, so the slots it created are updated instead of created. Reads are still cold, because every transaction starts cold.
 
-What that previous fill leaves behind:
+What the first fill leaves behind:
 
-- **Nonce.** `FinalManager`, `DirectRouteManager`, `Eip7710FinalManager`, and `Eip7710DirectRouteManager` keep a nonce bitmap per delegator, one word for gasless batches and one for limit orders. The first nonce in a word creates that word. A later nonce on the same delegator only flips another bit in the word, which is cheaper. The later rows measure nonce 1 after another bit in that word is already set.
-- **Order id.** `LimitOrderBaseline`, `OrderDelegationManager` limit orders, and `FlexibleSettlementEnforcer` burn an id in a bitmap instead of a nonce. A later fill uses an id in a word that already has another id burned, so that write is cheaper too. The gasless `OrderDelegationManager` path has no nonce and no id, so it does not get this saving.
-- **Token balances.** Every version, including the ones with no nonce, leaves the ERC-20 balances it touched nonzero: the input token, the output token, and on gasless fills the fee recipient. Updating a nonzero balance costs less than creating it. That is why a version with no nonce still costs less on a later fill.
+- **Nonce.** `FinalManager`, `DirectRouteManager`, `Eip7710FinalManager`, and `Eip7710DirectRouteManager` keep a nonce bitmap per delegator, one word for gasless batches and one for limit orders. The cold fill uses nonce 1 and creates that word. The later fill uses nonce 2, so it only flips another bit in the word.
+- **Order id.** `LimitOrderBaseline`, `OrderDelegationManager` limit orders, and `FlexibleSettlementEnforcer` burn an id in a bitmap instead of a nonce. The cold fill burns id 1. The later fill burns id 2 in that same word. The gasless `OrderDelegationManager` path has no nonce and no id. Its later fill is a new delegation, and the only saving is the token balances.
+- **Token balances.** The router and the fee wallet already hold their tokens, so those writes cost the same on both fills. The user's output-token balance starts at zero. Every version leaves it nonzero, and updating it costs less than creating it. That is why a version with no nonce still costs less on a later fill. A native output has no output-token balance, so that saving is not there.
+
+Some writes never get cheaper. `LimitedCallsEnforcer` keys its counter by delegation hash, and `OrderDelegationManager` disables each delegation hash after use. Every fill signs a new delegation, so those writes create a new slot on the later fill too.
 
 ### Gasless, against `GaslessExecute`
 
 | Version                     |         Native cold |        Native later |      Token→ETH cold |     Token→ETH later |    Token→token cold |   Token→token later |        Cold average |       Later average |             Overall |
 | --------------------------- | ------------------: | ------------------: | ------------------: | ------------------: | ------------------: | ------------------: | ------------------: | ------------------: | ------------------: |
-| `GaslessExecute` (baseline) |             288,063 |             248,266 |             325,055 |             283,258 |             347,991 |             286,296 |             320,370 |             272,607 |             296,488 |
-| `FinalManager`              | 138,927 (**51.8%**) |  77,229 (**68.9%**) | 169,286 (**47.9%**) | 105,588 (**62.7%**) | 191,926 (**44.8%**) | 108,329 (**62.2%**) | 166,713 (**48.2%**) |  97,049 (**64.6%**) | 131,881 (**56.4%**) |
-| `DirectRouteManager`        | 138,939 (**51.8%**) |  77,241 (**68.9%**) | 169,286 (**47.9%**) | 105,588 (**62.7%**) | 191,926 (**44.8%**) | 108,329 (**62.2%**) | 166,717 (**48.2%**) |  97,053 (**64.6%**) | 131,885 (**56.4%**) |
-| `Eip7710FinalManager`       | 142,971 (**50.4%**) |  81,274 (**67.3%**) | 173,331 (**46.7%**) | 109,634 (**61.3%**) | 195,947 (**43.7%**) | 112,351 (**60.8%**) | 170,750 (**46.9%**) | 101,086 (**63.1%**) | 135,918 (**55.0%**) |
-| `Eip7710DirectRouteManager` | 142,971 (**50.4%**) |  81,274 (**67.3%**) | 173,331 (**46.7%**) | 109,634 (**61.3%**) | 195,959 (**43.7%**) | 112,363 (**60.8%**) | 170,754 (**46.9%**) | 101,090 (**63.1%**) | 135,922 (**55.0%**) |
-| `OrderDelegationManager`    | 151,999 (**47.2%**) | 112,201 (**54.8%**) | 182,389 (**43.9%**) | 140,591 (**50.4%**) | 205,005 (**41.1%**) | 143,308 (**49.9%**) | 179,798 (**44.1%**) | 132,033 (**51.7%**) | 155,916 (**47.9%**) |
+| `GaslessExecute` (baseline) |             293,650 |             276,550 |             292,469 |             292,457 |             319,881 |             302,781 |             302,000 |             290,596 |             296,298 |
+| `FinalManager`              | 136,140 (**53.6%**) | 101,940 (**63.1%**) | 128,928 (**55.9%**) | 111,828 (**61.8%**) | 156,056 (**51.2%**) | 121,856 (**59.8%**) | 140,375 (**53.6%**) | 111,875 (**61.6%**) | 126,125 (**57.6%**) |
+| `DirectRouteManager`        | 136,140 (**53.6%**) | 101,940 (**63.1%**) | 128,916 (**55.9%**) | 111,816 (**61.8%**) | 156,056 (**51.2%**) | 121,856 (**59.8%**) | 140,371 (**53.6%**) | 111,871 (**61.6%**) | 126,121 (**57.6%**) |
+| `Eip7710FinalManager`       | 139,316 (**52.6%**) | 105,116 (**62.0%**) | 132,104 (**54.8%**) | 114,992 (**60.7%**) | 159,232 (**50.2%**) | 125,008 (**58.7%**) | 143,551 (**52.5%**) | 115,039 (**60.5%**) | 129,295 (**56.5%**) |
+| `Eip7710DirectRouteManager` | 139,316 (**52.6%**) | 105,080 (**62.0%**) | 132,104 (**54.8%**) | 114,992 (**60.7%**) | 159,220 (**50.2%**) | 125,032 (**58.7%**) | 143,547 (**52.5%**) | 115,035 (**60.5%**) | 129,291 (**56.5%**) |
+| `OrderDelegationManager`    | 146,342 (**50.2%**) | 129,242 (**53.3%**) | 139,116 (**52.4%**) | 139,140 (**52.4%**) | 166,256 (**48.0%**) | 149,156 (**50.7%**) | 150,571 (**50.2%**) | 139,179 (**52.1%**) | 144,875 (**51.2%**) |
 
 ### Limit orders, against `LimitOrderBaseline`
 
 | Version                         |         Native cold |        Native later |      Token→ETH cold |     Token→ETH later |    Token→token cold |   Token→token later |        Cold average |       Later average |             Overall |
 | ------------------------------- | ------------------: | ------------------: | ------------------: | ------------------: | ------------------: | ------------------: | ------------------: | ------------------: | ------------------: |
-| `LimitOrderBaseline` (baseline) |             379,893 |             355,497 |             623,087 |             576,795 |             626,787 |             580,497 |             543,256 |             504,263 |             523,759 |
-| `DirectRouteManager`            | 115,699 (**69.5%**) |  73,900 (**79.2%**) | 142,078 (**77.2%**) |  98,279 (**83.0%**) | 166,671 (**73.4%**) | 102,972 (**82.3%**) | 141,483 (**73.4%**) |  91,717 (**81.5%**) | 116,600 (**77.4%**) |
-| `Eip7710DirectRouteManager`     | 119,738 (**68.5%**) |  77,939 (**78.1%**) | 146,129 (**76.5%**) | 102,330 (**82.3%**) | 170,710 (**72.8%**) | 107,011 (**81.6%**) | 145,526 (**72.6%**) |  95,760 (**80.6%**) | 120,643 (**76.6%**) |
-| `FinalManager`                  | 119,666 (**68.5%**) |  77,867 (**78.1%**) | 149,870 (**75.9%**) | 106,073 (**81.6%**) | 174,464 (**72.2%**) | 110,767 (**80.9%**) | 148,000 (**72.2%**) |  98,236 (**80.2%**) | 123,118 (**76.2%**) |
-| `Eip7710FinalManager`           | 123,666 (**67.4%**) |  81,868 (**77.0%**) | 153,881 (**75.3%**) | 110,083 (**80.9%**) | 178,463 (**71.5%**) | 114,767 (**80.2%**) | 152,003 (**71.4%**) | 102,239 (**79.4%**) | 127,121 (**75.4%**) |
-| `OrderDelegationManager`        | 155,385 (**59.1%**) | 113,587 (**68.0%**) | 185,671 (**70.2%**) | 141,874 (**75.4%**) | 210,265 (**66.5%**) | 146,570 (**74.8%**) | 183,774 (**65.3%**) | 134,010 (**72.7%**) | 158,892 (**69.0%**) |
-| `FlexibleSettlementEnforcer`    | 180,775 (**52.4%**) | 156,379 (**56.0%**) | 231,157 (**62.9%**) | 184,860 (**68.0%**) | 235,861 (**62.4%**) | 189,565 (**67.3%**) | 215,931 (**59.2%**) | 176,935 (**63.8%**) | 196,433 (**61.5%**) |
+| `LimitOrderBaseline` (baseline) |             367,621 |             353,321 |             549,272 |             532,172 |             557,360 |             543,060 |             491,418 |             476,184 |             483,801 |
+| `DirectRouteManager`            | 129,204 (**64.9%**) |  95,004 (**73.1%**) | 118,596 (**78.4%**) | 101,496 (**80.9%**) | 147,678 (**73.5%**) | 113,478 (**79.1%**) | 131,826 (**72.3%**) | 103,326 (**77.7%**) | 117,576 (**75.0%**) |
+| `Eip7710DirectRouteManager`     | 132,393 (**64.0%**) |  98,181 (**72.2%**) | 121,785 (**77.8%**) | 104,685 (**80.3%**) | 150,855 (**72.9%**) | 116,655 (**78.5%**) | 135,011 (**71.6%**) | 106,507 (**77.0%**) | 120,759 (**74.3%**) |
+| `FinalManager`                  | 132,142 (**64.1%**) |  97,942 (**72.3%**) | 124,785 (**77.3%**) | 107,685 (**79.8%**) | 153,867 (**72.4%**) | 119,643 (**78.0%**) | 136,931 (**71.2%**) | 108,423 (**76.7%**) | 122,677 (**74.0%**) |
+| `Eip7710FinalManager`           | 135,287 (**63.2%**) | 101,087 (**71.4%**) | 127,930 (**76.7%**) | 110,830 (**79.2%**) | 157,000 (**71.8%**) | 122,812 (**77.4%**) | 140,072 (**70.6%**) | 111,576 (**76.0%**) | 125,824 (**73.3%**) |
+| `OrderDelegationManager`        | 164,923 (**55.1%**) | 130,711 (**63.0%**) | 157,632 (**71.3%**) | 140,532 (**73.6%**) | 186,725 (**66.5%**) | 152,525 (**71.9%**) | 169,760 (**64.3%**) | 141,256 (**69.5%**) | 155,508 (**66.9%**) |
+| `FlexibleSettlementEnforcer`    | 190,447 (**48.2%**) | 156,247 (**55.8%**) | 183,350 (**66.6%**) | 166,250 (**68.8%**) | 212,454 (**61.9%**) | 178,242 (**67.2%**) | 195,417 (**58.9%**) | 166,913 (**63.9%**) | 181,165 (**61.4%**) |

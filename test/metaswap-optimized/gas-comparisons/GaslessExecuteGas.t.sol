@@ -35,11 +35,7 @@ contract GaslessExecuteGasTest is ExactGasComparison {
         _installUser(address(delegationManager));
     }
 
-    function _armLaterExact(Shape shape_) internal override {
-        _prepareLaterGaslessBalances(shape_);
-    }
-
-    function _runExact(Shape shape_) internal override returns (uint256) {
+    function _runExact(Shape shape_, uint256 fill_) internal override returns (uint256) {
         bytes memory executionCallData_ = _executeCall(shape_);
         Caveat[] memory caveats_ = new Caveat[](4);
         caveats_[0] = Caveat({ enforcer: address(limitedCalls), terms: abi.encode(uint256(1)), args: hex"" });
@@ -47,7 +43,7 @@ contract GaslessExecuteGasTest is ExactGasComparison {
         caveats_[2] = Caveat({ enforcer: address(redeemerEnforcer), terms: _redeemerTerms(), args: hex"" });
         caveats_[3] = Caveat({ enforcer: address(exactExecution), terms: executionCallData_, args: hex"" });
         Delegation[] memory chains_ = new Delegation[](1);
-        chains_[0] = _signRoot(ANY_DELEGATE, ROOT_AUTHORITY, delegationManager.getDomainHash(), caveats_, 1);
+        chains_[0] = _signRoot(ANY_DELEGATE, ROOT_AUTHORITY, delegationManager.getDomainHash(), caveats_, fill_);
         ModeCode[] memory modes_ = new ModeCode[](1);
         modes_[0] = _singleMode();
         bytes[] memory executionCallDatas_ = new bytes[](1);

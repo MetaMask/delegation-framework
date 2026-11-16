@@ -24,10 +24,9 @@ import { GasComparisonFixture, LimitGasComparison } from "./GasComparisonFixture
  * @notice Limit-order baseline. One root delegation per leg, single mode, in delegation order.
  * @dev Approval, when present, is pinned by `ExactExecutionEnforcer` and single-use via `LimitedCallsEnforcer`.
  *      The swap leg bounds the call instead of pinning it. `AllowedCalldataEnforcer` fixes `tokenFrom` and
- *      `amount` at byte 36 of `MetaSwap.swap`. Swap id is 1.
+ *      `amount` at byte 36 of `MetaSwap.swap`. The swap id is the fill number.
  */
 contract LimitOrderBaselineGasTest is LimitGasComparison {
-    uint256 private constant SWAP_ID = 1;
     /// @dev `tokenFrom` and `amount` are the two static words after the selector and the dynamic-string offset.
     uint256 private constant SWAP_TOKEN_AND_AMOUNT_OFFSET = 36;
 
@@ -64,16 +63,15 @@ contract LimitOrderBaselineGasTest is LimitGasComparison {
         _installUser(address(delegationManager));
     }
 
-    function _armLater(Shape shape_) internal override {
-        _prepareLaterFill(shape_, address(idEnforcer), 0, true);
-    }
-
-    function _run(Shape shape_) internal override returns (uint256) {
-        (Delegation[] memory chains_, ModeCode[] memory modes_, bytes[] memory executionCallDatas_) = _redemption(shape_);
+    function _run(Shape shape_, uint256 fill_) internal override returns (uint256) {
+        (Delegation[] memory chains_, ModeCode[] memory modes_, bytes[] memory executionCallDatas_) = _redemption(shape_, fill_);
         return _redeemDelegations(address(delegationManager), chains_, modes_, executionCallDatas_, shape_);
     }
 
-    function _redemption(Shape shape_)
+    function _redemption(
+        Shape shape_,
+        uint256 fill_
+    )
         private
         returns (Delegation[] memory chains_, ModeCode[] memory modes_, bytes[] memory executionCallDatas_)
     {
@@ -81,7 +79,8 @@ contract LimitOrderBaselineGasTest is LimitGasComparison {
             chains_ = new Delegation[](1);
             modes_ = new ModeCode[](1);
             executionCallDatas_ = new bytes[](1);
-            chains_[0] = _signRoot(ANY_DELEGATE, ROOT_AUTHORITY, delegationManager.getDomainHash(), _swapCaveats(shape_), 1);
+            chains_[0] =
+                _signRoot(ANY_DELEGATE, ROOT_AUTHORITY, delegationManager.getDomainHash(), _swapCaveats(shape_, fill_), fill_);
             modes_[0] = _singleMode();
             Execution memory nativeSwap_ = _swapExecution(address(0), TOKEN_IN_AMOUNT, TOKEN_IN_AMOUNT, address(tokenOut));
             executionCallDatas_[0] = ExecutionLib.encodeSingle(nativeSwap_.target, nativeSwap_.value, nativeSwap_.callData);
@@ -94,14 +93,15 @@ contract LimitOrderBaselineGasTest is LimitGasComparison {
         Execution memory approval_ = _approvalExecution(TOKEN_IN_AMOUNT);
         executionCallDatas_[0] = ExecutionLib.encodeSingle(approval_.target, approval_.value, approval_.callData);
         chains_[0] = _signRoot(
-            ANY_DELEGATE, ROOT_AUTHORITY, delegationManager.getDomainHash(), _approvalCaveats(executionCallDatas_[0]), 1
+            ANY_DELEGATE, ROOT_AUTHORITY, delegationManager.getDomainHash(), _approvalCaveats(executionCallDatas_[0]), fill_
         );
         modes_[0] = _singleMode();
 
         address tokenOut_ = shape_ == Shape.Erc20ToNative ? address(0) : address(tokenOut);
         Execution memory erc20Swap_ = _swapExecution(address(tokenIn), TOKEN_IN_AMOUNT, 0, tokenOut_);
         executionCallDatas_[1] = ExecutionLib.encodeSingle(erc20Swap_.target, erc20Swap_.value, erc20Swap_.callData);
-        chains_[1] = _signRoot(ANY_DELEGATE, ROOT_AUTHORITY, delegationManager.getDomainHash(), _swapCaveats(shape_), 2);
+        chains_[1] =
+            _signRoot(ANY_DELEGATE, ROOT_AUTHORITY, delegationManager.getDomainHash(), _swapCaveats(shape_, fill_), fill_ + 2);
         modes_[1] = _singleMode();
     }
 
@@ -113,7 +113,7 @@ contract LimitOrderBaselineGasTest is LimitGasComparison {
         caveats_[3] = Caveat({ enforcer: address(redeemerEnforcer), terms: _redeemerTerms(), args: hex"" });
     }
 
-    function _swapCaveats(Shape shape_) private view returns (Caveat[] memory caveats_) {
+    function _swapCaveats(Shape shape_, uint256 fill_) private view returns (Caveat[] memory caveats_) {
         uint256 n_ = shape_ == Shape.NativeToErc20 ? 8 : 9;
         caveats_ = new Caveat[](n_);
         caveats_[0] = Caveat({ enforcer: address(allowedTargets), terms: abi.encodePacked(address(metaSwap)), args: hex"" });
@@ -152,7 +152,7 @@ contract LimitOrderBaselineGasTest is LimitGasComparison {
             }
         }
         caveats_[i_++] = Caveat({ enforcer: address(timestampEnforcer), terms: _timestampTerms(), args: hex"" });
-        caveats_[i_++] = Caveat({ enforcer: address(idEnforcer), terms: abi.encode(SWAP_ID), args: hex"" });
+        caveats_[i_++] = Caveat({ enforcer: address(idEnforcer), terms: abi.encode(fill_), args: hex"" });
         caveats_[i_] = Caveat({ enforcer: address(redeemerEnforcer), terms: _redeemerTerms(), args: hex"" });
     }
 }

@@ -43,13 +43,10 @@ interface IPackedHashes {
 
 /**
  * @notice Packed managers. Exact is `redeemExactBatch`. Limit is the limit order.
- * @dev Same six shapes as the limit baselines, cold and as a later transaction. Direct-route limit
- *      sends route bytes. The others send the approve + swap batch. Nonce 1 is measured. Bit 200 is the sibling.
+ * @dev Same six shapes as the limit baselines. Direct-route limit sends route bytes. The others send the
+ *      approve + swap batch. Fill 1 uses nonce 1. Fill 2 is the next transaction and uses nonce 2.
  */
 abstract contract PackedManagerGasTest is LimitGasComparison, ExactGasComparison {
-    uint256 private constant EXACT_NONCE_SLOT = 2;
-    uint256 private constant LIMIT_NONCE_SLOT = 3;
-
     address internal mgr;
 
     function _deploy() internal virtual returns (address);
@@ -61,32 +58,24 @@ abstract contract PackedManagerGasTest is LimitGasComparison, ExactGasComparison
         _installUser(mgr);
     }
 
-    function _armLater(Shape shape_) internal override {
-        _prepareLaterFill(shape_, mgr, LIMIT_NONCE_SLOT, false);
+    function _run(Shape shape_, uint256 fill_) internal override returns (uint256) {
+        return _measure(mgr, _limitCall(shape_, fill_), shape_);
     }
 
-    function _run(Shape shape_) internal override returns (uint256) {
-        return _measure(mgr, _limitCall(shape_), shape_);
+    function _runExact(Shape shape_, uint256 fill_) internal override returns (uint256) {
+        return _measureGasless(mgr, _exactCall(shape_, fill_), shape_);
     }
 
-    function _armLaterExact(Shape shape_) internal override {
-        _prepareLaterGaslessFill(shape_, mgr, EXACT_NONCE_SLOT);
-    }
-
-    function _runExact(Shape shape_) internal override returns (uint256) {
-        return _measureGasless(mgr, _exactCall(shape_), shape_);
-    }
-
-    function _exactCall(Shape shape_) private view returns (bytes memory) {
+    function _exactCall(Shape shape_, uint256 nonce_) private view returns (bytes memory) {
         bytes memory batch_ = ExecutionLib.encodeBatch(_gaslessExecutions(shape_));
         address[] memory redeemers_ = _redeemers();
         bytes memory head_ =
-            abi.encodePacked(user, MEASURED_NONCE, uint128(0), expiresAt, uint8(redeemers_.length), _packRedeemers(redeemers_));
+            abi.encodePacked(user, nonce_, uint128(0), expiresAt, uint8(redeemers_.length), _packRedeemers(redeemers_));
         bytes memory signature_ = _sign(
             USER_KEY,
             MessageHashUtils.toTypedDataHash(
                 IPackedHashes(mgr).getDomainHash(),
-                IPackedHashes(mgr).hashExactBatch(user, MEASURED_NONCE, 0, expiresAt, redeemers_, keccak256(batch_))
+                IPackedHashes(mgr).hashExactBatch(user, nonce_, 0, expiresAt, redeemers_, keccak256(batch_))
             )
         );
         if (_usesRedeemDelegations()) {
@@ -101,8 +90,8 @@ abstract contract PackedManagerGasTest is LimitGasComparison, ExactGasComparison
         return bytes.concat(abi.encodePacked(FinalManager.redeemExactBatch.selector), head_, signature_, batch_);
     }
 
-    function _limitCall(Shape shape_) private view returns (bytes memory) {
-        PackedLimitOrder memory order_ = _limitOrder(shape_);
+    function _limitCall(Shape shape_, uint256 nonce_) private view returns (bytes memory) {
+        PackedLimitOrder memory order_ = _limitOrder(shape_, nonce_);
         bytes memory signature_ = _sign(
             USER_KEY,
             MessageHashUtils.toTypedDataHash(IPackedHashes(mgr).getDomainHash(), IPackedHashes(mgr).hashLimitOrder(order_))
@@ -120,9 +109,9 @@ abstract contract PackedManagerGasTest is LimitGasComparison, ExactGasComparison
         return bytes.concat(abi.encodePacked(FinalManager.redeemLimitOrder.selector), _limitHead(order_), signature_, tail_);
     }
 
-    function _limitOrder(Shape shape_) private view returns (PackedLimitOrder memory order_) {
+    function _limitOrder(Shape shape_, uint256 nonce_) private view returns (PackedLimitOrder memory order_) {
         order_.delegator = user;
-        order_.nonce = MEASURED_NONCE;
+        order_.nonce = nonce_;
         order_.metaSwap = address(metaSwap);
         order_.tokenInAmount = TOKEN_IN_AMOUNT;
         order_.recipient = user;
