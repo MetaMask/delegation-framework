@@ -4,7 +4,7 @@ The suite in `test/metaswap-optimized/gas-comparisons/` measures two products: a
 
 This doc leaves out `DirectRouteManager` and `Eip7710DirectRouteManager`. The same measurements with those two are in [MetaSwap gas comparisons](./MetaSwapGasComparisons.md).
 
-`GasComparisonFixture.t.sol` and `PackedManagerGas.t.sol` are shared test harnesses, not extra versions. `FeeTransferRouteRebuild` was a temporary benchmark and has been removed.
+`GasComparisonFixture.t.sol` and `PackedManagerGas.t.sol` are shared test harnesses, not extra versions.
 
 ## Baselines
 
