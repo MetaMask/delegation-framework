@@ -51,12 +51,6 @@ Each of these runs the gasless rows and the limit rows.
 
 ## Measured gas
 
-Re-measured 16 Nov 2026 with `forge test --isolate --match-path 'test/metaswap-optimized/gas-comparisons/*.sol' -vv`. The swap route is 512 nonzero bytes. The router already holds the input token, and the fee wallet already holds both tokens.
-
-The number in each cell is the gas the receipt charges: gas spent, minus the refund. The refund cannot be more than one fifth of the gas spent. A fill that approves an ERC-20 and then spends that exact amount clears the allowance in the same transaction, which refunds 19,900. That refund comes off the first fill and the second fill. Native fills that do not approve have no allowance refund. `LimitOrderBaseline` and `FlexibleSettlementEnforcer` can refund more, because their enforcers write a slot and clear it before the transaction ends.
-
-`--isolate` makes each external call its own transaction. Without it the tests skip, because a second fill in the same transaction is not a later fill.
-
 ### Cold and later
 
 **Cold** is the first fill of that shape on that delegator. It is its own transaction. The nonce or id word is still zero, and the user's output-token balance is still zero. The router already holds the input token, and the fee wallet already holds both tokens. Creating a slot costs more than updating one.
